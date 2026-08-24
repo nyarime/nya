@@ -19,7 +19,17 @@ jobs:
           go-version: '1.25'
       - run: go build ./...
       - run: go vet ./...
-      - run: go test -race ./...
+      - run: go test -short -race ./...
+
+  bench-compress:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - run: go test -run TestCompressComparisonReport -timeout 30m -v ./...
 
   # BLAKE3 and the zstd match finder ship architecture-specific assembly, so
   # check that the generic fallbacks still build everywhere else — including

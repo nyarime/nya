@@ -310,7 +310,7 @@ func cmdRepair(args []string) error {
 		fmt.Printf("%s (nya): %d/%d chunks repaired, %d failed → %s\n",
 			filepath.Base(in), res.RepairedChunks, res.TotalChunks, res.FailedChunks, out)
 		if res.FailedChunks > 0 {
-			return fmt.Errorf("%d chunks could not be recovered", res.FailedChunks)
+			return fmt.Errorf("%w (%d/%d chunks failed)", nya.ErrFECInsufficient, res.FailedChunks, res.TotalChunks)
 		}
 	}
 	return nil

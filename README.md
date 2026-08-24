@@ -181,8 +181,10 @@ relative to each other rather than as absolute numbers.
 | 120-file tree, solid | 1105916 | 24.82% (726ms) | 22.50% (316ms) | 22.26% (111ms) | 23.04% (265ms) |
 
 Close on single files, still behind on many-file archives without `-solid`.
-Solid mode applies extension grouping and optimal LZMA2 parsing to close
-much of the gap on many-file trees.
+Solid mode applies **extension grouping**, **content-kind sorting** (magic
+bytes within each extension group), and the **greedy LZMA2 parser** by default.
+Optimal parse remains available for repetitive streams but is not enabled
+automatically — see [docs/BENCHMARK-COMPRESS.md](docs/BENCHMARK-COMPRESS.md).
 
 Extraction speed is the other half of the trade. LZMA2 decompresses at
 18–59 MB/s here against 127–275 MB/s for the zstd path, so an archive that is
@@ -201,18 +203,30 @@ implementation **writes 1.1** (or **1.2** when encrypted) and **reads 1.0 throug
 See **[COMPATIBILITY.md](COMPATIBILITY.md)** for the long-term policy (one
 `.nya` container, `.nyam` sidecar only, no `.nyax`).
 
-- **1.1** — zstd frames follow RFC 8878 (current writer).
+- **1.2** — Argon2id KDF + salt in header `Reserved`; `FlagEncrypted` +
+  `FlagKDFArgon2id`. Legacy SHA-256(password) archives remain readable.
+- **1.1** — zstd frames follow RFC 8878 (current writer for non-encrypted).
 - **1.0** — legacy zstd sequence tables; still fully readable. Repack to upgrade.
+
+### Upgrade notes
+
+| From | To | Action |
+| --- | --- | --- |
+| 1.0 zstd tables | 1.1 | Repack with current `nya create` (automatic RFC 8878) |
+| SHA-256 encryption | 1.2 Argon2id | Re-create with `-password` (old archives still extract with password) |
+| Non-solid many-file | solid + sort | `nya create -solid -level 9` on directory trees |
 
 ## Known limitations
 
-- Password-based encryption uses **Argon2id** key derivation (v1.2,
-  `VersionMinor = 2`): random 16-byte salt and parameters stored in the
-  global header `Reserved` region; `FlagEncrypted` and `FlagKDFArgon2id`
-  are set. Archives written before v1.2 used bare SHA-256(password) with
-  no header flag — still readable when a password is supplied.
-- The writer emits one chunk per entry, so `ChunkCount` is always 1.
-- Custom (mode 2) FSE tables for sequence codes remain disabled (~1% ratio).
+- **Single chunk per entry** (`ChunkCount = 1`): large non-solid files are
+  compressed as one stream internally split into 512 KiB blocks, but FEC and
+  random access are still entry-granular. Multi-chunk design: [docs/SPEC-MULTICHUNK.md](docs/SPEC-MULTICHUNK.md).
+- **Custom FSE tables** for zstd sequence codes remain disabled (~1% ratio).
+- **Optimal parse** is not enabled by default; benchmarks show greedy + sort
+  wins on mixed multi-file solid trees. Enable via library `OptimalParse` when
+  tuning for repetitive corpora.
+- **7-Zip solid ratio** on very large mixed trees can still win on encode speed;
+  NYA closes most of the gap on ratio with sort + optimal parse (see benchmark doc).
 
 ## License
 
@@ -228,6 +242,8 @@ closed-source product without GPL obligations, contact
 - [COMPATIBILITY.md](COMPATIBILITY.md) — **v1 LTS policy** (read before adopting)
 - [SPEC.md](SPEC.md) — on-disk NYA archive layout
 - [SPEC-EXTENSIONS.md](SPEC-EXTENSIONS.md) — **v1 foundation** (tails, solid, dedup, NyaFS, sessions)
+- [docs/SPEC-MULTICHUNK.md](docs/SPEC-MULTICHUNK.md) — **multi-chunk entries** (planned v1.3)
+- [docs/BENCHMARK-COMPRESS.md](docs/BENCHMARK-COMPRESS.md) — compression A/B measurements
 - [SPEC-CODECS.md](SPEC-CODECS.md) — **NYA-Zstd & NYA-LZMA2** roles and roadmap
 - [SPEC-SFX.md](SPEC-SFX.md) — **self-extracting** stub + footer (Rust)
 - [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) — `.nyam` manifest and `nya-get` transport blocks

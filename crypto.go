@@ -24,7 +24,8 @@ import (
 var (
 	ErrKeySize          = errors.New("nya: key must be 32 bytes")
 	ErrCiphertextSize   = errors.New("nya: ciphertext shorter than nonce")
-	ErrPasswordRequired = errors.New("nya: archive is encrypted; password required")
+	ErrPasswordRequired = errors.New("nya: archive is encrypted; provide a password (Open with password, or: nya extract -password …)")
+	ErrFECInsufficient  = errors.New("nya: FEC parity is insufficient to repair the damaged payload; try a higher -fec archive or nya augment")
 )
 
 const (

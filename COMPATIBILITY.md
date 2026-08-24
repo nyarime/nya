@@ -94,6 +94,7 @@ Requires **major 2** (new magic or breaking directory layout):
 | --- | --- |
 | [SPEC.md](SPEC.md) | On-disk `.nya` layout |
 | [SPEC-EXTENSIONS.md](SPEC-EXTENSIONS.md) | **v1 extension foundation** (tails, profiles) |
+| [docs/SPEC-MULTICHUNK.md](docs/SPEC-MULTICHUNK.md) | Multi-chunk entry design (planned v1.3) |
 | [SPEC-CODECS.md](SPEC-CODECS.md) | **NYA-Zstd & NYA-LZMA2** policy |
 | [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) | `.nyam` manifest (distribution only) |
 

@@ -319,7 +319,7 @@ func rawRepair(path string, outputPath string) (*RepairResult, error) {
 	repaired, err := repairFEC(compData, fecData, params, FECRaptorQ, hashes)
 	if err != nil {
 		return &RepairResult{TotalChunks: 1, CorruptedChunks: 1, FailedChunks: 1},
-			fmt.Errorf("FEC failed: %w", err)
+			fmt.Errorf("%w: %v", ErrFECInsufficient, err)
 	}
 
 	copy(data[compStart:compEnd], repaired[:len(compData)])

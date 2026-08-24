@@ -12,6 +12,9 @@ func TestSortSolidFilePaths(t *testing.T) {
 	dir := t.TempDir()
 	mk := func(name, content string) string {
 		p := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
 		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -23,9 +26,11 @@ func TestSortSolidFilePaths(t *testing.T) {
 	zTxt := mk("z.txt", strings.Repeat("hello\n", 50))
 	aTxt := mk("a.txt", strings.Repeat("world\n", 80))
 	noExt := mk("README", strings.Repeat("readme\n", 10))
+	jsonA := mk("data/a.json", `{"a":1}`+"\n"+strings.Repeat(`{"k":"v"}`+"\n", 50))
+	jsonB := mk("data/b.json", `{"b":2}`+"\n"+strings.Repeat(`{"n":42}`+"\n", 80))
 
-	got := sortSolidFilePaths([]string{zTxt, noExt, bGo, aGo, aTxt})
-	want := []string{bGo, aGo, aTxt, zTxt, noExt}
+	got := sortSolidFilePaths([]string{zTxt, noExt, bGo, aGo, aTxt, jsonB, jsonA})
+	want := []string{bGo, aGo, jsonB, jsonA, aTxt, zTxt, noExt}
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("index %d: got %q want %q (full: %v)", i, filepath.Base(got[i]), filepath.Base(want[i]), bases(got))

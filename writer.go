@@ -158,9 +158,9 @@ func (nw *Writer) compressRaw(data []byte) ([]byte, error) {
 		return ZstdCompressWithWindow(data, nw.compressLevel), nil
 	default:
 		opts := nw.lzmaOpts
-		if nw.solid {
-			opts.OptimalParse = true
-		}
+		// Optimal parse is opt-in (Lzma2Options.OptimalParse); benchmarks show
+		// extension sorting helps multi-file solid streams, while optimal parse
+		// helps highly repetitive single streams only — see docs/BENCHMARK-COMPRESS.md.
 		return Lzma2CompressOpts(data, opts)
 	}
 }
