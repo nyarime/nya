@@ -9,7 +9,7 @@ import (
 
 // Archives written now must record the current format version.
 func TestWriterRecordsCurrentVersion(t *testing.T) {
-	if VersionMajor != 1 || VersionMinor != 0 {
+	if VersionMajor != 1 || VersionMinor != 1 {
 		t.Fatalf("unexpected format version %d.%d", VersionMajor, VersionMinor)
 	}
 }

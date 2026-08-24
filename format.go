@@ -1,4 +1,4 @@
-// Package nar implements the NAR (Nyarime Archive) format v1.0.
+// Package nya implements the NYA (Nyarime Archive) container format v1.
 //
 // NAR = Zstandard compression + GoFEC recovery in one file.
 // Unlike RAR (max 10% recovery), NAR uses RaptorQ for 50%+ corruption recovery.
@@ -33,7 +33,7 @@ const (
 // Format version written by this package.
 const (
 	VersionMajor uint16 = 1
-	VersionMinor uint16 = 0
+	VersionMinor uint16 = 1
 )
 
 // Header flags

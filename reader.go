@@ -116,8 +116,11 @@ func (r *Reader) List() []DirEntry {
 	return r.Entries
 }
 
-// zstdReaderFor decompresses a zstd frame from this archive.
+// zstdReaderFor decompresses a zstd frame, using legacy tables for minor version 0.
 func (r *Reader) zstdReaderFor(data []byte) (io.ReadCloser, error) {
+	if r.Header != nil && r.Header.VersionMinor < 1 {
+		return ZstdNewReaderLegacy(bytes.NewReader(data))
+	}
 	return ZstdNewReader(bytes.NewReader(data))
 }
 

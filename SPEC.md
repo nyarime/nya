@@ -1,7 +1,18 @@
 # NYA archive format
 
-Version 1.1. All integers are little-endian. Offsets are byte offsets from the
-start of the file unless stated otherwise.
+Version **1.1** (major 1, minor 1). All integers are little-endian. Offsets are
+byte offsets from the start of the file unless stated otherwise.
+
+Long-term compatibility rules: **[COMPATIBILITY.md](COMPATIBILITY.md)**.
+
+## Compatibility policy (summary)
+
+- **`.nya` is the only archive container.** `.nyam` is an optional download
+  sidecar, not a second archive format.
+- **`VersionMajor = 1` is the LTS line.** Readers reject `Major > 1`.
+- **Minor 0 archives remain readable forever** (legacy zstd tables).
+- **New writers emit minor 1** (RFC 8878 zstd). See [Version history](#version-history).
+- Breaking layout changes require **major 2**, not a new file extension.
 
 ## File layout
 
@@ -29,7 +40,7 @@ recovery section after a truncation.
 | ---: | ---: | --- | --- |
 | 0 | 8 | Magic | `4E 59 41 00 76 30 31 00` (`NYA\0v01\0`) |
 | 8 | 2 | VersionMajor | 1 |
-| 10 | 2 | VersionMinor | 1 for archives written by this implementation |
+| 10 | 2 | VersionMinor | **1** for new archives; **0** = legacy zstd (still readable) |
 | 12 | 4 | Flags | see below |
 | 16 | 8 | DataAreaSize | |
 | 24 | 8 | CentralDirOffset | |
@@ -50,6 +61,7 @@ A reader must reject a file whose magic does not match, and one whose
 | 1 | SolidCompress | the payload is one solid stream |
 | 2 | Encrypted | reserved; see "Encryption" |
 | 3 | HasGlobalFEC | reserved |
+| 4 | HasDownloadIndex | reserved; embedded transport index (see SPEC-DOWNLOAD.md) |
 
 ## Data area
 
@@ -233,9 +245,15 @@ Two properties are worth stating plainly:
 
 ## Version history
 
-### 1.1
+### 1.1 (minor version 1)
 
-zstd frames follow RFC 8878. Earlier revisions did not, in these respects:
+Current writer output. Zstandard frames follow RFC 8878. Readers select
+conformant sequence code tables when `VersionMinor >= 1`.
+
+### 1.0 (minor version 0)
+
+Minor version 0 zstd frames use non-conformant sequence code tables. In these
+respects they differ from RFC 8878:
 
 - Literal section headers misread `Size_Format`: `01` and `10` were swapped
   for raw and RLE literals, and for Huffman-coded literals `00` was treated
@@ -252,9 +270,8 @@ zstd frames follow RFC 8878. Earlier revisions did not, in these respects:
 
 Because the encoder and decoder shared those mistakes, 1.0 archives are
 self-consistent; they are simply not readable by other zstd implementations.
-This implementation keeps the old tables for archives that report minor
-version 0.
+This implementation keeps the old tables for archives that report **minor
+version 0** (`zstd_legacy.go`). Repack an archive to move it to 1.1.
 
-### 1.0
-
-Initial format, as shipped inside Nyarc.
+Initial public container layout, as shipped inside Nyarc before the standalone
+`nyarime/nya` repository.

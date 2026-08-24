@@ -159,15 +159,14 @@ readable by any conformant zstd or xz implementation.
 
 ## Compatibility
 
-Archives record a format version in their header. This implementation writes
-version 1.1 and reads both:
+Archives record `VersionMajor.VersionMinor` in the global header. This
+implementation **writes 1.1** and **reads 1.0 and 1.1**.
 
-- **1.1** — zstd frames follow RFC 8878.
-- **1.0** — written by Nyarc before the format was split out. Its zstd
-  encoder used sequence code tables that did not match RFC 8878 Tables 5 and
-  6, so those frames are only readable with the legacy tables. `Open` selects
-  them automatically from the header version; no action is needed to read old
-  archives. Repack an archive to move it to 1.1.
+See **[COMPATIBILITY.md](COMPATIBILITY.md)** for the long-term policy (one
+`.nya` container, `.nyam` sidecar only, no `.nyax`).
+
+- **1.1** — zstd frames follow RFC 8878 (current writer).
+- **1.0** — legacy zstd sequence tables; still fully readable. Repack to upgrade.
 
 ## Known limitations
 
@@ -190,5 +189,6 @@ version 1.1 and reads both:
 
 ## Format
 
+- [COMPATIBILITY.md](COMPATIBILITY.md) — **v1 LTS policy** (read before adopting)
 - [SPEC.md](SPEC.md) — on-disk NYA archive layout
 - [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) — `.nyam` manifest and `nya-get` transport blocks
