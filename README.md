@@ -221,7 +221,7 @@ terms of the [GNU General Public License v3.0](LICENSE).
 
 **Dual licensing:** If you need to embed or ship NYA in a proprietary /
 closed-source product without GPL obligations, contact
-**license@nyarime.com** for a commercial license.
+**nyarime@naixi.net** for a commercial license.
 
 ## Format
 
