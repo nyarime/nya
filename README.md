@@ -195,6 +195,23 @@ See **[COMPATIBILITY.md](COMPATIBILITY.md)** for the long-term policy (one
 
 - [COMPATIBILITY.md](COMPATIBILITY.md) — **v1 LTS policy** (read before adopting)
 - [SPEC.md](SPEC.md) — on-disk NYA archive layout
+<<<<<<< HEAD
 - [SPEC-EXTENSIONS.md](SPEC-EXTENSIONS.md) — **v1 foundation** (tails, solid, dedup, NyaFS, sessions)
 - [SPEC-CODECS.md](SPEC-CODECS.md) — **NYA-Zstd & NYA-LZMA2** roles and roadmap
+=======
+- [SPEC-SFX.md](SPEC-SFX.md) — **self-extracting** stub + footer (Rust)
+>>>>>>> origin/cursor/nya-rust-sfx-d053
 - [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) — `.nyam` manifest and `nya-get` transport blocks
+
+### Self-extracting archives (7-Zip-style)
+
+```bash
+cd sfx && cargo build --release   # once; ~580 KB stub
+cp target/release/nya-sfx-stub stubs/nya-sfx-stub_linux_amd64
+
+nya create -sfx game.bin -level 3 ./GameData/
+nya sfx pack.nya -o pack.bin
+./pack.bin                        # extracts to current directory
+```
+
+The stub is **Rust** (small); the main `nya` tool only concatenates stub + archive + footer.

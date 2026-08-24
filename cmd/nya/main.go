@@ -24,6 +24,7 @@ Usage:
   nya repair  <archive.nya> [out.nya]        rebuild a damaged archive using its FEC data
   nya augment <archive.nya> [out.nya]        append RaptorQ fountain repair symbols
   nya manifest <archive.nya> -o <manifest.nyam>  build download manifest for nya-get
+  nya sfx     [flags] <archive.nya> -o <out.exe> wrap archive as self-extractor (Rust stub)
 
 Levels run 0 to 9, the way 7-Zip and WinRAR present them: 0 stores, 1 is
 fastest, 5 is the default, 9 is smallest. Levels up to 4 use Zstandard for
@@ -57,6 +58,8 @@ func main() {
 		err = cmdAugment(os.Args[2:])
 	case "manifest":
 		err = cmdManifest(os.Args[2:])
+	case "sfx":
+		err = cmdSfx(os.Args[2:])
 	case "-h", "--help", "help":
 		fmt.Print(usage)
 		return
@@ -79,6 +82,8 @@ func cmdCreate(args []string) error {
 	fecType := fs.String("fec-type", "hybrid",
 		"FEC codec when -fec > 0: hybrid (default), raptorq or ldpc")
 	solid := fs.Bool("solid", false, "compress all files as one stream (better ratio, slower random access)")
+	sfx := fs.Bool("sfx", false, "write a self-extracting file (requires Rust stub; see sfx/README.md)")
+	sfxStub := fs.String("sfx-stub", "", "path to nya-sfx-stub binary (default: sfx/stubs/<os>_<arch>)")
 	codec := fs.String("codec", "",
 		"override the level's codec: lzma2, zstd or store")
 	password := fs.String("password", "", "encrypt the payload with this password")
@@ -99,7 +104,12 @@ func cmdCreate(args []string) error {
 	}
 	archive, input := fs.Arg(0), fs.Arg(1)
 
-	f, err := os.Create(archive)
+	archivePath := archive
+	if *sfx {
+		archivePath = archive + ".part.nya"
+	}
+
+	f, err := os.Create(archivePath)
 	if err != nil {
 		return err
 	}
@@ -137,8 +147,24 @@ func cmdCreate(args []string) error {
 	if err := w.Close(); err != nil {
 		return err
 	}
+	f.Close()
 
-	fi, err := f.Stat()
+	if *sfx {
+		stubPath := *sfxStub
+		if stubPath == "" {
+			var err error
+			stubPath, err = nya.DefaultStubPath()
+			if err != nil {
+				return err
+			}
+		}
+		if err := nya.BuildSFX(stubPath, archivePath, archive, nil, nya.SFXFlagConsole); err != nil {
+			return err
+		}
+		os.Remove(archivePath)
+	}
+
+	fi, err := os.Stat(archive)
 	if err != nil {
 		return err
 	}
@@ -370,9 +396,39 @@ func archiveCodec(r *nya.Reader) string {
 
 func open(path, password string) (*nya.Reader, error) {
 	if password != "" {
-		return nya.Open(path, []byte(password))
+		return nya.OpenAny(path, []byte(password))
 	}
-	return nya.Open(path)
+	return nya.OpenAny(path)
+}
+
+func cmdSfx(args []string) error {
+	fs := flag.NewFlagSet("sfx", flag.ExitOnError)
+	out := fs.String("o", "", "output self-extracting file (required)")
+	stub := fs.String("stub", "", "path to nya-sfx-stub (default: sfx/stubs/<os>_<arch>)")
+	fs.Parse(args)
+	if *out == "" {
+		return fmt.Errorf("sfx requires -o output path")
+	}
+	if fs.NArg() != 1 {
+		return fmt.Errorf("sfx needs one archive path")
+	}
+	stubPath := *stub
+	if stubPath == "" {
+		var err error
+		stubPath, err = nya.DefaultStubPath()
+		if err != nil {
+			return err
+		}
+	}
+	if err := nya.BuildSFX(stubPath, fs.Arg(0), *out, nil, nya.SFXFlagConsole); err != nil {
+		return err
+	}
+	fi, err := os.Stat(*out)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%s  %s  (SFX, stub %s)\n", *out, nya.HumanSize(int(fi.Size())), stubPath)
+	return nil
 }
 
 func entryKind(t uint8) string {
