@@ -364,6 +364,7 @@ type lzmaEncoder struct {
 	// Hash chain match finder
 	hashTable []int32 // hash → position
 	chain     []int32 // chain[pos] → prev pos with same hash
+	hashPos   int     // next position not yet indexed
 }
 
 const (
@@ -423,16 +424,34 @@ func (enc *lzmaEncoder) hash4(pos int) uint32 {
 	return (v * 0x9E3779B1) >> (32 - lzmaHashBits)
 }
 
-func (enc *lzmaEncoder) insertHash(pos int) {
-	h := enc.hash4(pos)
-	enc.chain[pos] = enc.hashTable[h]
-	enc.hashTable[h] = int32(pos)
+// advanceHash indexes every position up to but excluding end. The parser
+// looks ahead of the position it has committed to, and those positions have
+// to be in the chain before a match search there can see them. Positions are
+// only ever inserted once; inserting one twice would make its chain entry
+// point at itself.
+func (enc *lzmaEncoder) advanceHash(end int) {
+	if end > len(enc.src) {
+		end = len(enc.src)
+	}
+	for p := enc.hashPos; p < end; p++ {
+		h := enc.hash4(p)
+		enc.chain[p] = enc.hashTable[h]
+		enc.hashTable[h] = int32(p)
+	}
+	if end > enc.hashPos {
+		enc.hashPos = end
+	}
 }
 
 // findMatch finds the best match at current position using hash chain.
 // Returns (distance, length). distance is 0-based (dist=0 means offset 1).
 func (enc *lzmaEncoder) findMatch() (dist uint32, length int) {
-	pos := enc.pos
+	return enc.findMatchAt(enc.pos)
+}
+
+// findMatchAt searches for the best match starting at pos. Positions up to
+// pos must already be indexed; see advanceHash.
+func (enc *lzmaEncoder) findMatchAt(pos int) (dist uint32, length int) {
 	if pos+lzmaMinMatch > len(enc.src) {
 		return 0, 0
 	}
@@ -492,7 +511,10 @@ func (enc *lzmaEncoder) findMatch() (dist uint32, length int) {
 
 // findRepMatch checks if any of the 4 rep distances match at current position.
 func (enc *lzmaEncoder) findRepMatch() (repIdx int, length int) {
-	pos := enc.pos
+	return enc.findRepMatchAt(enc.pos, &enc.reps)
+}
+
+func (enc *lzmaEncoder) findRepMatchAt(pos int, reps *[4]uint32) (repIdx int, length int) {
 	remaining := len(enc.src) - pos
 	if remaining < lzmaMinMatch {
 		return -1, 0
@@ -506,7 +528,7 @@ func (enc *lzmaEncoder) findRepMatch() (repIdx int, length int) {
 	}
 
 	for i := 0; i < 4; i++ {
-		d := int(enc.reps[i])
+		d := int(reps[i])
 		if d >= pos || d < 0 {
 			continue
 		}
@@ -577,6 +599,7 @@ func (enc *lzmaEncoder) encodeLiteral(b byte) {
 	}
 	enc.state = lzmaNextState[enc.state][0]
 	enc.pos++
+	enc.advanceHash(enc.pos)
 }
 
 func (enc *lzmaEncoder) encodeMatch(dist uint32, length int) {
@@ -613,11 +636,8 @@ func (enc *lzmaEncoder) encodeMatch(dist uint32, length int) {
 	enc.reps[0] = dist
 	enc.state = lzmaNextState[enc.state][1]
 
-	// Insert hashes for all positions in the match
-	for i := 0; i < length; i++ {
-		enc.insertHash(enc.pos)
-		enc.pos++
-	}
+	enc.pos += length
+	enc.advanceHash(enc.pos)
 }
 
 func (enc *lzmaEncoder) encodeRepMatch(repIdx int, length int) {
@@ -631,8 +651,8 @@ func (enc *lzmaEncoder) encodeRepMatch(repIdx int, length int) {
 		if length == 1 {
 			enc.rc.encodeBit(&enc.isRep0Long[(enc.state<<lzmaNumPosBitsMax)+posState], 0)
 			enc.state = lzmaNextState[enc.state][3]
-			enc.insertHash(enc.pos)
 			enc.pos++
+			enc.advanceHash(enc.pos)
 			return
 		}
 		enc.rc.encodeBit(&enc.isRep0Long[(enc.state<<lzmaNumPosBitsMax)+posState], 1)
@@ -659,10 +679,8 @@ func (enc *lzmaEncoder) encodeRepMatch(repIdx int, length int) {
 	enc.repLen.encode(enc.rc, uint32(length), posState)
 	enc.state = lzmaNextState[enc.state][2]
 
-	for i := 0; i < length; i++ {
-		enc.insertHash(enc.pos)
-		enc.pos++
-	}
+	enc.pos += length
+	enc.advanceHash(enc.pos)
 }
 
 func (enc *lzmaEncoder) encodeBitTreeReverseOffset(probs []uint16, offset int, numBits int, value uint32) {
@@ -715,23 +733,7 @@ func clz32(x uint32) int {
 
 func (enc *lzmaEncoder) encode() {
 	for enc.pos < len(enc.src) {
-		// Try rep match first (cheap)
-		repIdx, repLen := enc.findRepMatch()
-
-		// Try normal match
-		dist, matchLen := enc.findMatch()
-
-		// Insert current pos hash before deciding
-		enc.insertHash(enc.pos)
-
-		// Decision: prefer rep match if >= match length (saves dist encoding)
-		if repIdx >= 0 && repLen >= matchLen {
-			enc.encodeRepMatch(repIdx, repLen)
-		} else if matchLen >= lzmaMinMatch {
-			enc.encodeMatch(dist, matchLen)
-		} else {
-			enc.encodeLiteral(enc.src[enc.pos])
-		}
+		enc.step()
 	}
 }
 
