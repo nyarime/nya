@@ -359,6 +359,19 @@ func (r *Reader) extractSolid(dir string) error {
 		}
 	}
 
+	// The writer applies the BCJ filter to the whole solid stream, so reverse
+	// it the same way. Branch conversion is position dependent, and undoing it
+	// per file — with each slice restarting at offset zero — corrupts every
+	// converted instruction.
+	for _, e := range r.Entries {
+		if e.EntryType == EntryFile && e.BCJFilter != BCJNone {
+			if arch := BCJIDToArch(e.BCJFilter); arch != "" {
+				ApplyBCJFilterArch(solidData, arch, false)
+			}
+			break
+		}
+	}
+
 	// 按entry切文件
 	for _, e := range r.Entries {
 		outPath, sErr := sanitizePath(dir, e.Path)
@@ -409,15 +422,8 @@ func (r *Reader) extractSolid(dir string) error {
 			end = uint64(len(solidData))
 		}
 
+		// The BCJ filter was already reversed across the whole stream above.
 		fileData := solidData[start:end]
-
-		// Reverse BCJ filter if applied
-		if e.BCJFilter != BCJNone {
-			arch := BCJIDToArch(e.BCJFilter)
-			if arch != "" {
-				ApplyBCJFilterArch(fileData, arch, false)
-			}
-		}
 
 		if err := checkSymlink(outPath); err != nil {
 			return err

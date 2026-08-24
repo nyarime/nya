@@ -2,6 +2,7 @@ package nya
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"math/rand"
 	"os"
@@ -173,6 +174,81 @@ func TestArchiveCompressionRatio(t *testing.T) {
 			t.Errorf("%s: archive is %.1f%% of the input, expected under 75%%", codec, ratio*100)
 		}
 		t.Logf("%s: %d -> %d bytes (%.1f%%)", codec, raw, fi.Size(), ratio*100)
+	}
+}
+
+// Solid archives run the BCJ filter over the whole concatenated stream. The
+// reader used to undo it one file at a time, restarting the position counter
+// at each slice, which silently corrupted every converted branch. Only the
+// files after the first showed it, so drive several executable-looking
+// members through a solid archive.
+func TestSolidBCJRoundtrip(t *testing.T) {
+	dir := t.TempDir()
+	want := map[string][]byte{}
+
+	// x86-ish payload: an ELF header so the architecture is read from
+	// e_machine, over a compressible body, with CALL instructions whose
+	// relative targets all resolve to the same absolute address. That is
+	// exactly the shape BCJ exists for, so the writer will choose it.
+	const absTarget = 0x4000
+	for i := 0; i < 4; i++ {
+		b := bytes.Repeat([]byte("xorl %eax,%eax; nop; "), 1500)
+		copy(b, []byte{0x7f, 'E', 'L', 'F', 2, 1, 1, 0})
+		b[18], b[19] = 0x3e, 0x00 // e_machine = EM_X86_64
+		for p := 64; p+5 < len(b); p += 11 {
+			b[p] = 0xE8
+			rel := uint32(absTarget - (p + 5))
+			binary.LittleEndian.PutUint32(b[p+1:p+5], rel)
+		}
+		name := fmt.Sprintf("bin%d.elf", i)
+		want[name] = b
+		if err := os.WriteFile(filepath.Join(dir, name), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	archive := filepath.Join(t.TempDir(), "solid.nya")
+	f, err := os.Create(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := NewWriterOpts(f, 0, 9, true)
+	if err := w.AddFile(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	r, err := Open(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var filtered bool
+	for _, e := range r.Entries {
+		if e.EntryType == EntryFile && e.BCJFilter != BCJNone {
+			filtered = true
+			break
+		}
+	}
+	if !filtered {
+		t.Skip("the writer did not pick a BCJ filter for this payload")
+	}
+
+	out := t.TempDir()
+	if err := r.Extract(out); err != nil {
+		t.Fatal(err)
+	}
+	for name, content := range want {
+		got, err := os.ReadFile(filepath.Join(out, filepath.Base(dir), name))
+		if err != nil {
+			t.Errorf("%s: %v", name, err)
+			continue
+		}
+		if !bytes.Equal(got, content) {
+			t.Errorf("%s: content mismatch after solid BCJ roundtrip", name)
+		}
 	}
 }
 

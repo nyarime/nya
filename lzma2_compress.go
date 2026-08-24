@@ -13,101 +13,124 @@ import (
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
-// Lzma2Compress compresses src using LZMA2 format (raw, no XZ container).
-// For inputs >= 256KB, uses parallel compression across multiple goroutines.
+// lzma2MaxChunkSpan is the largest uncompressed span one LZMA2 chunk can
+// describe: the control byte carries the top five bits of (size - 1).
+const lzma2MaxChunkSpan = 1 << 21
+
+// lzma2CompBudget closes a chunk before its compressed size overflows the
+// 16-bit field, leaving headroom for the range coder flush.
+const lzma2CompBudget = 65000
+
+// lzma2MinSegment is the smallest span handed to one worker. Segments are
+// independent of each other, so small ones would shrink the effective
+// dictionary back towards the per-chunk behaviour this avoids.
+const lzma2MinSegment = 4 << 20
+
+// Lzma2Compress compresses src into a raw LZMA2 stream (no XZ container).
+//
+// Large inputs are split into segments compressed in parallel. Within a
+// segment one encoder drives every chunk and only the probability models are
+// reset at a chunk boundary, so the match finder — and the dictionary the
+// decoder is holding — carries across and matches reach back through the
+// whole segment. Compressing each 64 KiB chunk in isolation, as this used to,
+// capped the effective dictionary at the chunk size whatever dictSize said.
 func Lzma2Compress(src []byte, dictSize int) ([]byte, error) {
 	if len(src) == 0 {
 		return []byte{0x00}, nil // end marker only
 	}
 	if dictSize <= 0 {
-		dictSize = 1 << 22 // 4MB default
+		dictSize = lzma2DictSize
 	}
 
-	const maxChunk = 1 << 16 // 64KB per LZMA2 chunk (compressed size must fit 16 bits)
-
-	// For small inputs, use single-threaded path
-	if len(src) < 256*1024 {
-		return lzma2CompressSerial(src, dictSize, maxChunk)
-	}
-	return lzma2CompressParallel(src, dictSize, maxChunk)
-}
-
-// lzma2CompressSerial compresses sequentially (original implementation).
-func lzma2CompressSerial(src []byte, dictSize, maxChunk int) ([]byte, error) {
-	var out []byte
-	first := true
-
-	for off := 0; off < len(src); {
-		end := off + maxChunk
-		if end > len(src) {
-			end = len(src)
-		}
-		chunk := src[off:end]
-		uncompSize := len(chunk)
-
-		comp, err := lzmaCompressBlock(chunk, dictSize)
+	bounds := lzma2SegmentBounds(len(src))
+	if len(bounds) == 1 {
+		out, err := lzma2CompressSegment(src, dictSize)
 		if err != nil {
-			return nil, fmt.Errorf("lzma2: compress chunk at offset %d: %w", off, err)
+			return nil, err
 		}
-
-		out = lzma2EmitChunk(out, comp, chunk, uncompSize, first)
-		first = false
-		off = end
+		return append(out, 0x00), nil
 	}
 
-	out = append(out, 0x00) // LZMA2 end marker
-	return out, nil
-}
-
-// lzma2CompressParallel compresses chunks in parallel.
-// Each chunk uses dict reset so chunks are fully independent.
-func lzma2CompressParallel(src []byte, dictSize, maxChunk int) ([]byte, error) {
-	nChunks := (len(src) + maxChunk - 1) / maxChunk
-	nWorkers := nChunks
-	if cpus := runtime.NumCPU(); cpus < nWorkers {
-		nWorkers = cpus
-	}
-
-	type chunkResult struct {
-		comp  []byte
-		chunk []byte
-		err   error
-	}
-	results := make([]chunkResult, nChunks)
-
+	parts := make([][]byte, len(bounds))
+	errs := make([]error, len(bounds))
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, nWorkers)
-
-	for i := 0; i < nChunks; i++ {
+	sem := make(chan struct{}, runtime.NumCPU())
+	for i, b := range bounds {
 		wg.Add(1)
-		go func(idx int) {
+		go func(i, start, end int) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-
-			start := idx * maxChunk
-			end := start + maxChunk
-			if end > len(src) {
-				end = len(src)
-			}
-			chunk := src[start:end]
-			comp, err := lzmaCompressBlock(chunk, dictSize)
-			results[idx] = chunkResult{comp: comp, chunk: chunk, err: err}
-		}(i)
+			parts[i], errs[i] = lzma2CompressSegment(src[start:end], dictSize)
+		}(i, b[0], b[1])
 	}
 	wg.Wait()
 
-	// Assemble LZMA2 stream
 	var out []byte
-	for i, r := range results {
-		if r.err != nil {
-			return nil, fmt.Errorf("lzma2: compress chunk %d: %w", i, r.err)
+	for i, part := range parts {
+		if errs[i] != nil {
+			return nil, fmt.Errorf("lzma2: segment %d: %w", i, errs[i])
 		}
-		out = lzma2EmitChunk(out, r.comp, r.chunk, len(r.chunk), i == 0)
+		out = append(out, part...)
 	}
-	out = append(out, 0x00) // LZMA2 end marker
+	return append(out, 0x00), nil
+}
+
+// lzma2SegmentBounds splits n bytes into at most one segment per CPU, never
+// smaller than lzma2MinSegment.
+func lzma2SegmentBounds(n int) [][2]int {
+	segs := runtime.NumCPU()
+	if max := n / lzma2MinSegment; segs > max {
+		segs = max
+	}
+	if segs < 2 {
+		return [][2]int{{0, n}}
+	}
+	size := (n + segs - 1) / segs
+	var out [][2]int
+	for start := 0; start < n; start += size {
+		end := start + size
+		if end > n {
+			end = n
+		}
+		out = append(out, [2]int{start, end})
+	}
+	return out
+}
+
+// lzma2CompressSegment emits the chunks for one independent segment, without
+// the stream end marker. Every segment starts with a dictionary reset, since
+// the worker never saw the bytes before it.
+func lzma2CompressSegment(src []byte, dictSize int) ([]byte, error) {
+	enc := newLzmaEncoder(src, dictSize)
+
+	var out []byte
+	first := true
+	for enc.pos < len(src) {
+		start := enc.pos
+
+		enc.limit = start + lzma2MaxChunkSpan
+		if enc.limit > len(src) {
+			enc.limit = len(src)
+		}
+		enc.compLimit = lzma2CompBudget
+		enc.rc = newRangeEncoder()
+		enc.resetState()
+
+		enc.encode()
+		enc.rc.finish()
+
+		if enc.pos == start {
+			return nil, fmt.Errorf("lzma2: no progress at offset %d", start)
+		}
+
+		out = lzma2EmitChunk(out, enc.rc.out, src[start:enc.pos], enc.pos-start, first)
+		first = false
+	}
 	return out, nil
 }
+
+
 
 // lzma2MaxCompChunk is the maximum compressed size per LZMA2 chunk (16-bit field).
 const lzma2MaxCompChunk = 1 << 16 // 65536
@@ -138,10 +161,15 @@ func lzma2EmitChunk(out, comp, raw []byte, uncompSize int, first bool) []byte {
 			first = false
 		}
 	} else {
-		// LZMA compressed chunk
+		// LZMA compressed chunk. Reset the state and send fresh properties,
+		// but only reset the dictionary on the segment's first chunk so later
+		// chunks can still match against earlier data.
 		ctrl := byte(0x80)
-		// Each chunk is independently compressed, so always reset dict + state + props
-		ctrl |= 0x60 // dict reset + state reset + new props
+		if first {
+			ctrl |= 0x60 // dict reset + state reset + new props
+		} else {
+			ctrl |= 0x40 // state reset + new props, dictionary preserved
+		}
 		usm1 := uint32(uncompSize - 1)
 		ctrl |= byte((usm1 >> 16) & 0x1F)
 
@@ -361,6 +389,15 @@ type lzmaEncoder struct {
 	matchLen *lzmaLenEncoder
 	repLen   *lzmaLenEncoder
 
+	// limit bounds the region encoded into the current LZMA2 chunk. Matches
+	// may reach back before the chunk start — that is what keeps the
+	// dictionary live across chunks — but never past limit.
+	limit int
+
+	// compLimit closes a chunk once the range coder has produced this many
+	// bytes, keeping it inside the 16-bit compressed size field.
+	compLimit int
+
 	// Hash chain match finder
 	hashTable []int32 // hash → position
 	chain     []int32 // chain[pos] → prev pos with same hash
@@ -380,6 +417,7 @@ func newLzmaEncoder(src []byte, dictSize int) *lzmaEncoder {
 		rc:       newRangeEncoder(),
 		src:      src,
 		dictSize: dictSize,
+		limit:    len(src),
 		lc:       3,
 		lp:       0,
 		pb:       2,
@@ -393,7 +431,21 @@ func newLzmaEncoder(src []byte, dictSize int) *lzmaEncoder {
 	enc.hashTable = make([]int32, lzmaHashSize)
 	enc.chain = make([]int32, len(src))
 
-	// Init
+	for i := range enc.hashTable {
+		enc.hashTable[i] = -1
+	}
+	for i := range enc.chain {
+		enc.chain[i] = -1
+	}
+	enc.resetState()
+	return enc
+}
+
+// resetState returns the probability models and LZMA state to their initial
+// values, matching a decoder that saw a chunk flagged for a state reset. The
+// match finder is deliberately untouched, so the dictionary stays live across
+// chunk boundaries.
+func (enc *lzmaEncoder) resetState() {
 	initProbs(enc.isMatch[:])
 	initProbs(enc.isRep[:])
 	initProbs(enc.isRepG0[:])
@@ -406,14 +458,10 @@ func newLzmaEncoder(src []byte, dictSize int) *lzmaEncoder {
 		initProbs(enc.posSlot[i])
 	}
 	initProbs(enc.litProbs)
-	for i := range enc.hashTable {
-		enc.hashTable[i] = -1
-	}
-	for i := range enc.chain {
-		enc.chain[i] = -1
-	}
+	enc.matchLen.reset()
+	enc.repLen.reset()
+	enc.state = 0
 	enc.reps = [4]uint32{0, 0, 0, 0}
-	return enc
 }
 
 func (enc *lzmaEncoder) hash4(pos int) uint32 {
@@ -452,7 +500,7 @@ func (enc *lzmaEncoder) findMatch() (dist uint32, length int) {
 // findMatchAt searches for the best match starting at pos. Positions up to
 // pos must already be indexed; see advanceHash.
 func (enc *lzmaEncoder) findMatchAt(pos int) (dist uint32, length int) {
-	if pos+lzmaMinMatch > len(enc.src) {
+	if pos+lzmaMinMatch > enc.limit {
 		return 0, 0
 	}
 
@@ -466,7 +514,7 @@ func (enc *lzmaEncoder) findMatchAt(pos int) (dist uint32, length int) {
 		maxDist = enc.dictSize
 	}
 
-	remaining := len(enc.src) - pos
+	remaining := enc.limit - pos
 	maxLen := lzmaMaxMatch
 	if remaining < maxLen {
 		maxLen = remaining
@@ -515,7 +563,7 @@ func (enc *lzmaEncoder) findRepMatch() (repIdx int, length int) {
 }
 
 func (enc *lzmaEncoder) findRepMatchAt(pos int, reps *[4]uint32) (repIdx int, length int) {
-	remaining := len(enc.src) - pos
+	remaining := enc.limit - pos
 	if remaining < lzmaMinMatch {
 		return -1, 0
 	}
@@ -732,7 +780,10 @@ func clz32(x uint32) int {
 }
 
 func (enc *lzmaEncoder) encode() {
-	for enc.pos < len(enc.src) {
+	for enc.pos < enc.limit {
+		if enc.compLimit > 0 && len(enc.rc.out) >= enc.compLimit {
+			return
+		}
 		enc.step()
 	}
 }

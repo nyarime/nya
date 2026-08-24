@@ -45,7 +45,7 @@ func (enc *lzmaEncoder) step() {
 	// One position of lookahead. Emitting a literal here can pay for itself
 	// if it unlocks a much better match at pos+1, so compare the two plans
 	// over the bytes each of them covers.
-	if best.length < lzmaNiceLen && pos+1 < len(enc.src) {
+	if best.length < lzmaNiceLen && pos+1 < enc.limit {
 		litPrice := enc.priceLiteral(pos)
 
 		savedState := enc.state
@@ -148,7 +148,7 @@ func candidateLengths(maxLen int) []int {
 // given 0-based repeat distance.
 func (enc *lzmaEncoder) repMatchesAt(pos, dist, n int) bool {
 	src := pos - dist - 1
-	if src < 0 || pos+n > len(enc.src) {
+	if src < 0 || pos+n > enc.limit {
 		return false
 	}
 	for i := 0; i < n; i++ {
