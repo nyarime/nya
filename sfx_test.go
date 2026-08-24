@@ -66,10 +66,26 @@ func TestBuildSFXRoundTrip(t *testing.T) {
 		t.Fatalf("extract via OpenAny: %q", got)
 	}
 
-	// Run stub in dev mode (plain .nya arg)
-	cmd := exec.Command(stubSrc, archive, "-o", filepath.Join(dir, "out2"), "-y")
+	// Run stub in dev mode (flags before archive path)
+	out2 := filepath.Join(dir, "out2")
+	cmd := exec.Command(stubSrc, "-o", out2, "-y", archive)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("stub extract: %v\n%s", err, out)
+	}
+	got2, _ := os.ReadFile(filepath.Join(out2, "src", "hello.txt"))
+	if string(got2) != "hello sfx" {
+		t.Fatalf("stub extract content: %q", got2)
+	}
+
+	// Self-extract: run the SFX binary itself
+	out3 := filepath.Join(dir, "out3")
+	cmd2 := exec.Command(sfxOut, "-o", out3, "-y")
+	if out, err := cmd2.CombinedOutput(); err != nil {
+		t.Fatalf("sfx self-extract: %v\n%s", err, out)
+	}
+	got3, _ := os.ReadFile(filepath.Join(out3, "src", "hello.txt"))
+	if string(got3) != "hello sfx" {
+		t.Fatalf("sfx self-extract content: %q", got3)
 	}
 }
 

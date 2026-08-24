@@ -52,6 +52,8 @@ nya verify backup.nya                              # check stored digests
 nya info backup.nya                                # header details, including codec
 nya repair damaged.nya fixed.nya                   # rebuild using the parity data
 nya manifest GamePack.nya -o GamePack.nyam --url https://cdn/game.nya  # download index
+nya sfx pack.nya -o pack.bin                  # wrap as self-extractor (Rust stub)
+nya create -sfx game.bin -level 3 ./GameData/ # create + wrap in one step
 ```
 
 ### Large package distribution (`nya-get`)
@@ -195,12 +197,9 @@ See **[COMPATIBILITY.md](COMPATIBILITY.md)** for the long-term policy (one
 
 - [COMPATIBILITY.md](COMPATIBILITY.md) — **v1 LTS policy** (read before adopting)
 - [SPEC.md](SPEC.md) — on-disk NYA archive layout
-<<<<<<< HEAD
 - [SPEC-EXTENSIONS.md](SPEC-EXTENSIONS.md) — **v1 foundation** (tails, solid, dedup, NyaFS, sessions)
 - [SPEC-CODECS.md](SPEC-CODECS.md) — **NYA-Zstd & NYA-LZMA2** roles and roadmap
-=======
 - [SPEC-SFX.md](SPEC-SFX.md) — **self-extracting** stub + footer (Rust)
->>>>>>> origin/cursor/nya-rust-sfx-d053
 - [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) — `.nyam` manifest and `nya-get` transport blocks
 
 ### Self-extracting archives (7-Zip-style)
