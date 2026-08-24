@@ -5,6 +5,10 @@ byte offsets from the start of the file unless stated otherwise.
 
 Long-term compatibility rules: **[COMPATIBILITY.md](COMPATIBILITY.md)**.
 
+Extension foundation (tails, solid groups, dedup, profiles):
+**[SPEC-EXTENSIONS.md](SPEC-EXTENSIONS.md)**. Codec roles:
+**[SPEC-CODECS.md](SPEC-CODECS.md)**.
+
 ## Compatibility policy (summary)
 
 - **`.nya` is the only archive container.** `.nyam` is an optional download
@@ -28,11 +32,20 @@ Long-term compatibility rules: **[COMPATIBILITY.md](COMPATIBILITY.md)**.
 +---------------------------+
 | Symbol Hash Table         |  uint32 count, then count * uint32
 +---------------------------+
+| Tail Chain (optional)     |  at `Reserved.TailChainOffset`; see SPEC-EXTENSIONS.md
++---------------------------+
+| Archive Footer (optional) |  if `FlagHasFooter`
++---------------------------+
 ```
 
 `CentralDirOffset` is always `128 + DataAreaSize`; readers should trust the
 header field rather than recomputing it, since it is what locates the
 recovery section after a truncation.
+
+When the header reserved region records a non-zero tail chain offset, optional
+extension records (download index, dedup map, solid groups, sessions) follow
+the symbol hash table. Readers that do not implement an extension MUST skip
+unknown tail records per [SPEC-EXTENSIONS.md](SPEC-EXTENSIONS.md).
 
 ## Global header
 
@@ -48,7 +61,7 @@ recovery section after a truncation.
 | 40 | 8 | CreationTime | Unix nanoseconds, signed |
 | 48 | 8 | TotalOrigSize | sum of all entry sizes before compression |
 | 56 | 32 | Blake3 | reserved for a digest over the data area; currently zero |
-| 88 | 40 | Reserved | zero |
+| 88 | 40 | Reserved | see [SPEC-EXTENSIONS.md](SPEC-EXTENSIONS.md) (tail chain, session, profile) |
 
 A reader must reject a file whose magic does not match, and one whose
 `VersionMajor` is above 1.
@@ -170,15 +183,16 @@ and must not follow an existing symlink when writing.
 | Value | Codec | Status |
 | ---: | --- | --- |
 | 0 | stored | level 0 |
-| 1 | Zstandard | levels 1-4 |
+| 1 | NYA-Zstd (RFC 8878) | levels 1–4; planned default — see [SPEC-CODECS.md](SPEC-CODECS.md) |
 | 2 | S2 | reserved |
 | 3 | Brotli | reserved |
 | 4 | LZ4 | reserved |
-| 5 | Zstandard with dictionary | reserved |
-| 6 | LZMA2 | levels 5-9, the default |
+| 5 | NYA-Zstd with dictionary | reserved |
+| 6 | NYA-LZMA2 (raw stream) | levels 5–9, `--best` |
 
 Only 0, 1 and 6 are produced and consumed today. The ID is recorded per
-entry, so a reader must not assume one codec for a whole archive.
+entry, so a reader must not assume one codec for a whole archive. Encoder
+details and level defaults: [SPEC-CODECS.md](SPEC-CODECS.md).
 
 ### FEC types
 

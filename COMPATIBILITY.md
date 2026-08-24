@@ -49,27 +49,51 @@ optional tail sections). Bump **major** only for breaking layout changes.
 4. **Reserved space:** the 40-byte header reserved region and unset flag bits
    are for extension; do not use for unrelated formats.
 
+## v1 foundation vs v1.x features
+
+**Foundation (freeze before first external adopter):** container topology, tail
+chain location, header reserved layout, extension skip rules, CompressionID
+semantics, profile flag bits. Defined in:
+
+- [SPEC.md](SPEC.md) — core layout
+- [SPEC-EXTENSIONS.md](SPEC-EXTENSIONS.md) — solid groups, dedup, NyaFS, sessions
+- [SPEC-CODECS.md](SPEC-CODECS.md) — NYA-Zstd & NYA-LZMA2 roles
+
+**v1.x (iterate after foundation is fixed):** writer implementations for tails,
+solid grouping heuristics, dedup, embedded download index, NyaFS mount tools,
+encoder improvements within the same CompressionID bitstreams.
+
+No external users yet means the foundation can still be adjusted **only until
+the v1 freeze announcement**; after that, byte layouts in the documents above
+are LTS.
+
 ## Extension rules (Win32-style)
 
 Allowed in **v1.x** without new file extension:
 
 - New **flag bits** (currently bit 4 `HasDownloadIndex` is reserved)
 - Populate **Blake3** global header field (currently zero)
+- **Tail chain** records ([SPEC-EXTENSIONS.md](SPEC-EXTENSIONS.md))
+- **DirEntry v3** (solid group, dedup, profile entry flags)
 - **Multi-chunk entries** (`ChunkCount > 1`) with minor bump
 - Stronger **encryption** with KDF metadata in reserved/header v2 fields
-- **Embedded download index** (alternative to `.nyam` sidecar)
+- **Embedded download index** (tail type `0x0001`, alternative to `.nyam`)
+- **NYA-Zstd / NYA-LZMA2 encoder upgrades** (same CompressionID; see [SPEC-CODECS.md](SPEC-CODECS.md))
 
 Requires **major 2** (new magic or breaking directory layout):
 
 - Changing chunk header size
 - Moving recovery section before central directory without dual-read path
-- Removing support for minor 0 archives
+- Reassigning meaning of allocated header reserved bytes
+- Removing support for minor 0 archives (if ever published as LTS)
 
 ## Related files
 
 | File | Scope |
 | --- | --- |
 | [SPEC.md](SPEC.md) | On-disk `.nya` layout |
+| [SPEC-EXTENSIONS.md](SPEC-EXTENSIONS.md) | **v1 extension foundation** (tails, profiles) |
+| [SPEC-CODECS.md](SPEC-CODECS.md) | **NYA-Zstd & NYA-LZMA2** policy |
 | [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) | `.nyam` manifest (distribution only) |
 
 ## Application profiles (informative)
@@ -82,3 +106,14 @@ Tools may use `.nya` for different jobs without new extensions:
   such as `_nyarc/...` inside the same `.nya` container
 
 Profiles share the **same v1 container**; only entry naming and tooling differ.
+Profile bits and NyaFS conventions are in [SPEC-EXTENSIONS.md](SPEC-EXTENSIONS.md).
+
+## Codec policy (summary)
+
+| Codec | CompressionID | Role |
+| --- | ---: | --- |
+| **NYA-Zstd** | 1 | House codec — speed, default levels (planned), RFC 8878 |
+| **NYA-LZMA2** | 6 | Best ratio — levels 7–9, raw LZMA2 bitstream |
+
+Encoder improvements ship in software releases without changing IDs. See
+[SPEC-CODECS.md](SPEC-CODECS.md).

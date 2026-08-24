@@ -9,10 +9,14 @@ reference implementation, `nya` CLI, and `nya-get` downloader.
 analysis tool (BinWalk / IDA-like); it may use `.nya` as an internal analysis
 database format, but all format development happens here.
 
-Everything is pure Go with no cgo and only two dependencies. The compressors,
-the BLAKE3 implementation and the container are all written from scratch;
-`github.com/nyarime/gofec` supplies the RaptorQ and LDPC codes and
-`golang.org/x/sys` the extended attribute syscalls.
+Everything is pure Go with no cgo and only two dependencies. The compressors
+(**NYA-Zstd**, **NYA-LZMA2**), the BLAKE3 implementation and the container are
+all written from scratch; `github.com/nyarime/gofec` supplies the RaptorQ and
+LDPC codes and `golang.org/x/sys` the extended attribute syscalls.
+
+**NYA-Zstd** is the house codec (RFC 8878, speed + embed). **NYA-LZMA2** is
+the `--best` lane (standard raw LZMA2 bitstream). Both iterate in software
+without changing on-disk IDs — see [SPEC-CODECS.md](SPEC-CODECS.md).
 
 ## What is in an archive
 
@@ -191,4 +195,6 @@ See **[COMPATIBILITY.md](COMPATIBILITY.md)** for the long-term policy (one
 
 - [COMPATIBILITY.md](COMPATIBILITY.md) — **v1 LTS policy** (read before adopting)
 - [SPEC.md](SPEC.md) — on-disk NYA archive layout
+- [SPEC-EXTENSIONS.md](SPEC-EXTENSIONS.md) — **v1 foundation** (tails, solid, dedup, NyaFS, sessions)
+- [SPEC-CODECS.md](SPEC-CODECS.md) — **NYA-Zstd & NYA-LZMA2** roles and roadmap
 - [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) — `.nyam` manifest and `nya-get` transport blocks

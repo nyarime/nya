@@ -154,11 +154,14 @@ nya manifest GamePack.nya -o GamePack.nyam \
 
 Implementation scans the existing `.nya` on disk; no archive rewrite required.
 
-## Future: embedded download index (format v1.1+)
+## Embedded download index (tail type `0x0001`)
 
-Reserved global header flag bit 4 (`HasDownloadIndex`): optional binary block
-index appended before the recovery section so a manifest can be reconstructed
-without scanning. v1.0 archives rely on the `.nyam` sidecar only.
+Binary layout and tail chain placement: [SPEC-EXTENSIONS.md](SPEC-EXTENSIONS.md)
+§ Download index tail. Global header flag bit 4 (`HasDownloadIndex`) SHOULD be
+set when the tail is present.
+
+Phase 1: `.nyam` sidecar only (current). Phase 2: `nya manifest --embed` writes
+tail type `0x0001` without changing the JSON schema fields documented here.
 
 ## Version history
 
