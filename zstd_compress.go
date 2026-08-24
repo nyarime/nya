@@ -11,6 +11,11 @@ import (
 	"sync"
 )
 
+// zstdMaxBlock is the largest uncompressed span per zstd block inside a
+// frame. Larger blocks let LZ77 find longer cross-block matches within the
+// encoder window.
+const zstdMaxBlock = 512 * 1024
+
 // ZstdCompress compresses data using Zstandard format (RFC 8878).
 // level: 1 (fastest) to 19 (best compression). Default 3 if 0.
 func ZstdCompress(src []byte, level int) []byte {
@@ -58,7 +63,7 @@ func zstdCompressFrameWithDict(src []byte, level int, dict []byte) []byte {
 	out = append(out, fcs...)
 
 	// Compress as single block with dict prefix
-	const maxBlock = 128 * 1024
+	const maxBlock = zstdMaxBlock
 	var enc zstdEncoderState
 	// Seed window with dict
 	enc.seedWindow(dict)
@@ -147,7 +152,7 @@ func zstdCompressFrame(src []byte, level int) []byte {
 	out = append(out, fhd)
 	out = append(out, fcs...)
 
-	const maxBlock = 128 * 1024 // 512KB for better LZ77 match finding
+	const maxBlock = zstdMaxBlock // 512KB for better LZ77 match finding
 	nBlocks := (len(src) + maxBlock - 1) / maxBlock
 
 	// For large inputs, compress blocks in parallel
@@ -244,7 +249,7 @@ func zstdCompressFrameWindowed(src []byte, level int) []byte {
 	out = append(out, fhd)
 	out = append(out, fcs...)
 
-	const maxBlock = 128 * 1024
+	const maxBlock = zstdMaxBlock
 	var enc zstdEncoderState
 
 	for i := 0; i < len(src); {

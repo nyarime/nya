@@ -8,9 +8,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
-	"runtime"
 	"strconv"
-	"sync"
 	"time"
 )
 
@@ -170,66 +168,12 @@ func (nw *Writer) AddFile(path string) error {
 		return err
 	}
 	if info.IsDir() {
-		var allPaths []string
-		filepath.Walk(path, func(p string, fi os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-			// Collect dirs (except root) and files/symlinks
-			if p != path {
-				allPaths = append(allPaths, p)
-			}
-			return nil
-		})
-		// Also collect symlinks that Walk doesn't follow — re-walk with Lstat
-		var files []string
-		for _, p := range allPaths {
-			fi, err := os.Lstat(p)
-			if err != nil {
-				continue
-			}
-			if fi.IsDir() {
-				// Add directory entry
-				relPath, _ := filepath.Rel(nw.basePath, p)
-				nw.addDirEntry(relPath, fi)
-				continue
-			}
-			files = append(files, p)
+		allPaths, err := collectDirectoryPaths(path)
+		if err != nil {
+			return err
 		}
-		if nw.solid {
-			// Solid mode: sequential add (order matters)
-			for _, f := range files {
-				fi, _ := os.Stat(f)
-				if err := nw.addFile(f, fi); err != nil {
-					return err
-				}
-			}
-			return nil
-		}
-		workers := runtime.NumCPU()
-		if nw.workers > 0 {
-			workers = nw.workers
-		}
-		if workers > 4 {
-			workers = 4
-		}
-		sem := make(chan struct{}, workers)
-		var mu sync.Mutex
-		var wg sync.WaitGroup
-		for _, f := range files {
-			wg.Add(1)
-			sem <- struct{}{}
-			go func(fp string) {
-				defer wg.Done()
-				defer func() { <-sem }()
-				fi, _ := os.Stat(fp)
-				mu.Lock()
-				nw.addFile(fp, fi)
-				mu.Unlock()
-			}(f)
-		}
-		wg.Wait()
-		return nil
+		files := splitDirectoryPaths(nw.basePath, allPaths, nw)
+		return nw.addCollectedFiles(files)
 	}
 	return nw.addFile(path, info)
 }

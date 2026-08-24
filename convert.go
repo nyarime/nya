@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
-	"sync"
 )
 
 // ConvertOptions mirrors create-time NYA writer settings plus source password.
@@ -118,70 +116,12 @@ func (nw *Writer) AddDirectoryContents(dir string) error {
 }
 
 func (nw *Writer) addDirectoryTree(root string) error {
-	var allPaths []string
-	if err := filepath.Walk(root, func(p string, fi os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if p != root {
-			allPaths = append(allPaths, p)
-		}
-		return nil
-	}); err != nil {
+	allPaths, err := collectDirectoryPaths(root)
+	if err != nil {
 		return err
 	}
-
-	var files []string
-	for _, p := range allPaths {
-		fi, err := os.Lstat(p)
-		if err != nil {
-			continue
-		}
-		if fi.IsDir() {
-			relPath, _ := filepath.Rel(nw.basePath, p)
-			nw.addDirEntry(relPath, fi)
-			continue
-		}
-		files = append(files, p)
-	}
-
-	if nw.solid {
-		for _, f := range files {
-			fi, _ := os.Stat(f)
-			if err := nw.addFile(f, fi); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-
-	workers := runtime.NumCPU()
-	if nw.workers > 0 {
-		workers = nw.workers
-	}
-	if workers > 4 {
-		workers = 4
-	}
-	sem := make(chan struct{}, workers)
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	var firstErr error
-	for _, f := range files {
-		wg.Add(1)
-		sem <- struct{}{}
-		go func(fp string) {
-			defer wg.Done()
-			defer func() { <-sem }()
-			fi, _ := os.Stat(fp)
-			mu.Lock()
-			if firstErr == nil {
-				firstErr = nw.addFile(fp, fi)
-			}
-			mu.Unlock()
-		}(f)
-	}
-	wg.Wait()
-	return firstErr
+	files := splitDirectoryPaths(nw.basePath, allPaths, nw)
+	return nw.addCollectedFiles(files)
 }
 
 // Convertable reports whether src looks like a supported foreign archive.
