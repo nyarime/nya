@@ -29,7 +29,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
-      - run: go test -run TestCompressComparisonReport -timeout 30m -v ./...
+      - name: Install reference compressors
+        run: sudo apt-get update && sudo apt-get install -y xz-utils p7zip-full zstd
+      - run: NYA_BENCH_WRITE=1 go test -run TestREADMEBenchmarkSuite -timeout 60m -v ./...
 
   # BLAKE3 and the zstd match finder ship architecture-specific assembly, so
   # check that the generic fallbacks still build everywhere else — including
