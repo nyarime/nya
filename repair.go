@@ -68,8 +68,8 @@ func Repair(path string, outputPath string) (*RepairResult, error) {
 		h := Blake3Sum256(compData); actualHash := binary.LittleEndian.Uint64(h[:8])
 		if actualHash != ch.Blake3Short {
 			result.CorruptedChunks++
-			fmt.Printf("  chunk %s: CRC mismatch (expected %x, got %x)\n", e.Path, ch.Blake3Short, actualHash)
-			fmt.Printf("  ⚠️ %s: CRC不匹配, 尝试修复...\n", e.Path)
+			logf("  chunk %s: CRC mismatch (expected %x, got %x)\n", e.Path, ch.Blake3Short, actualHash)
+			logf("  ⚠️ %s: CRC不匹配, 尝试修复...\n", e.Path)
 
 			// RaptorQ修复
 			// 合并所有hash为flat
@@ -77,7 +77,7 @@ func Repair(path string, outputPath string) (*RepairResult, error) {
 			repaired, err := raptorqRepair(compData, fecData, int(e.FECParams.Param3), allH)
 			if err != nil {
 				result.FailedChunks++
-				fmt.Printf("  ❌ %s: 修复失败\n", e.Path)
+				logf("  ❌ %s: 修复失败\n", e.Path)
 				continue
 			}
 
@@ -96,7 +96,7 @@ func Repair(path string, outputPath string) (*RepairResult, error) {
 			r.data[off+31] = byte(newHash >> 56)
 
 			result.RepairedChunks++
-			fmt.Printf("  ✅ %s: 修复成功!\n", e.Path)
+			logf("  ✅ %s: 修复成功!\n", e.Path)
 		}
 	}
 
@@ -134,7 +134,7 @@ func repairSolid(r *Reader, path, outputPath string) (*RepairResult, error) {
 
 	if actualHash != ch.Blake3Short {
 		result.CorruptedChunks = 1
-		fmt.Println("  ⚠️ Solid chunk损坏, 尝试修复...")
+		logf("  ⚠️ Solid chunk损坏, 尝试修复..." + "\n")
 
 		repaired, err := raptorqRepair(compData, fecData, 10)
 		if err != nil {
@@ -143,7 +143,7 @@ func repairSolid(r *Reader, path, outputPath string) (*RepairResult, error) {
 		}
 		copy(r.data[ChunkHeaderSize:], repaired[:len(compData)])
 		result.RepairedChunks = 1
-		fmt.Println("  ✅ Solid chunk修复成功!")
+		logf("  ✅ Solid chunk修复成功!" + "\n")
 
 		out := outputPath
 		if out == "" { out = path }
@@ -164,8 +164,8 @@ func rawRepair(path string, outputPath string) (*RepairResult, error) {
 	gh, err := ReadGlobalHeader(f)
 	if err != nil { return nil, fmt.Errorf("global header corrupt: %w", err) }
 
-	fmt.Printf("  Raw repair mode (CentralDir damaged)\n")
-	fmt.Printf("  DataArea: %d, CentralDir at %d (%d bytes)\n",
+	logf("  Raw repair mode (CentralDir damaged)\n")
+	logf("  DataArea: %d, CentralDir at %d (%d bytes)\n",
 		gh.DataAreaSize, gh.CentralDirOffset, gh.CentralDirSize)
 
 	data := make([]byte, gh.DataAreaSize)
@@ -183,7 +183,7 @@ func rawRepair(path string, outputPath string) (*RepairResult, error) {
 	}
 
 	fecStart := fecLenPos + 4
-	fmt.Printf("  FEC: %d bytes at offset %d\n", fecLen, fecStart)
+	logf("  FEC: %d bytes at offset %d\n", fecLen, fecStart)
 
 	fecData := make([]byte, fecLen)
 	f.ReadAt(fecData, fecStart)
@@ -200,7 +200,7 @@ func rawRepair(path string, outputPath string) (*RepairResult, error) {
 		binary.Read(f, binary.LittleEndian, &h)
 		hashes = append(hashes, h)
 	}
-	fmt.Printf("  Hashes: %d\n", hashCount)
+	logf("  Hashes: %d\n", hashCount)
 
 	if len(data) < ChunkHeaderSize {
 		return nil, fmt.Errorf("data too small")
@@ -214,7 +214,7 @@ func rawRepair(path string, outputPath string) (*RepairResult, error) {
 	if compEnd > uint64(len(data)) { compEnd = uint64(len(data)) }
 	compData := data[compStart:compEnd]
 
-	fmt.Printf("  Chunk: comp=%d, repair=%d, sym=%d\n",
+	logf("  Chunk: comp=%d, repair=%d, sym=%d\n",
 		ch.CompressedSize, ch.RepairCount, ch.SymbolSize)
 
 	repaired, err := raptorqRepair(compData, fecData, int(ch.RepairCount), hashes)
@@ -233,6 +233,6 @@ func rawRepair(path string, outputPath string) (*RepairResult, error) {
 		wf.Close()
 	}
 
-	fmt.Println("  ✅ Raw repair!")
+	logf("  ✅ Raw repair!" + "\n")
 	return &RepairResult{TotalChunks: 1, CorruptedChunks: 1, RepairedChunks: 1}, nil
 }

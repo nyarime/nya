@@ -2,11 +2,9 @@ package nya
 
 import (
 	"bytes"
-	"fmt"
-	
 
-	"github.com/nyarime/gofec/raptorq"
 	"github.com/nyarime/gofec/ldpc"
+	"github.com/nyarime/gofec/raptorq"
 )
 
 var globalHashTable []uint32
@@ -192,7 +190,6 @@ func raptorqRepair(data []byte, fecData []byte, percent int, hashTable ...[]uint
 		}
 
 
-		if chunk % 100 == 0 { fmt.Printf("\r  Repairing: %d/%d chunks", chunk+1, numChunks) }
 		// Write recovered source symbols back (skip ChunkHeader)
 		// Source symbols start at chunk*chunkSize in padded space
 		// But in actual data, compData starts at ChunkHeaderSize offset

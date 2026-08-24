@@ -26,7 +26,19 @@ type Reader struct {
 	Password []byte
 	Header  *GlobalHeader
 	Entries []DirEntry
+
+	// OnEntry, when set, is called by Extract once per entry with the error
+	// from restoring it, so callers can report progress. Extract itself is
+	// silent.
+	OnEntry func(e DirEntry, err error)
+
 	data    []byte
+}
+
+func (r *Reader) notify(e DirEntry, err error) {
+	if r.OnEntry != nil {
+		r.OnEntry(e, err)
+	}
 }
 
 func Open(path string, password ...[]byte) (*Reader, error) {
@@ -112,13 +124,13 @@ func (r *Reader) Extract(dir string) error {
 			os.Remove(outPath)
 			os.Symlink(e.LinkTarget, outPath)
 			os.Lchown(outPath, int(e.Uid), int(e.Gid))
-			fmt.Printf("  ✅ %s -> %s (symlink)\n", e.Path, e.LinkTarget)
+			r.notify(e, nil)
 			continue
 		case EntryHardlink:
 			target, _ := sanitizePath(dir, e.LinkTarget)
 			os.Remove(outPath)
 			os.Link(target, outPath)
-			fmt.Printf("  ✅ %s => %s (hardlink)\n", e.Path, e.LinkTarget)
+			r.notify(e, nil)
 			continue
 		case EntryCharDev, EntryBlockDev:
 			var mode uint32 = 0666
@@ -128,16 +140,16 @@ func (r *Reader) Extract(dir string) error {
 				mode |= 0060000 // S_IFBLK
 			}
 			if err := mknod(outPath, mode, e.DevMajor, e.DevMinor); err != nil {
-				fmt.Printf("  ⚠️ %s (device node: %v)\n", e.Path, err)
+				r.notify(e, err)
 			} else {
 				restoreMeta(outPath, &e)
-				fmt.Printf("  ✅ %s (device %d:%d)\n", e.Path, e.DevMajor, e.DevMinor)
+				r.notify(e, nil)
 			}
 			continue
 		case EntryFifo:
 			mkfifo(outPath, e.Mode)
 			restoreMeta(outPath, &e)
-			fmt.Printf("  ✅ %s (fifo)\n", e.Path)
+			r.notify(e, nil)
 			continue
 		}
 
@@ -209,35 +221,49 @@ func (r *Reader) Extract(dir string) error {
 		if err := checkSymlink(outPath); err != nil { return err }
 		os.WriteFile(outPath, fullData.Bytes(), os.FileMode(e.Mode))
 		restoreMeta(outPath, &e)
-		fmt.Printf("  ✅ %s (%s, %d chunks)\n", e.Path, HumanSize(fullData.Len()), e.ChunkCount)
+		r.notify(e, nil)
 	}
 	return nil
 }
 
+// Verify recomputes the BLAKE3 digest stored in every chunk header and
+// reports whether the data area is intact.
 func (r *Reader) Verify() bool {
+	// In a solid archive the whole payload is one chunk at the start of the
+	// data area; entry FirstDataOff values are offsets into the decompressed
+	// stream, not into the data area, so they cannot be walked here.
+	if r.Header != nil && r.Header.Flags&FlagSolidCompress != 0 {
+		return r.verifyChunkAt(0)
+	}
+
 	for _, e := range r.Entries {
 		if e.EntryType != EntryFile { continue }
 		off := e.FirstDataOff
 		for c := uint32(0); c < e.ChunkCount; c++ {
-			if off+ChunkHeaderSize > uint64(len(r.data)) { return false }
-			chBuf := bytes.NewReader(r.data[off:])
-			ch, _ := ReadChunkHeader(chBuf)
-			
-			// BLAKE3校验
-			compStart := off + ChunkHeaderSize
-			compEnd := compStart + ch.CompressedSize
-			if compEnd > uint64(len(r.data)) { return false }
-			compData := r.data[compStart:compEnd]
-			h := Blake3Sum256(compData)
-			actual := binary.LittleEndian.Uint64(h[:8])
-			if actual != ch.Blake3Short {
+			if !r.verifyChunkAt(off) {
 				return false
 			}
-			
-			_ = uint64(ch.RepairCount) * uint64(ch.SymbolSize)
+			chBuf := bytes.NewReader(r.data[off:])
+			ch, err := ReadChunkHeader(chBuf)
+			if err != nil { return false }
+			off += ChunkHeaderSize + uint64(ch.CompressedSize) +
+				uint64(ch.RepairCount)*uint64(ch.SymbolSize)
 		}
 	}
 	return true
+}
+
+func (r *Reader) verifyChunkAt(off uint64) bool {
+	if off+ChunkHeaderSize > uint64(len(r.data)) { return false }
+	ch, err := ReadChunkHeader(bytes.NewReader(r.data[off:]))
+	if err != nil { return false }
+
+	compStart := off + ChunkHeaderSize
+	compEnd := compStart + ch.CompressedSize
+	if compEnd > uint64(len(r.data)) { return false }
+
+	h := Blake3Sum256(r.data[compStart:compEnd])
+	return binary.LittleEndian.Uint64(h[:8]) == ch.Blake3Short
 }
 
 func (r *Reader) extractSolid(dir string) error {
@@ -296,7 +322,7 @@ func (r *Reader) extractSolid(dir string) error {
 			os.Remove(outPath)
 			os.Symlink(e.LinkTarget, outPath)
 			os.Lchown(outPath, int(e.Uid), int(e.Gid))
-			fmt.Printf("  ✅ %s -> %s (symlink)\n", e.Path, e.LinkTarget)
+			r.notify(e, nil)
 			continue
 		case EntryHardlink:
 			target, _ := sanitizePath(dir, e.LinkTarget)
@@ -336,7 +362,7 @@ func (r *Reader) extractSolid(dir string) error {
 		if err := checkSymlink(outPath); err != nil { return err }
 		os.WriteFile(outPath, fileData, os.FileMode(e.Mode))
 		restoreMeta(outPath, &e)
-		fmt.Printf("  ✅ %s (%s)\n",e.Path, HumanSize(len(fileData)))
+		r.notify(e, nil)
 	}
 	return nil
 }

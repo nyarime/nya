@@ -51,7 +51,7 @@ func GenerateRecoveryVolumes(archivePath string, count int) error {
 		f.Write(vol)
 		f.Close()
 		
-		fmt.Printf("  ✅ %s (%s)\n", volPath, HumanSize(len(vol)+52))
+		logf("  ✅ %s (%s)\n", volPath, HumanSize(len(vol)+52))
 	}
 	
 	return nil
@@ -86,7 +86,7 @@ func RecoverFromVolumes(archivePath string) error {
 		// 验证当前归档是否损坏
 		actualHash := sha256.Sum256(data)
 		if actualHash == expectedHash {
-			fmt.Println("✅ Archive OK, no recovery needed")
+			logf("✅ Archive OK, no recovery needed" + "\n")
 			return nil
 		}
 		
@@ -101,7 +101,7 @@ func RecoverFromVolumes(archivePath string) error {
 		recoveredHash := sha256.Sum256(recovered)
 		if recoveredHash == expectedHash {
 			os.WriteFile(archivePath, recovered, 0644)
-			fmt.Printf("✅ Archive recovered from %s\n", volPath)
+			logf("✅ Archive recovered from %s\n", volPath)
 			return nil
 		}
 	}
@@ -117,13 +117,13 @@ func ListRecoveryVolumes(archivePath string) {
 		volPath := fmt.Sprintf("%s.r%02d", base, i)
 		info, err := os.Stat(volPath)
 		if err != nil { break }
-		fmt.Printf("  Recovery %02d: %s (%s)\n", i, volPath, HumanSize(int(info.Size())))
+		logf("  Recovery %02d: %s (%s)\n", i, volPath, HumanSize(int(info.Size())))
 		found++
 	}
 	if found == 0 {
-		fmt.Println("  No recovery volumes found")
+		logf("  No recovery volumes found" + "\n")
 	} else {
-		fmt.Printf("  Total: %d recovery volumes\n", found)
+		logf("  Total: %d recovery volumes\n", found)
 	}
 }
 
