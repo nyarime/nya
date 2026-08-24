@@ -90,6 +90,15 @@ nya augment -fec 5 /tmp/test.nya /tmp/test_more.nya   # 现为 ~10%
 ## 运行 benchmark / 损坏 sweep
 
 ```bash
+# 压缩比 + xz/7z/zstd 对比，刷新 README 表格（较慢，需本机 xz/7z/zstd）
+NYA_BENCH_WRITE=1 go test -run TestREADMEBenchmarkSuite -timeout 60m -v ./...
+
+# A/B：greedy vs optimal、solid 排序
+NYA_BENCH_WRITE=1 go test -run TestCompressComparisonReport -timeout 30m -v ./...
+
+# FEC 损坏恢复矩阵（5/10/20/30% × 擦除/XOR/尾部擦除 × solid/多文件）
+go test -run TestFECRecoveryMatrix -timeout 30m -v ./...
+
 # 损坏恢复上限（较慢，完整 sweep）
 go test -run 'FECMax|FECRecovery|Chinese' -v ./...
 

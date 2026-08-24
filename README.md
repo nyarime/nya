@@ -169,22 +169,51 @@ are all exported.
 ## Where it stands
 
 Percentages are compressed size relative to the input, so lower is better.
-Measured on one machine against the reference archivers; treat the columns as
-relative to each other rather than as absolute numbers.
+Measured on one machine against the reference archivers (Aug 2026 cloud agent;
+regenerate locally — numbers vary by CPU). Treat columns as relative, not absolute.
 
 | corpus | size | nya (level 9) | xz -9 | 7z -mx9 | zstd -19 |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| structured text | 3295292 | 6.12% (558ms) | 5.51% (1386ms) | 5.61% (731ms) | 8.96% (2365ms) |
-| markdown | 39359 | 52.94% | 46.28% | 46.50% | 47.93% |
-| ELF binary | 48072 | 33.47% | 32.75% | 31.16% | 35.03% |
-| 17 MB ELF | 17438777 | 49.38% (2318ms) | 46.99% (4518ms) | 45.67% (1799ms) | 49.41% (3415ms) |
-| 120-file tree, solid | 1105916 | 24.82% (726ms) | 22.50% (316ms) | 22.26% (111ms) | 23.04% (265ms) |
+| structured text | 3391192 | 3.62% (201ms) | 4.24% (1.097s) | 4.18% (716ms) | 7.49% (2.098s) |
+| markdown | 20786 | 4.05% (1ms) | 3.71% (6ms) | 4.32% (7ms) | 6.69% (9ms) |
+| ELF binary | 48000 | 100.01% (8ms) | 100.12% (44ms) | 100.26% (6ms) | 100.03% (4ms) |
+| 17 MB ELF | 17825792 | 100.00% (761ms) | 100.01% (3.391s) | 100.01% (676ms) | 100.00% (1.59s) |
+| 120-file tree, solid | 1082080 | 31.62% (911ms) | 30.42% (110ms) | 30.92% (24ms) | 30.37% (31ms) |
 
-Close on single files, still behind on many-file archives without `-solid`.
+
+**Level-9 parser / solid order (same corpora, regenerate with `NYA_BENCH_WRITE=1 go test -run TestREADMEBenchmarkSuite -timeout 60m ./...`):**
+
+| corpus | variant | ratio | time |
+| --- | --- | ---: | ---: |
+| structured text | greedy | 3.62% | 201ms |
+| structured text | optimal | 4.61% | 1.5s |
+| markdown | greedy | 4.05% | 1ms |
+| markdown | optimal | 9.95% | 8ms |
+| ELF binary | greedy | 100.01% | 8ms |
+| ELF binary | optimal | 100.01% | 20ms |
+| 17 MB ELF | greedy | 100.00% | 761ms |
+| 17 MB ELF | optimal | 100.01% | 1.8s |
+| 120-file tree, solid | walk+greedy | 30.86% | 302ms |
+| 120-file tree, solid | sorted+greedy | 30.39% | 301ms |
+| 120-file tree, solid | sorted+optimal | 31.52% | 1.336s |
+| 120-file tree, solid | nya archive | 31.62% | 911ms |
+
+Details: [docs/BENCHMARK-COMPRESS.md](docs/BENCHMARK-COMPRESS.md).
+
+
+Close on **structured text** (nya greedy 3.62% vs xz 4.24% / 7z 4.18% on the
+corpus above). **Solid** closes most of the gap on many-file trees (sorted
+greedy 30.39% vs xz 30.42% / 7z 30.92% on the 120-file interleaved tree);
+encode is still slower than 7-Zip on that workload.
+
+**Optimal parse at level 9** is larger and slower on these corpora (e.g.
+structured text 4.61% vs greedy 3.62%; solid sorted 31.52% vs 30.39%). Greedy
++ extension/content-kind sort is the current default; see the A/B table above.
+
 Solid mode applies **extension grouping**, **content-kind sorting** (magic
-bytes within each extension group), and the **greedy LZMA2 parser** by default.
-Optimal parse remains available for repetitive streams but is not enabled
-automatically — see [docs/BENCHMARK-COMPRESS.md](docs/BENCHMARK-COMPRESS.md).
+bytes within each extension group), and the **greedy LZMA2 parser**.
+Regenerate numbers: `NYA_BENCH_WRITE=1 go test -run TestREADMEBenchmarkSuite -timeout 60m ./...`
+(requires `xz`, `7z`, `zstd` on PATH). Details: [docs/BENCHMARK-COMPRESS.md](docs/BENCHMARK-COMPRESS.md).
 
 Extraction speed is the other half of the trade. LZMA2 decompresses at
 18–59 MB/s here against 127–275 MB/s for the zstd path, so an archive that is

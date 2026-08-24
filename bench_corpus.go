@@ -25,7 +25,7 @@ func BuildBenchCorpora(root string) ([]BenchCorpus, error) {
 	}
 	var out []BenchCorpus
 
-	structured := buildStructuredText(12000)
+	structured := buildStructuredText(61000) // ~3.3 MiB, matches README row scale
 	structuredPath := filepath.Join(root, "structured-text.bin")
 	if err := os.WriteFile(structuredPath, structured, 0o644); err != nil {
 		return nil, err
@@ -108,22 +108,22 @@ func build120FileTree(root string) (string, error) {
 		body   func(i int) string
 	}{
 		{".go", "package main\n", func(i int) string {
-			return strings.Repeat(fmt.Sprintf("func f%d() int { return %d }\n", i, i), 120)
+			return strings.Repeat(fmt.Sprintf("func f%d() int { return %d }\n", i, i), 280)
 		}},
 		{".rs", "fn main() {}\n", func(i int) string {
-			return strings.Repeat(fmt.Sprintf("fn worker_%d() -> i32 {{ {} }}\n", i), 120)
+			return strings.Repeat(fmt.Sprintf("fn worker_%d() -> i32 {{ {} }}\n", i), 280)
 		}},
 		{".json", "", func(i int) string {
-			return strings.Repeat(fmt.Sprintf(`{"id":%d,"name":"item-%d","ok":true}`+"\n", i, i), 80)
+			return strings.Repeat(fmt.Sprintf(`{"id":%d,"name":"item-%d","ok":true}`+"\n", i, i), 180)
 		}},
 		{".txt", "", func(i int) string {
-			return strings.Repeat(fmt.Sprintf("log line %d: the quick brown fox\n", i), 150)
+			return strings.Repeat(fmt.Sprintf("log line %d: the quick brown fox\n", i), 350)
 		}},
 		{".md", "# doc\n", func(i int) string {
-			return strings.Repeat(fmt.Sprintf("## heading %d\n\nparagraph text here.\n\n", i), 30)
+			return strings.Repeat(fmt.Sprintf("## heading %d\n\nparagraph text here.\n\n", i), 70)
 		}},
 		{".bin", "", func(i int) string {
-			return string(makeBinaryBlob(i, 8192))
+			return string(makeBinaryBlob(i, 16384))
 		}},
 	}
 	// Flat directory with interleaved extensions in walk (name) order.

@@ -188,7 +188,7 @@ func cmdList(args []string) error {
 		return fmt.Errorf("list needs an archive path")
 	}
 
-	r, err := open(fs.Arg(0), *password)
+	r, err := openOrPasswordHint(fs.Arg(0), *password)
 	if err != nil {
 		return err
 	}
@@ -222,7 +222,7 @@ func cmdExtract(args []string) error {
 		dest = fs.Arg(1)
 	}
 
-	r, err := open(fs.Arg(0), *password)
+	r, err := openOrPasswordHint(fs.Arg(0), *password)
 	if err != nil {
 		return err
 	}
@@ -237,7 +237,7 @@ func cmdVerify(args []string) error {
 		return fmt.Errorf("verify needs an archive path")
 	}
 
-	r, err := open(fs.Arg(0), *password)
+	r, err := openOrPasswordHint(fs.Arg(0), *password)
 	if err != nil {
 		return err
 	}
@@ -487,7 +487,22 @@ func open(path, password string) (*nya.Reader, error) {
 	if password != "" {
 		return nya.OpenAny(path, []byte(password))
 	}
-	return nya.OpenAny(path)
+	r, err := nya.OpenAny(path)
+	if err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+func openOrPasswordHint(path, password string) (*nya.Reader, error) {
+	r, err := open(path, password)
+	if err == nil {
+		return r, nil
+	}
+	if err == nya.ErrPasswordRequired {
+		return nil, fmt.Errorf("%w — use: nya extract -password '…' %s", err, path)
+	}
+	return nil, err
 }
 
 func cmdSfx(args []string) error {
