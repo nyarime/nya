@@ -2,8 +2,12 @@
 
 NYA (Nyarime Archive) is an archive format that pairs ordinary compression
 with forward error correction, so a damaged archive can often still be read.
-This repository holds the format specification, the reference implementation
-and the `nya` command line tool.
+This repository is the **canonical home** for the format specification,
+reference implementation, `nya` CLI, and `nya-get` downloader.
+
+[Nyarc](https://github.com/nyarime/Nyarc) is being rebuilt as a firmware
+analysis tool (BinWalk / IDA-like); it may use `.nya` as an internal analysis
+database format, but all format development happens here.
 
 Everything is pure Go with no cgo and only two dependencies. The compressors,
 the BLAKE3 implementation and the container are all written from scratch;
@@ -43,7 +47,20 @@ nya extract backup.nya ./restored                  # extract
 nya verify backup.nya                              # check stored digests
 nya info backup.nya                                # header details, including codec
 nya repair damaged.nya fixed.nya                   # rebuild using the parity data
+nya manifest GamePack.nya -o GamePack.nyam --url https://cdn/game.nya  # download index
 ```
+
+### Large package distribution (`nya-get`)
+
+```bash
+nya create -level 9 -solid -fec 20 GamePack.nya ./GameData/
+nya manifest GamePack.nya -o GamePack.nyam --url https://cdn.example.com/GamePack.nya
+
+go install github.com/nyarime/nya/cmd/nya-get@latest
+nya-get -c 16 GamePack.nyam    # parallel Range download + resume
+```
+
+See [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) for the `.nyam` manifest schema.
 
 Levels run 0 to 9, the way 7-Zip and WinRAR present them:
 
@@ -173,4 +190,5 @@ version 1.1 and reads both:
 
 ## Format
 
-`SPEC.md` documents the on-disk layout field by field.
+- [SPEC.md](SPEC.md) — on-disk NYA archive layout
+- [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) — `.nyam` manifest and `nya-get` transport blocks

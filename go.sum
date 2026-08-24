@@ -1,4 +1,4 @@
-github.com/nyarime/gofec v1.4.2 h1:HF3krjRft5+a5+7ry9yYLaJJlS42+n2kOKxaeaUFza0=
-github.com/nyarime/gofec v1.4.2/go.mod h1:IiqozIeFR4BG6MbtzHyq+QMHD8BSKQ3oz2GCxcJEin0=
+github.com/nyarime/gofec/v2 v2.0.0 h1:cj7Ybxw2HYnYhmddrDf1FNB//ru8kKVjmLJTKj/Z98s=
+github.com/nyarime/gofec/v2 v2.0.0/go.mod h1:Khn3VQ0wWWUbY4PEuviSD/SQdkC7chLDYNdKPV50w0s=
 golang.org/x/sys v0.43.0 h1:Rlag2XtaFTxp19wS8MXlJwTvoh8ArU6ezoyFsMyCTNI=
 golang.org/x/sys v0.43.0/go.mod h1:4GL1E5IUh+htKOUEOaiffhrAeqysfVGipDYzABqnCmw=

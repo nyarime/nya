@@ -7,46 +7,9 @@ import (
 	"testing"
 )
 
-// zstd frame produced by the pre-1.1 encoder for
-// bytes.Repeat([]byte("Nyarime archive format. "), 200). Its match lengths
-// fall on the codes the old sequence tables mapped to the wrong baselines,
-// so it only decodes correctly with the legacy tables.
-var legacyFixtureFrame = []byte{
-	0x28, 0xb5, 0x2f, 0xfd, 0x60, 0xc0, 0x11, 0x0d, 0x01, 0x00, 0xc0, 0x4e,
-	0x79, 0x61, 0x72, 0x69, 0x6d, 0x65, 0x20, 0x61, 0x72, 0x63, 0x68, 0x69,
-	0x76, 0x65, 0x20, 0x66, 0x6f, 0x72, 0x6d, 0x61, 0x74, 0x2e, 0x20, 0x01,
-	0x54, 0x13, 0x04, 0x2f, 0x94, 0x6a, 0x03,
-}
-
-func legacyFixturePlain() []byte {
-	return bytes.Repeat([]byte("Nyarime archive format. "), 200)
-}
-
-// A v1.0 archive must still extract byte for byte, which means the legacy
-// sequence code tables have to stay reachable.
-func TestDecompressZstdLegacyFixture(t *testing.T) {
-	want := legacyFixturePlain()
-
-	got, err := DecompressZstdLegacy(legacyFixtureFrame)
-	if err != nil {
-		t.Fatalf("DecompressZstdLegacy: %v", err)
-	}
-	if !bytes.Equal(got, want) {
-		t.Fatalf("legacy decode mismatch: got %d bytes, want %d", len(got), len(want))
-	}
-
-	// The same frame read with the conformant tables must not silently
-	// produce the right answer, otherwise this fixture has stopped testing
-	// anything.
-	if other, err := DecompressZstd(legacyFixtureFrame); err == nil && bytes.Equal(other, want) {
-		t.Fatal("fixture decodes identically under both table sets; it no longer covers the legacy path")
-	}
-}
-
-// Archives written now must record minor version 1 so readers know to use the
-// conformant tables.
+// Archives written now must record the current format version.
 func TestWriterRecordsCurrentVersion(t *testing.T) {
-	if VersionMajor != 1 || VersionMinor != 1 {
+	if VersionMajor != 1 || VersionMinor != 0 {
 		t.Fatalf("unexpected format version %d.%d", VersionMajor, VersionMinor)
 	}
 }

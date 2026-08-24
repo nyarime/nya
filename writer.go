@@ -27,6 +27,7 @@ type Writer struct {
 	entries           []DirEntry
 	dataBuf           bytes.Buffer
 	fecPercent        int
+	fecType           uint8
 	compressLevel     int
 	solid             bool
 	password          []byte
@@ -34,6 +35,7 @@ type Writer struct {
 	dataOff           uint64
 	hashTables        [][]uint32
 	fecBuf            bytes.Buffer
+	globalMetaFec     []byte
 	basePath          string
 	workers           int
 	zstdEnc           interface{}
@@ -65,7 +67,7 @@ func NewWriterOpts(w io.WriteSeeker, fecPercent int, level int, solid bool, pass
 	if level < 0 {
 		level = LevelDefault
 	}
-	w2 := &Writer{w: w, fecPercent: fecPercent, solid: solid}
+	w2 := &Writer{w: w, fecPercent: fecPercent, solid: solid, fecType: DefaultFECType}
 	w2.SetLevel(level)
 	if len(password) > 0 {
 		w2.password = password[0]
@@ -73,7 +75,12 @@ func NewWriterOpts(w io.WriteSeeker, fecPercent int, level int, solid bool, pass
 	return w2
 }
 
-// Codecs accepted by Writer.SetCompression.
+// SetFECType selects the forward-error-correction codec for new archives.
+// Supported values: FECRaptorQ, FECLDPC, FECHybrid (default).
+func (nw *Writer) SetFECType(t uint8) {
+	nw.fecType = t
+}
+
 const (
 	// CompressionLZMA2 is the default. It compresses smaller than the zstd
 	// encoder on every corpus we measure, and on text it is faster to
@@ -363,14 +370,14 @@ func (nw *Writer) addFileNormal(relPath string, raw []byte, info os.FileInfo) er
 	}
 
 	// FEC
-	K := 32
 	var fec []byte
-	if len(compData) >= 4096 && nw.fecPercent > 0 {
-		fec = raptorqFEC(compData, nw.fecPercent)
+	var fecPlan fecPlan
+	if len(compData) >= fecMinPayload && nw.fecPercent > 0 {
+		fec, _, fecPlan = encodeFEC(compData, nw.fecPercent, nw.fecType, nw.solid)
 	}
-	repairCount := len(fec) / fecSymbolSize
+	repairCount := fecPlan.repairPerBlock()
 	if repairCount < 1 {
-		repairCount = K
+		repairCount = 32
 	}
 
 	// BLAKE3
@@ -381,7 +388,7 @@ func (nw *Writer) addFileNormal(relPath string, raw []byte, info os.FileInfo) er
 		OriginalSize:   uint64(len(raw)),
 		CompressedSize: uint64(len(compData)),
 		RepairCount:    uint32(repairCount),
-		SymbolSize:     uint32(fecSymbolSize),
+		SymbolSize:     uint32(fecPlan.SymbolSize),
 		Blake3Short:    hash,
 	}
 	firstOff := nw.dataOff
@@ -395,6 +402,7 @@ func (nw *Writer) addFileNormal(relPath string, raw []byte, info os.FileInfo) er
 
 	nw.hashTables = append(nw.hashTables, GetHashTable())
 
+	fecParams := fecPlan.toParams()
 	nw.entries = append(nw.entries, DirEntry{
 		Path:          relPath,
 		EntryType:     EntryFile,
@@ -403,14 +411,10 @@ func (nw *Writer) addFileNormal(relPath string, raw []byte, info os.FileInfo) er
 		OriginalSize:  uint64(len(raw)),
 		ChunkCount:    1,
 		CompressionID: nw.compressionID(),
-		FECType:       FECRaptorQ,
+		FECType:       fecPlan.Type,
 		BCJFilter:     bcjID,
-		FECParams: FECParams{
-			Param1: uint32(K),
-			Param2: uint32(fecSymbolSize),
-			Param3: uint32(nw.fecPercent),
-		},
-		FirstDataOff: firstOff,
+		FECParams:     fecParams,
+		FirstDataOff:  firstOff,
 	})
 	// Fill Unix metadata on last entry
 	fillUnixMeta(&nw.entries[len(nw.entries)-1], info)
@@ -528,14 +532,14 @@ func (nw *Writer) closeSolid() error {
 	}
 
 	// FEC
-	K := 32
 	var fec []byte
-	if len(compData) >= 4096 && nw.fecPercent > 0 {
-		fec = raptorqFEC(compData, nw.fecPercent)
+	var fecPlan fecPlan
+	if len(compData) >= fecMinPayload && nw.fecPercent > 0 {
+		fec, _, fecPlan = encodeFEC(compData, nw.fecPercent, nw.fecType, nw.solid)
 	}
-	repairCount := len(fec) / fecSymbolSize
+	repairCount := fecPlan.repairPerBlock()
 	if repairCount < 1 {
-		repairCount = K
+		repairCount = 32
 	}
 
 	// BLAKE3
@@ -546,7 +550,7 @@ func (nw *Writer) closeSolid() error {
 		OriginalSize:   uint64(nw.solidBuf.Len()),
 		CompressedSize: uint64(len(compData)),
 		RepairCount:    uint32(repairCount),
-		SymbolSize:     uint32(fecSymbolSize),
+		SymbolSize:     uint32(fecPlan.SymbolSize),
 		Blake3Short:    hash,
 	}
 
@@ -555,6 +559,13 @@ func (nw *Writer) closeSolid() error {
 	chBuf.Write(compData)
 	nw.fecBuf.Write(fec)
 	nw.dataBuf.Write(chBuf.Bytes())
+	nw.hashTables = append(nw.hashTables, GetHashTable())
+
+	fecParams := fecPlan.toParams()
+	for i := range nw.entries {
+		nw.entries[i].FECType = fecPlan.Type
+		nw.entries[i].FECParams = fecParams
+	}
 
 	// Update BCJ filter on all entries
 	if useBCJ {
@@ -586,25 +597,7 @@ func (nw *Writer) closeSolid() error {
 	}
 	gh.CentralDirSize = uint64(dirBuf.Len())
 
-	gh.Write(nw.w)
-	nw.w.Write(data)
-	nw.w.Write(dirBuf.Bytes())
-
-	binary.Write(nw.w, binary.LittleEndian, uint32(nw.fecBuf.Len()))
-	nw.w.Write(nw.fecBuf.Bytes())
-
-	totalHashes := uint32(0)
-	for _, ht := range nw.hashTables {
-		totalHashes += uint32(len(ht))
-	}
-	binary.Write(nw.w, binary.LittleEndian, totalHashes)
-	for _, ht := range nw.hashTables {
-		for _, h := range ht {
-			binary.Write(nw.w, binary.LittleEndian, h)
-		}
-	}
-
-	return nil
+	return nw.finalizeArchive(gh, data, dirBuf.Bytes())
 }
 
 func (nw *Writer) closeNormal() error {
@@ -629,9 +622,23 @@ func (nw *Writer) closeNormal() error {
 	}
 	gh.CentralDirSize = uint64(dirBuf.Len())
 
+	return nw.finalizeArchive(gh, data, dirBuf.Bytes())
+}
+
+// finalizeArchive writes the global header, payload, central directory, FEC
+// parity, symbol hashes and optional global metadata FEC.
+func (nw *Writer) finalizeArchive(gh GlobalHeader, data, dirBytes []byte) error {
+	if nw.fecPercent > 0 {
+		meta := nw.buildGlobalMetaPayload(dirBytes)
+		nw.globalMetaFec = encodeGlobalMetaFEC(meta)
+		if len(nw.globalMetaFec) > 0 {
+			gh.Flags |= FlagHasGlobalFEC
+		}
+	}
+
 	gh.Write(nw.w)
 	nw.w.Write(data)
-	nw.w.Write(dirBuf.Bytes())
+	nw.w.Write(dirBytes)
 
 	binary.Write(nw.w, binary.LittleEndian, uint32(nw.fecBuf.Len()))
 	nw.w.Write(nw.fecBuf.Bytes())
@@ -647,5 +654,26 @@ func (nw *Writer) closeNormal() error {
 		}
 	}
 
+	if len(nw.globalMetaFec) > 0 {
+		binary.Write(nw.w, binary.LittleEndian, uint32(len(nw.globalMetaFec)))
+		nw.w.Write(nw.globalMetaFec)
+	}
+
 	return nil
+}
+
+func (nw *Writer) buildGlobalMetaPayload(dirBytes []byte) []byte {
+	var meta bytes.Buffer
+	meta.Write(dirBytes)
+	totalHashes := uint32(0)
+	for _, ht := range nw.hashTables {
+		totalHashes += uint32(len(ht))
+	}
+	binary.Write(&meta, binary.LittleEndian, totalHashes)
+	for _, ht := range nw.hashTables {
+		for _, h := range ht {
+			binary.Write(&meta, binary.LittleEndian, h)
+		}
+	}
+	return meta.Bytes()
 }

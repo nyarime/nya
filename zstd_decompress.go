@@ -22,21 +22,11 @@ type zstdReader struct {
 
 // ZstdNewReader returns an io.ReadCloser that decompresses zstd data from r.
 func ZstdNewReader(r io.Reader) (io.ReadCloser, error) {
-	return zstdNewReader(r, false)
-}
-
-// ZstdNewReaderLegacy is ZstdNewReader for frames written by the pre-v1.1
-// encoder. See zstd_legacy.go.
-func ZstdNewReaderLegacy(r io.Reader) (io.ReadCloser, error) {
-	return zstdNewReader(r, true)
-}
-
-func zstdNewReader(r io.Reader, legacy bool) (io.ReadCloser, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}
-	dec, err := decompressZstd(data, legacy)
+	dec, err := DecompressZstd(data)
 	if err != nil {
 		return nil, err
 	}
@@ -64,18 +54,8 @@ func zstdBuildFSETableFromHeader(header []byte, maxAccLog int) (*fseTable, int, 
 	return table, br.bytesConsumed(), nil
 }
 
-// DecompressZstd decompresses Zstandard compressed data.
+// DecompressZstd decompresses Zstandard compressed data (RFC 8878).
 func DecompressZstd(data []byte) ([]byte, error) {
-	return decompressZstd(data, false)
-}
-
-// DecompressZstdLegacy decompresses a frame produced by the pre-v1.1 encoder,
-// which used non-conformant sequence code tables. See zstd_legacy.go.
-func DecompressZstdLegacy(data []byte) ([]byte, error) {
-	return decompressZstd(data, true)
-}
-
-func decompressZstd(data []byte, legacy bool) ([]byte, error) {
 	if len(data) < 4 {
 		return nil, fmt.Errorf("zstd: data too short")
 	}
@@ -84,14 +64,13 @@ func decompressZstd(data []byte, legacy bool) ([]byte, error) {
 		return nil, fmt.Errorf("zstd: invalid magic 0x%08X", magic)
 	}
 
-	d := &zstdDecoder{data: data, pos: 4, legacy: legacy}
+	d := &zstdDecoder{data: data, pos: 4}
 	return d.decodeFrame()
 }
 
 type zstdDecoder struct {
 	data          []byte
 	pos           int
-	legacy        bool
 	windowSize    uint64
 	contentSize   uint64
 	hasContentSz  bool
@@ -229,7 +208,7 @@ func (d *zstdDecoder) decodeFrame() ([]byte, error) {
 // ---- Compressed Block Decoding ----
 
 func (d *zstdDecoder) decodeCompressedBlock(blockData []byte, prevOutput []byte) ([]byte, error) {
-	r := &blockReader{data: blockData, pos: 0, legacy: d.legacy}
+	r := &blockReader{data: blockData, pos: 0}
 
 	// Literals Section
 	literals, err := r.decodeLiterals()
@@ -250,9 +229,6 @@ func (d *zstdDecoder) decodeCompressedBlock(blockData []byte, prevOutput []byte)
 type blockReader struct {
 	data []byte
 	pos  int
-	// legacy selects the pre-RFC-conformance sequence code tables kept for
-	// reading NYA v1.0 archives. See zstd_legacy.go.
-	legacy bool
 }
 
 type sequence struct {
@@ -896,7 +872,7 @@ var matchLenExtraBits = [53]int{
 }
 
 // seqCodes bundles the Literals_Length and Match_Length code translation
-// tables so a decoder can pick the conformant or the legacy set per frame.
+// conformantSeqCodes holds RFC 8878 sequence code baselines used by the decoder.
 type seqCodes struct {
 	llBaseline  []int
 	llExtraBits []int
@@ -990,9 +966,6 @@ func (r *blockReader) decodeSequences() ([]sequence, error) {
 	}
 
 	codes := conformantSeqCodes
-	if r.legacy {
-		codes = legacySeqCodes
-	}
 
 	sequences := make([]sequence, numSequences)
 

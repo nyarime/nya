@@ -16,17 +16,15 @@ type RepairResult struct {
 	FailedChunks    int
 }
 
-// Repair 修复损坏的.nar文件
+// Repair 修复损坏的.nya文件
 func Repair(path string, outputPath string) (*RepairResult, error) {
 	r, err := Open(path)
 	if err != nil {
-		// Central Dir损坏, 尝试raw repair
 		return rawRepair(path, outputPath)
 	}
 
 	result := &RepairResult{}
 
-	// 从文件读FEC data(不在内存中)
 	if r.FecLen > 0 && len(r.fecData) == 0 {
 		ff, err := os.Open(path)
 		if err == nil {
@@ -35,10 +33,7 @@ func Repair(path string, outputPath string) (*RepairResult, error) {
 			ff.Close()
 		}
 	}
-	if len(r.HashTables) > 0 && len(r.HashTables[0]) >= 3 {
-	}
 
-	// 固实模式: 整个solid chunk作为一个单元修复
 	if r.Header.Flags&FlagSolidCompress != 0 {
 		return repairSolid(r, path, outputPath)
 	}
@@ -61,18 +56,14 @@ func Repair(path string, outputPath string) (*RepairResult, error) {
 
 		result.TotalChunks++
 
-		// 读压缩数据
 		compStart := off + ChunkHeaderSize
 		compEnd := compStart + ch.CompressedSize
 		if compEnd > uint64(len(r.data)) {
 			continue
 		}
 		compData := r.data[compStart:compEnd]
-
-		// FEC数据在文件末尾(Central Dir后), 不在Data Area
 		fecData := r.fecData
 
-		// CRC校验
 		h := Blake3Sum256(compData)
 		actualHash := binary.LittleEndian.Uint64(h[:8])
 		if actualHash != ch.Blake3Short {
@@ -80,23 +71,19 @@ func Repair(path string, outputPath string) (*RepairResult, error) {
 			logf("  chunk %s: CRC mismatch (expected %x, got %x)\n", e.Path, ch.Blake3Short, actualHash)
 			logf("  ⚠️ %s: CRC不匹配, 尝试修复...\n", e.Path)
 
-			// RaptorQ修复
-			// 合并所有hash为flat
 			var allH []uint32
 			if len(r.HashTables) > 0 {
 				allH = r.HashTables[0]
 			}
-			repaired, err := raptorqRepair(compData, fecData, int(e.FECParams.Param3), allH)
+			repaired, err := repairFEC(compData, fecData, e.FECParams, e.FECType, allH)
 			if err != nil {
 				result.FailedChunks++
 				logf("  ❌ %s: 修复失败\n", e.Path)
 				continue
 			}
 
-			// 写回修复数据
 			copy(r.data[compStart:compEnd], repaired[:len(compData)])
 
-			// 更新CRC
 			nh := Blake3Sum256(repaired[:len(compData)])
 			newHash := binary.LittleEndian.Uint64(nh[:8])
 			r.data[off+24] = byte(newHash)
@@ -114,14 +101,12 @@ func Repair(path string, outputPath string) (*RepairResult, error) {
 	}
 
 	if result.CorruptedChunks > 0 {
-		// 直接写回修复后的数据到文件
 		out := outputPath
 		if out == "" {
 			out = path
 		}
 		wf, werr := os.OpenFile(out, os.O_RDWR, 0644)
 		if werr == nil {
-			// 写回整个data area
 			wf.WriteAt(r.data, GlobalHeaderSize)
 			wf.Close()
 		}
@@ -153,7 +138,21 @@ func repairSolid(r *Reader, path, outputPath string) (*RepairResult, error) {
 		result.CorruptedChunks = 1
 		logf("  ⚠️ Solid chunk损坏, 尝试修复..." + "\n")
 
-		repaired, err := raptorqRepair(compData, fecData, 10)
+		var params FECParams
+		var fecType uint8 = FECRaptorQ
+		var hashes []uint32
+		if len(r.HashTables) > 0 {
+			hashes = r.HashTables[0]
+		}
+		for _, e := range r.Entries {
+			if e.EntryType == EntryFile {
+				params = e.FECParams
+				fecType = e.FECType
+				break
+			}
+		}
+
+		repaired, err := repairFEC(compData, fecData, params, fecType, hashes)
 		if err != nil {
 			result.FailedChunks = 1
 			return result, nil
@@ -174,7 +173,6 @@ func repairSolid(r *Reader, path, outputPath string) (*RepairResult, error) {
 	return result, nil
 }
 
-// rawRepair: CentralDir damaged, use GlobalHeader to locate FEC
 func rawRepair(path string, outputPath string) (*RepairResult, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -195,7 +193,6 @@ func rawRepair(path string, outputPath string) (*RepairResult, error) {
 	f.Seek(GlobalHeaderSize, 0)
 	io.ReadFull(f, data)
 
-	// FEC位置: 用GlobalHeader精确定位
 	fecLenPos := int64(gh.CentralDirOffset) + int64(gh.CentralDirSize)
 	f.Seek(fecLenPos, 0)
 	var fecLen uint32
@@ -211,7 +208,6 @@ func rawRepair(path string, outputPath string) (*RepairResult, error) {
 	fecData := make([]byte, fecLen)
 	f.ReadAt(fecData, fecStart)
 
-	// Hash表
 	hashPos := fecStart + int64(fecLen)
 	f.Seek(hashPos, 0)
 	var hashCount uint32
@@ -226,6 +222,30 @@ func rawRepair(path string, outputPath string) (*RepairResult, error) {
 		hashes = append(hashes, h)
 	}
 	logf("  Hashes: %d\n", hashCount)
+
+	// Try global metadata FEC to rebuild central directory + hash table.
+	if gh.Flags&FlagHasGlobalFEC != 0 {
+		var globalLen uint32
+		if binary.Read(f, binary.LittleEndian, &globalLen) == nil && globalLen > 0 {
+			globalFEC := make([]byte, globalLen)
+			if _, err := io.ReadFull(f, globalFEC); err == nil {
+				cdStart := int64(gh.CentralDirOffset)
+				cdEnd := cdStart + int64(gh.CentralDirSize) + 4 + int64(fecLen) + 4 + int64(hashCount)*4
+				damaged := make([]byte, 0, cdEnd-cdStart)
+				raw, _ := os.ReadFile(path)
+				if int64(len(raw)) >= cdEnd {
+					damaged = append(damaged, raw[cdStart:cdEnd]...)
+				}
+				if meta, err := decodeGlobalMetaFEC(damaged, globalFEC); err == nil && len(meta) > 0 {
+					logf("  ✅ Global metadata FEC recovered %d bytes\n", len(meta))
+					if len(meta) > 8 {
+						entryCount := binary.LittleEndian.Uint64(meta[:8])
+						logf("  Recovered entry count: %d\n", entryCount)
+					}
+				}
+			}
+		}
+	}
 
 	if len(data) < ChunkHeaderSize {
 		return nil, fmt.Errorf("data too small")
@@ -246,7 +266,12 @@ func rawRepair(path string, outputPath string) (*RepairResult, error) {
 	logf("  Chunk: comp=%d, repair=%d, sym=%d\n",
 		ch.CompressedSize, ch.RepairCount, ch.SymbolSize)
 
-	repaired, err := raptorqRepair(compData, fecData, int(ch.RepairCount), hashes)
+	params := FECParams{
+		Param1: uint32(ch.RepairCount),
+		Param2: ch.SymbolSize,
+		Param3: uint32(ch.RepairCount),
+	}
+	repaired, err := repairFEC(compData, fecData, params, FECRaptorQ, hashes)
 	if err != nil {
 		return &RepairResult{TotalChunks: 1, CorruptedChunks: 1, FailedChunks: 1},
 			fmt.Errorf("FEC failed: %w", err)

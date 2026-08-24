@@ -22,6 +22,8 @@ Usage:
   nya verify  <archive.nya>                  check stored BLAKE3 digests
   nya info    <archive.nya>                  show header details
   nya repair  <archive.nya> [out.nya]        rebuild a damaged archive using its FEC data
+  nya augment <archive.nya> [out.nya]        append RaptorQ fountain repair symbols
+  nya manifest <archive.nya> -o <manifest.nyam>  build download manifest for nya-get
 
 Levels run 0 to 9, the way 7-Zip and WinRAR present them: 0 stores, 1 is
 fastest, 5 is the default, 9 is smallest. Levels up to 4 use Zstandard for
@@ -51,6 +53,10 @@ func main() {
 		err = cmdInfo(os.Args[2:])
 	case "repair":
 		err = cmdRepair(os.Args[2:])
+	case "augment":
+		err = cmdAugment(os.Args[2:])
+	case "manifest":
+		err = cmdManifest(os.Args[2:])
 	case "-h", "--help", "help":
 		fmt.Print(usage)
 		return
@@ -69,7 +75,9 @@ func cmdCreate(args []string) error {
 	fs := flag.NewFlagSet("create", flag.ExitOnError)
 	level := fs.Int("level", nya.LevelDefault,
 		"0 store, 1 fastest, 3 fast, 5 normal, 7 good, 9 best")
-	fec := fs.Int("fec", 0, "percentage of RaptorQ recovery data to add")
+	fec := fs.Int("fec", 0, "recovery data as a percentage of the payload")
+	fecType := fs.String("fec-type", "hybrid",
+		"FEC codec when -fec > 0: hybrid (default), raptorq or ldpc")
 	solid := fs.Bool("solid", false, "compress all files as one stream (better ratio, slower random access)")
 	codec := fs.String("codec", "",
 		"override the level's codec: lzma2, zstd or store")
@@ -108,6 +116,18 @@ func cmdCreate(args []string) error {
 	}
 	if *workers > 0 {
 		w.SetWorkers(*workers)
+	}
+	if *fec > 0 {
+		switch *fecType {
+		case "hybrid", "":
+			w.SetFECType(nya.FECHybrid)
+		case "raptorq":
+			w.SetFECType(nya.FECRaptorQ)
+		case "ldpc":
+			w.SetFECType(nya.FECLDPC)
+		default:
+			return fmt.Errorf("unknown fec-type %q, want hybrid, raptorq or ldpc", *fecType)
+		}
 	}
 
 	start := time.Now()
@@ -220,11 +240,6 @@ func cmdInfo(args []string) error {
 	fmt.Printf("data area:       %s\n", nya.HumanSize(int(h.DataAreaSize)))
 	fmt.Printf("solid:           %t\n", h.Flags&nya.FlagSolidCompress != 0)
 	fmt.Printf("recovery data:   %s\n", nya.HumanSize(int(r.FecLen)))
-	if h.VersionMinor < 1 {
-		fmt.Printf("\nnote: written before format 1.1, so its zstd frames use the\n" +
-			"      legacy sequence code tables and are not readable by other\n" +
-			"      zstd implementations. Repack it to upgrade.\n")
-	}
 	return nil
 }
 
@@ -252,8 +267,74 @@ func cmdRepair(args []string) error {
 	return nil
 }
 
-// archiveCodec reports the codec used by the file entries. The format records
-// it per entry, so an archive can in principle mix them.
+func cmdAugment(args []string) error {
+	fs := flag.NewFlagSet("augment", flag.ExitOnError)
+	extra := fs.Int("fec", 10, "extra RaptorQ repair as a percentage of payload")
+	fs.Parse(args)
+	if fs.NArg() < 1 || fs.NArg() > 2 {
+		return fmt.Errorf("augment needs an archive path and an optional output path")
+	}
+	in := fs.Arg(0)
+	out := in
+	if fs.NArg() == 2 {
+		out = fs.Arg(1)
+	}
+	res, err := nya.Augment(in, out, *extra)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%s: appended %d repair symbols (%d bytes)\n", out, res.ExtraSymbols, res.ExtraBytes)
+	return nil
+}
+
+func cmdManifest(args []string) error {
+	fs := flag.NewFlagSet("manifest", flag.ExitOnError)
+	out := fs.String("o", "", "output .nyam path (default: archive.nyam)")
+	blockSize := fs.String("block-size", "4m", "transport block size (e.g. 4m, 8m, 4194304)")
+	url := fs.String("url", "", "download URL for the archive (repeatable via --url)")
+	fs.Parse(args)
+
+	if fs.NArg() != 1 {
+		return fmt.Errorf("manifest needs an archive path")
+	}
+	archive := fs.Arg(0)
+
+	bs, err := nya.ParseBlockSize(*blockSize)
+	if err != nil {
+		return err
+	}
+
+	var sources []nya.ManifestSource
+	for _, u := range strings.Split(*url, ",") {
+		u = strings.TrimSpace(u)
+		if u != "" {
+			sources = append(sources, nya.ManifestSource{URL: u, Priority: 1})
+		}
+	}
+
+	m, err := nya.BuildManifest(archive, bs, sources...)
+	if err != nil {
+		return err
+	}
+
+	outPath := *out
+	if outPath == "" {
+		outPath = strings.TrimSuffix(archive, filepath.Ext(archive)) + ".nyam"
+	}
+	if err := nya.WriteManifest(m, outPath); err != nil {
+		return err
+	}
+
+	fmt.Printf("%s: %d blocks x %s, archive %s (%s)\n",
+		outPath,
+		len(m.Download.Blocks),
+		nya.HumanSize(int(m.Download.BlockSize)),
+		m.Archive.Name,
+		nya.HumanSize(int(m.Archive.Size)))
+	return nil
+}
+
+// archiveCodec reports the codec used by the file entries.
 func archiveCodec(r *nya.Reader) string {
 	seen := map[string]bool{}
 	for _, e := range r.Entries {

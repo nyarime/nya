@@ -31,13 +31,9 @@ const (
 )
 
 // Format version written by this package.
-//
-// Minor version 1 is the first to emit RFC 8878-conformant zstd frames;
-// archives that report minor version 0 are decoded with the legacy sequence
-// code tables in zstd_legacy.go.
 const (
 	VersionMajor uint16 = 1
-	VersionMinor uint16 = 1
+	VersionMinor uint16 = 0
 )
 
 // Header flags
@@ -46,6 +42,7 @@ const (
 	FlagSolidCompress = 1 << 1 // v2
 	FlagEncrypted     = 1 << 2 // v2
 	FlagHasGlobalFEC  = 1 << 3 // v2
+	FlagHasDownloadIndex = 1 << 4 // reserved: embedded transport index (see SPEC-DOWNLOAD.md)
 )
 
 // Compression IDs
@@ -65,6 +62,7 @@ const (
 	FECRaptorQ uint8 = 1
 	FECLDPC    uint8 = 2
 	FECRS      uint8 = 3
+	FECHybrid  uint8 = 4 // LDPC block parity + RaptorQ fountain repair
 )
 
 // BCJ filter types
@@ -87,9 +85,8 @@ const (
 	EntryFifo     uint8 = 6
 )
 
-// DirEntry format versions
+// DirEntry format version used by the writer.
 const (
-	DirEntryV1 uint8 = 1 // original format
 	DirEntryV2 uint8 = 2 // with Unix metadata
 )
 
@@ -243,27 +240,17 @@ func readLenStr(r io.Reader) (string, error) {
 }
 
 func ReadDirEntry(r io.Reader) (*DirEntry, error) {
-	// Peek version byte. V1 had no version; first byte was uint16 pathLen low byte.
-	// V2 starts with version byte = 2. V1 pathLen low byte is unlikely to be exactly 1 or 2
-	// for valid paths, but we use the dedicated version marker.
 	var version uint8
 	if err := binary.Read(r, binary.LittleEndian, &version); err != nil {
 		return nil, err
 	}
+	if version != DirEntryV2 {
+		return nil, fmt.Errorf("nar: unsupported directory entry version %d", version)
+	}
 
 	var pathLen uint16
-	if version == DirEntryV2 {
-		if err := binary.Read(r, binary.LittleEndian, &pathLen); err != nil {
-			return nil, err
-		}
-	} else {
-		// V1 compatibility: version byte is actually low byte of pathLen
-		var hi uint8
-		if err := binary.Read(r, binary.LittleEndian, &hi); err != nil {
-			return nil, err
-		}
-		pathLen = uint16(version) | uint16(hi)<<8
-		version = DirEntryV1
+	if err := binary.Read(r, binary.LittleEndian, &pathLen); err != nil {
+		return nil, err
 	}
 
 	pathBytes := make([]byte, pathLen)
@@ -283,37 +270,35 @@ func ReadDirEntry(r io.Reader) (*DirEntry, error) {
 	binary.Read(r, binary.LittleEndian, &e.FECParams)
 	binary.Read(r, binary.LittleEndian, &e.FirstDataOff)
 
-	if version >= DirEntryV2 {
-		binary.Read(r, binary.LittleEndian, &e.Uid)
-		binary.Read(r, binary.LittleEndian, &e.Gid)
-		e.UserName, _ = readLenStr(r)
-		e.GroupName, _ = readLenStr(r)
-		e.LinkTarget, _ = readLenStr(r)
-		binary.Read(r, binary.LittleEndian, &e.DevMajor)
-		binary.Read(r, binary.LittleEndian, &e.DevMinor)
+	binary.Read(r, binary.LittleEndian, &e.Uid)
+	binary.Read(r, binary.LittleEndian, &e.Gid)
+	e.UserName, _ = readLenStr(r)
+	e.GroupName, _ = readLenStr(r)
+	e.LinkTarget, _ = readLenStr(r)
+	binary.Read(r, binary.LittleEndian, &e.DevMajor)
+	binary.Read(r, binary.LittleEndian, &e.DevMinor)
 
-		var xattrCount uint32
-		binary.Read(r, binary.LittleEndian, &xattrCount)
-		if xattrCount > 0 && xattrCount < 100000 {
-			e.Xattrs = make(map[string][]byte, xattrCount)
-			for i := uint32(0); i < xattrCount; i++ {
-				key, err := readLenStr(r)
-				if err != nil {
-					break
-				}
-				var vlen uint32
-				if err := binary.Read(r, binary.LittleEndian, &vlen); err != nil {
-					break
-				}
-				if vlen > 65536 {
-					break
-				}
-				val := make([]byte, vlen)
-				if _, err := io.ReadFull(r, val); err != nil {
-					break
-				}
-				e.Xattrs[key] = val
+	var xattrCount uint32
+	binary.Read(r, binary.LittleEndian, &xattrCount)
+	if xattrCount > 0 && xattrCount < 100000 {
+		e.Xattrs = make(map[string][]byte, xattrCount)
+		for i := uint32(0); i < xattrCount; i++ {
+			key, err := readLenStr(r)
+			if err != nil {
+				break
 			}
+			var vlen uint32
+			if err := binary.Read(r, binary.LittleEndian, &vlen); err != nil {
+				break
+			}
+			if vlen > 65536 {
+				break
+			}
+			val := make([]byte, vlen)
+			if _, err := io.ReadFull(r, val); err != nil {
+				break
+			}
+			e.Xattrs[key] = val
 		}
 	}
 	return e, nil

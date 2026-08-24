@@ -20,6 +20,7 @@ const (
 type Reader struct {
 	HashTables [][]uint32
 	fecData    []byte
+	globalMetaFec []byte
 	FecOffset  int64
 	FecLen     int64
 	Password   []byte
@@ -84,6 +85,7 @@ func Open(path string, password ...[]byte) (*Reader, error) {
 
 	// 读hash表
 	var hashTables [][]uint32
+	var globalMeta []byte
 	var totalHashes uint32
 	binary.Read(f, binary.LittleEndian, &totalHashes)
 	if totalHashes > 0 && totalHashes < 100000000 {
@@ -93,7 +95,17 @@ func Open(path string, password ...[]byte) (*Reader, error) {
 		}
 		hashTables = append(hashTables, allH) // 单个flat数组
 	}
-	r := &Reader{Header: gh, Entries: entries, data: data, HashTables: hashTables, FecOffset: fecOffset, FecLen: int64(fecDataLen)}
+
+	if gh.Flags&FlagHasGlobalFEC != 0 {
+		var globalLen uint32
+		if binary.Read(f, binary.LittleEndian, &globalLen) == nil && globalLen > 0 && globalLen < 1<<28 {
+			buf := make([]byte, globalLen)
+			if _, err := io.ReadFull(f, buf); err == nil {
+				globalMeta = buf
+			}
+		}
+	}
+	r := &Reader{Header: gh, Entries: entries, data: data, HashTables: hashTables, FecOffset: fecOffset, FecLen: int64(fecDataLen), globalMetaFec: globalMeta}
 	if len(password) > 0 {
 		r.Password = password[0]
 	}
@@ -104,12 +116,8 @@ func (r *Reader) List() []DirEntry {
 	return r.Entries
 }
 
-// zstdReaderFor decompresses a zstd frame from this archive, selecting the
-// legacy sequence code tables for archives written before minor version 1.
+// zstdReaderFor decompresses a zstd frame from this archive.
 func (r *Reader) zstdReaderFor(data []byte) (io.ReadCloser, error) {
-	if r.Header != nil && r.Header.VersionMinor < 1 {
-		return ZstdNewReaderLegacy(bytes.NewReader(data))
-	}
 	return ZstdNewReader(bytes.NewReader(data))
 }
 

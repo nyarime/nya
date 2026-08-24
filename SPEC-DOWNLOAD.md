@@ -1,0 +1,167 @@
+# NYA download distribution (`.nyam`)
+
+Version 1. Companion to the NYA archive format ([SPEC.md](SPEC.md)).
+
+Transport blocks describe **byte ranges of the on-disk `.nya` file** for HTTP
+`Range` requests, resumable downloads, and parallel fetchers (`nya-get`). They
+are independent of internal FEC/compression blocks inside the archive.
+
+## Design goals
+
+| Goal | Mechanism |
+| --- | --- |
+| Resume after disconnect | Per transport block completion + local state file |
+| Saturate bandwidth | Parallel `Range` on distinct block IDs |
+| Integrity | BLAKE3-256 per transport block + whole-file digest |
+| CDN friendly | Single `.nya` URL + sidecar `.nyam` JSON |
+| Backward compatible | Manifest is optional; existing `.nya` v1.0 unchanged |
+
+## File roles
+
+```
+GamePack.nya      — archive (SPEC.md)
+GamePack.nyam     — download manifest (this document)
+GamePack.nyam.state — local resume state (not shipped; created by nya-get)
+```
+
+## `.nyam` manifest (JSON)
+
+Media type: `application/vnd.nyarime.nyam+json` (conventional).
+
+```json
+{
+  "format": "nyam",
+  "version": 1,
+  "archive": {
+    "name": "GamePack.nya",
+    "size": 5368709120,
+    "blake3": "a1b2c3…64 hex…",
+    "nya_version": "1.0",
+    "fec_bytes": 104857600,
+    "fec_offset": 5263851520
+  },
+  "download": {
+    "block_size": 4194304,
+    "blocks": [
+      {
+        "id": 0,
+        "offset": 0,
+        "size": 4194304,
+        "blake3": "…"
+      }
+    ]
+  },
+  "sources": [
+    {
+      "url": "https://cdn.example.com/GamePack.nya",
+      "priority": 1
+    }
+  ]
+}
+```
+
+### Top-level fields
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `format` | string | yes | Must be `"nyam"`. |
+| `version` | int | yes | Manifest schema version; currently `1`. |
+| `archive` | object | yes | Describes the target `.nya` file. |
+| `download` | object | yes | Transport block index. |
+| `sources` | array | no | Ordered download URLs (highest `priority` first). |
+
+### `archive` object
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `name` | string | yes | Basename of the archive file. |
+| `size` | int | yes | Total `.nya` size in bytes. |
+| `blake3` | string | yes | Lowercase hex BLAKE3-256 of the entire file. |
+| `nya_version` | string | no | `"major.minor"` from the NYA global header. |
+| `fec_offset` | int | no | Byte offset of global recovery section (informative). |
+| `fec_bytes` | int | no | Length of recovery section (informative). |
+
+### `download` object
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `block_size` | int | yes | Nominal block size used when building the index. |
+| `blocks` | array | yes | One entry per transport block, sorted by `id`. |
+
+### Transport block entry
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `id` | int | yes | Zero-based block index. |
+| `offset` | int | yes | Start byte in `.nya`. |
+| `size` | int | yes | Length in bytes (last block may be shorter than `block_size`). |
+| `blake3` | string | yes | Lowercase hex BLAKE3-256 of `offset..offset+size`. |
+
+**Invariants**
+
+- Blocks cover `[0, archive.size)` without gaps or overlap.
+- `offset` of block `id+1` equals `offset+size` of block `id`.
+- Sum of all `size` values equals `archive.size`.
+
+### `sources` entry
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `url` | string | yes | HTTP(S) URL to the `.nya` file. |
+| `priority` | int | no | Higher tried first; default `0`. |
+
+## HTTP download semantics
+
+Fetcher (`nya-get`) MUST:
+
+1. Pick a source URL (by `priority`, then failover).
+2. Issue `GET` with `Range: bytes=offset-offset+size-1` per block.
+3. Verify block `blake3` before marking the block complete.
+4. Retry failed blocks on the same or alternate source.
+5. After all blocks complete, verify `archive.blake3` over the assembled file.
+
+Servers SHOULD support `Accept-Ranges: bytes`. When `Range` is unsupported,
+fetchers MAY fall back to a full-file download and verify `archive.blake3`.
+
+## Resume state file (`.nyam.state`)
+
+JSON written locally by `nya-get`:
+
+```json
+{
+  "manifest_blake3": "…",
+  "output": "GamePack.nya",
+  "completed": [0, 1, 2, 5],
+  "updated_at": "2026-08-24T09:00:00Z"
+}
+```
+
+| Field | Notes |
+| --- | --- |
+| `manifest_blake3` | BLAKE3 of the `.nyam` file; invalidates state if manifest changes. |
+| `output` | Path being written. |
+| `completed` | Sorted list of finished block IDs. |
+
+## Generating manifests
+
+Reference command:
+
+```bash
+nya manifest GamePack.nya -o GamePack.nyam \
+  --url https://cdn.example.com/GamePack.nya \
+  --block-size 4m
+```
+
+Implementation scans the existing `.nya` on disk; no archive rewrite required.
+
+## Future: embedded download index (format v1.1+)
+
+Reserved global header flag bit 4 (`HasDownloadIndex`): optional binary block
+index appended before the recovery section so a manifest can be reconstructed
+without scanning. v1.0 archives rely on the `.nyam` sidecar only.
+
+## Version history
+
+### 1.0
+
+Initial `.nyam` JSON schema and transport block conventions.
