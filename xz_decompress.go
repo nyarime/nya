@@ -35,6 +35,26 @@ func XzDecompress(data []byte) ([]byte, error) {
 	return io.ReadAll(r)
 }
 
+// Lzma2NewReader decompresses a raw LZMA2 stream, the form Lzma2Compress
+// produces. dictSize must be at least the value used when compressing;
+// pass 0 for the 4 MiB default this package writes.
+func Lzma2NewReader(r io.Reader, dictSize int) io.ReadCloser {
+	if dictSize <= 0 {
+		dictSize = lzma2DictSize
+	}
+	return newLzma2Reader(r, dictSize)
+}
+
+// Lzma2Decompress decompresses a raw LZMA2 stream from a byte slice.
+func Lzma2Decompress(data []byte, dictSize int) ([]byte, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+	r := Lzma2NewReader(bytes.NewReader(data), dictSize)
+	defer r.Close()
+	return io.ReadAll(r)
+}
+
 // LzmaNewReader creates a new plain LZMA stream decompressor.
 func LzmaNewReader(r io.Reader) (io.ReadCloser, error) {
 	lr, err := newLmaReader(r)

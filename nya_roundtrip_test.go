@@ -42,15 +42,13 @@ func TestNYARoundtrip(t *testing.T) {
 		origData[name] = data
 	}
 
-	for _, mode := range []string{"fast", "best"} {
-		t.Run(mode, func(t *testing.T) {
+	for _, codec := range []string{CompressionLZMA2, CompressionZstd} {
+		t.Run(codec, func(t *testing.T) {
 			// Create NYA archive
 			var buf bytes.Buffer
 			ws := &seekBuf{buf: &buf}
 			w := NewWriterOpts(ws, 0, 9, false)
-			if mode == "best" {
-				w.SetCompression("lzma2")
-			}
+			w.SetCompression(codec)
 			if err := w.AddFile(srcDir); err != nil {
 				t.Fatal("AddFile:", err)
 			}
@@ -63,7 +61,7 @@ func TestNYARoundtrip(t *testing.T) {
 			if err := os.WriteFile(nyaFile, buf.Bytes(), 0644); err != nil {
 				t.Fatal(err)
 			}
-			t.Logf("%s mode: archive size = %d bytes", mode, buf.Len())
+			t.Logf("%s: archive size = %d bytes", codec, buf.Len())
 
 			// Extract
 			extractDir := filepath.Join(t.TempDir(), "out")

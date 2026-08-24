@@ -54,13 +54,14 @@ func TestArchiveRoundtripModes(t *testing.T) {
 		name     string
 		fec      int
 		solid    bool
-		lzma2    bool
+		codec    string
 		password string
 	}{
-		{name: "zstd"},
-		{name: "lzma2", lzma2: true},
+		{name: "default"},
+		{name: "lzma2", codec: CompressionLZMA2},
+		{name: "zstd", codec: CompressionZstd},
 		{name: "solid", solid: true},
-		{name: "solid-lzma2", solid: true, lzma2: true},
+		{name: "solid-zstd", solid: true, codec: CompressionZstd},
 		{name: "fec", fec: 30},
 		{name: "encrypted", password: "correct horse battery staple"},
 	}
@@ -79,8 +80,8 @@ func TestArchiveRoundtripModes(t *testing.T) {
 			} else {
 				w = NewWriterOpts(f, tc.fec, 9, tc.solid)
 			}
-			if tc.lzma2 {
-				w.SetCompression("lzma2")
+			if tc.codec != "" {
+				w.SetCompression(tc.codec)
 			}
 			if err := w.AddFile(srcDir); err != nil {
 				t.Fatal("AddFile:", err)
@@ -104,6 +105,17 @@ func TestArchiveRoundtripModes(t *testing.T) {
 			}
 			if !r.Verify() {
 				t.Error("Verify reported a damaged archive")
+			}
+
+			wantCodec := uint16(CompressLzma2)
+			if tc.codec == CompressionZstd {
+				wantCodec = CompressZstd
+			}
+			for _, e := range r.Entries {
+				if e.EntryType == EntryFile && e.CompressionID != wantCodec {
+					t.Errorf("%s: CompressionID = %d, want %d", e.Path, e.CompressionID, wantCodec)
+					break
+				}
 			}
 
 			out := t.TempDir()
@@ -134,16 +146,14 @@ func TestArchiveCompressionRatio(t *testing.T) {
 		raw += len(c)
 	}
 
-	for _, mode := range []string{"zstd", "lzma2"} {
+	for _, codec := range []string{CompressionLZMA2, CompressionZstd} {
 		archive := filepath.Join(t.TempDir(), "ratio.nya")
 		f, err := os.Create(archive)
 		if err != nil {
 			t.Fatal(err)
 		}
 		w := NewWriterOpts(f, 0, 9, false)
-		if mode == "lzma2" {
-			w.SetCompression("lzma2")
-		}
+		w.SetCompression(codec)
 		if err := w.AddFile(srcDir); err != nil {
 			t.Fatal(err)
 		}
@@ -160,9 +170,44 @@ func TestArchiveCompressionRatio(t *testing.T) {
 		// The tree is ~30% incompressible noise, so anything under 0.75 shows
 		// the codec is doing real work.
 		if ratio > 0.75 {
-			t.Errorf("%s: archive is %.1f%% of the input, expected under 75%%", mode, ratio*100)
+			t.Errorf("%s: archive is %.1f%% of the input, expected under 75%%", codec, ratio*100)
 		}
-		t.Logf("%s: %d -> %d bytes (%.1f%%)", mode, raw, fi.Size(), ratio*100)
+		t.Logf("%s: %d -> %d bytes (%.1f%%)", codec, raw, fi.Size(), ratio*100)
+	}
+}
+
+// Lzma2Compress had no exported counterpart, which matters now that LZMA2 is
+// the default codec.
+func TestLzma2RoundtripPublicAPI(t *testing.T) {
+	inputs := map[string][]byte{
+		"empty": {},
+		"short": []byte("nya"),
+		"text":  bytes.Repeat([]byte("the quick brown fox jumps over the lazy dog\n"), 500),
+		"binary": func() []byte {
+			b := make([]byte, 70000)
+			for i := range b {
+				b[i] = byte(i * 7 % 251)
+			}
+			return b
+		}(),
+	}
+	for name, src := range inputs {
+		t.Run(name, func(t *testing.T) {
+			comp, err := Lzma2Compress(src, 0)
+			if err != nil {
+				t.Fatalf("Lzma2Compress: %v", err)
+			}
+			got, err := Lzma2Decompress(comp, 0)
+			if err != nil {
+				t.Fatalf("Lzma2Decompress: %v", err)
+			}
+			if len(src) == 0 && len(got) == 0 {
+				return
+			}
+			if !bytes.Equal(got, src) {
+				t.Fatalf("roundtrip mismatch: got %d bytes, want %d", len(got), len(src))
+			}
+		})
 	}
 }
 

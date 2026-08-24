@@ -369,16 +369,9 @@ func (r *Reader) extractSolid(dir string) error {
 
 func (r *Reader) GetData() []byte { return r.data }
 
-// decompressLzma2Block decompresses a raw LZMA2 block.
+// decompressLzma2Block decompresses a raw LZMA2 block written by the writer.
 func decompressLzma2Block(data []byte) ([]byte, error) {
-	if len(data) == 0 {
-		return nil, nil
-	}
-	// Use the LZMA2 reader from xz_decompress.go
-	lr := newLzma2Reader(bytes.NewReader(data), 1<<22) // 4MB dict
-	out, err := io.ReadAll(lr)
-	lr.Close()
-	return out, err
+	return Lzma2Decompress(data, lzma2DictSize)
 }
 
 // restoreMeta restores ownership, timestamps, and xattrs on an extracted path.

@@ -14,7 +14,7 @@ the BLAKE3 implementation and the container are all written from scratch;
 
 | Layer | What it does |
 | --- | --- |
-| Compression | Zstandard (RFC 8878) by default, or LZMA2 for the best ratio |
+| Compression | LZMA2 by default, or Zstandard (RFC 8878) for fast extraction |
 | Pre-filters | BCJ branch conversion for x86, ARM, AArch64 and MIPS binaries; delta filter |
 | Integrity | BLAKE3-256 over every chunk, with AVX2/AVX-512/SSE2/NEON assembly paths |
 | Recovery | RaptorQ parity symbols, sized as a percentage of the payload |
@@ -34,17 +34,19 @@ go install github.com/nyarime/nya/cmd/nya@latest
 ## Command line
 
 ```bash
-nya create -level 9 backup.nya ./project     # create
-nya create -best -fec 30 backup.nya ./data   # LZMA2 plus 30% recovery data
-nya list backup.nya                          # inspect
-nya extract backup.nya ./restored            # extract
-nya verify backup.nya                        # check stored digests
-nya info backup.nya                          # header details
-nya repair damaged.nya fixed.nya             # rebuild using the parity data
+nya create backup.nya ./project                    # create
+nya create -codec zstd backup.nya ./project        # trade size for fast extraction
+nya create -fec 30 backup.nya ./data               # add 30% recovery data
+nya list backup.nya                                # inspect
+nya extract backup.nya ./restored                  # extract
+nya verify backup.nya                              # check stored digests
+nya info backup.nya                                # header details, including codec
+nya repair damaged.nya fixed.nya                   # rebuild using the parity data
 ```
 
 `create` also accepts `-solid` to compress every file as a single stream,
-`-password` to encrypt the payload and `-workers` to cap concurrency.
+`-password` to encrypt the payload, `-level` for the zstd level and
+`-workers` to cap concurrency.
 
 ## Library
 
@@ -98,29 +100,39 @@ The codecs are usable on their own: `ZstdCompress`, `DecompressZstd`,
 `Lzma2Compress`, `XzCompress`, `Blake3Sum256`, and the BCJ and delta filters
 are all exported.
 
-## Compression
+## Choosing a codec
 
-Measured on this machine at level 9; percentages are compressed size relative
-to the input, so lower is better. `ref zstd` is
-`github.com/klauspost/compress/zstd` at its default level, included as a
-yardstick.
+Percentages are compressed size relative to the input, so lower is better.
+Measured on one machine at level 9; treat them as ratios between the columns
+rather than absolute numbers. `ref zstd` is
+`github.com/klauspost/compress/zstd` at its default level, as a yardstick.
 
-| corpus | size | nya zstd | nya lzma2 | ref zstd |
+| corpus | size | nya lzma2 | nya zstd | ref zstd |
 | --- | ---: | ---: | ---: | ---: |
-| structured text | 819412 | 35.7% (22ms) | 9.4% (8ms) | 11.7% (4ms) |
-| markdown | 39359 | 64.2% (2ms) | 49.1% (2ms) | 54.9% (1ms) |
-| ELF binary | 48072 | 44.4% (2ms) | 35.5% (2ms) | 39.5% (<1ms) |
-| exact repeats | 192000 | 0.0% (1ms) | 0.2% (1ms) | 0.0% (<1ms) |
-| random | 200000 | 100.0% (4ms) | 100.0% (18ms) | 100.0% (<1ms) |
+| structured text | 819412 | **9.4%** | 35.7% | 11.7% |
+| markdown | 39359 | **49.1%** | 64.2% | 54.9% |
+| ELF binary | 48072 | **35.5%** | 44.4% | 39.5% |
+| exact repeats | 192000 | 0.2% | 0.0% | 0.0% |
+| random | 200000 | 100.0% | 100.0% | 100.0% |
 
-The LZMA2 encoder is the strong one: it beats the reference zstd encoder on
-every corpus above except pure repetition, and it is what `-best` selects.
-The zstd encoder uses a simpler match finder and a smaller set of entropy
-coding modes, so it trades ratio for a faster decode path. If archive size
-matters more than decompression speed, use `-best`.
+LZMA2 is the default because it wins on size everywhere that matters, beating
+even the reference zstd encoder on every corpus except pure repetition. What
+it costs is decompression speed:
 
-Frames from the zstd encoder are checked against a third-party decoder, so
-`.nya` payloads are readable by any conformant zstd implementation.
+| corpus | lzma2 | zstd |
+| --- | ---: | ---: |
+| structured text | 59 MB/s | 275 MB/s |
+| markdown | 18 MB/s | 127 MB/s |
+| ELF binary | 23 MB/s | 177 MB/s |
+
+So LZMA2 extracts roughly five to seven times slower. Pass `-codec zstd` when
+an archive is read far more often than it is written, or when extraction time
+is on a critical path; keep the default when size is what matters.
+
+The zstd encoder here uses a simpler match finder and fewer entropy coding
+modes than the reference implementation, which is why it trails on ratio. Its
+frames are checked against a third-party decoder, so `.nya` payloads written
+with `-codec zstd` are readable by any conformant zstd implementation.
 
 ## Compatibility
 

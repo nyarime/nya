@@ -3,6 +3,7 @@ package nya
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"os"
 	"os/user"
@@ -62,27 +63,53 @@ func NewWriterOpts(w io.WriteSeeker, fecPercent int, compressLevel int, solid bo
 	return w2
 }
 
-func (nw *Writer) SetDict(dict []byte)      { nw.dict = dict }
-func (nw *Writer) SetWorkers(n int)          { nw.workers = n }
+// Codecs accepted by Writer.SetCompression.
+const (
+	// CompressionLZMA2 is the default. It compresses smaller than the zstd
+	// encoder on every corpus we measure, and on text it is faster to
+	// compress as well; the trade is a slower decompressor.
+	CompressionLZMA2 = "lzma2"
+
+	// CompressionZstd trades ratio for a much faster decompressor.
+	CompressionZstd = "zstd"
+)
+
+// lzma2DictSize is the dictionary the writer asks LZMA2 for. It matches the
+// size the reader uses, so the two must be changed together.
+const lzma2DictSize = 4 * 1024 * 1024
+
+func (nw *Writer) SetDict(dict []byte) { nw.dict = dict }
+func (nw *Writer) SetWorkers(n int)    { nw.workers = n }
+
+// SetCompression selects the codec: CompressionLZMA2 (the default) or
+// CompressionZstd. Any other value falls back to the default.
 func (nw *Writer) SetCompression(method string) { nw.compressionMethod = method }
 
-// compressionID returns the format compression ID for the current method.
-func (nw *Writer) compressionID() uint16 {
-	if nw.compressionMethod == "lzma2" {
-		return CompressLzma2
-	}
-	return CompressZstd
+// usesZstd reports whether this writer emits zstd rather than LZMA2. A
+// dictionary implies zstd, since only that encoder can use one.
+func (nw *Writer) usesZstd() bool {
+	return nw.compressionMethod == CompressionZstd || len(nw.dict) > 0
 }
 
-// compressRaw compresses data using the configured method (no BCJ).
-func (nw *Writer) compressRaw(data []byte) []byte {
-	if nw.compressionMethod == "lzma2" {
-		compressed, err := Lzma2Compress(data, 4*1024*1024)
-		if err == nil {
-			return compressed
-		}
+// compressionID returns the format compression ID for the current codec.
+func (nw *Writer) compressionID() uint16 {
+	if nw.usesZstd() {
+		return CompressZstd
 	}
-	return ZstdCompressWithWindow(data, nw.compressLevel)
+	return CompressLzma2
+}
+
+// compressRaw compresses data using the configured codec (no BCJ).
+//
+// A failure is reported rather than quietly retried with the other codec:
+// the directory entry has already committed to one CompressionID for the
+// whole entry, so silently switching would produce an archive that cannot be
+// read back.
+func (nw *Writer) compressRaw(data []byte) ([]byte, error) {
+	if nw.usesZstd() {
+		return ZstdCompressWithWindow(data, nw.compressLevel), nil
+	}
+	return Lzma2Compress(data, lzma2DictSize)
 }
 
 func (nw *Writer) AddFile(path string) error {
@@ -272,7 +299,10 @@ func (nw *Writer) addFileNormal(relPath string, raw []byte, info os.FileInfo) er
 		}
 		block := raw[off:end]
 
-		compressed := nw.compressBlockWithBCJ(block, bcjArch)
+		compressed, err := nw.compressBlockWithBCJ(block, bcjArch)
+		if err != nil {
+			return fmt.Errorf("nya: compress %s: %w", relPath, err)
+		}
 
 		var lenBuf [4]byte
 		binary.LittleEndian.PutUint32(lenBuf[:], uint32(len(compressed)))
@@ -348,7 +378,7 @@ func (nw *Writer) addFileNormal(relPath string, raw []byte, info os.FileInfo) er
 
 // compressBlockWithBCJ applies BCJ filter (if arch set) then compresses.
 // BCJ is always applied when arch != "" for consistency with reader.
-func (nw *Writer) compressBlockWithBCJ(block []byte, bcjArch string) []byte {
+func (nw *Writer) compressBlockWithBCJ(block []byte, bcjArch string) ([]byte, error) {
 	data := block
 	if bcjArch != "" {
 		filtered := make([]byte, len(block))
@@ -357,17 +387,13 @@ func (nw *Writer) compressBlockWithBCJ(block []byte, bcjArch string) []byte {
 		data = filtered
 	}
 
-	if nw.compressionMethod == "lzma2" {
-		compressed, err := Lzma2Compress(data, 4*1024*1024)
-		if err == nil {
-			return compressed
-		}
-		// fallback to zstd on error
+	if !nw.usesZstd() {
+		return Lzma2Compress(data, lzma2DictSize)
 	}
 	if len(nw.dict) > 0 {
-		return ZstdCompressWithDict(data, nw.compressLevel, nw.dict)
+		return ZstdCompressWithDict(data, nw.compressLevel, nw.dict), nil
 	}
-	return ZstdCompressWithWindow(data, nw.compressLevel)
+	return ZstdCompressWithWindow(data, nw.compressLevel), nil
 }
 
 // addFileSolid accumulates file data for solid compression.
@@ -427,8 +453,14 @@ func (nw *Writer) closeSolid() error {
 		copy(filtered, solidData)
 		ApplyBCJFilterArch(filtered, bcjArch, true)
 
-		compOrig := nw.compressRaw(solidData)
-		compBCJ := nw.compressRaw(filtered)
+		compOrig, err := nw.compressRaw(solidData)
+		if err != nil {
+			return fmt.Errorf("nya: compress solid stream: %w", err)
+		}
+		compBCJ, err := nw.compressRaw(filtered)
+		if err != nil {
+			return fmt.Errorf("nya: compress solid stream: %w", err)
+		}
 
 		if len(compBCJ) < len(compOrig) {
 			solidData = filtered
@@ -436,8 +468,11 @@ func (nw *Writer) closeSolid() error {
 		}
 	}
 
-	// Compress entire solid stream as one zstd frame
-	compData := nw.compressRaw(solidData)
+	// Compress the whole solid stream as a single frame.
+	compData, err := nw.compressRaw(solidData)
+	if err != nil {
+		return fmt.Errorf("nya: compress solid stream: %w", err)
+	}
 
 	// Encrypt
 	if len(nw.password) > 0 {

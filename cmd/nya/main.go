@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/nyarime/nya"
@@ -21,6 +22,9 @@ Usage:
   nya verify  <archive.nya>                  check stored BLAKE3 digests
   nya info    <archive.nya>                  show header details
   nya repair  <archive.nya> [out.nya]        rebuild a damaged archive using its FEC data
+
+Archives use LZMA2 by default. Pass "-codec zstd" to create for a much
+faster decompressor at the cost of a bigger archive.
 
 Run "nya <command> -h" for the flags of a command.
 `
@@ -61,14 +65,21 @@ func main() {
 
 func cmdCreate(args []string) error {
 	fs := flag.NewFlagSet("create", flag.ExitOnError)
-	level := fs.Int("level", 9, "compression level, 1 (fastest) to 19 (smallest)")
+	level := fs.Int("level", 9, "compression level, 1 (fastest) to 19 (smallest); zstd only")
 	fec := fs.Int("fec", 0, "percentage of RaptorQ recovery data to add")
 	solid := fs.Bool("solid", false, "compress all files as one stream (better ratio, slower random access)")
-	best := fs.Bool("best", false, "use LZMA2 instead of Zstandard for the best ratio")
+	codec := fs.String("codec", nya.CompressionLZMA2,
+		"lzma2 for the smallest archive, or zstd for much faster extraction")
 	password := fs.String("password", "", "encrypt the payload with this password")
 	workers := fs.Int("workers", 0, "number of compression workers (0 = automatic)")
 	fs.Parse(args)
 
+	switch *codec {
+	case nya.CompressionLZMA2, nya.CompressionZstd:
+	default:
+		return fmt.Errorf("unknown codec %q, want %q or %q",
+			*codec, nya.CompressionLZMA2, nya.CompressionZstd)
+	}
 	if fs.NArg() != 2 {
 		return fmt.Errorf("create needs an archive path and one input path")
 	}
@@ -86,9 +97,7 @@ func cmdCreate(args []string) error {
 	} else {
 		w = nya.NewWriterOpts(f, *fec, *level, *solid)
 	}
-	if *best {
-		w.SetCompression("lzma2")
-	}
+	w.SetCompression(*codec)
 	if *workers > 0 {
 		w.SetWorkers(*workers)
 	}
@@ -198,6 +207,7 @@ func cmdInfo(args []string) error {
 	fmt.Printf("format version:  %d.%d\n", h.VersionMajor, h.VersionMinor)
 	fmt.Printf("created:         %s\n", time.Unix(0, h.CreationTime).Format(time.RFC3339))
 	fmt.Printf("entries:         %d\n", len(r.Entries))
+	fmt.Printf("codec:           %s\n", archiveCodec(r))
 	fmt.Printf("uncompressed:    %s\n", nya.HumanSize(int(h.TotalOrigSize)))
 	fmt.Printf("data area:       %s\n", nya.HumanSize(int(h.DataAreaSize)))
 	fmt.Printf("solid:           %t\n", h.Flags&nya.FlagSolidCompress != 0)
@@ -232,6 +242,39 @@ func cmdRepair(args []string) error {
 		return fmt.Errorf("%d chunks could not be recovered", res.FailedChunks)
 	}
 	return nil
+}
+
+// archiveCodec reports the codec used by the file entries. The format records
+// it per entry, so an archive can in principle mix them.
+func archiveCodec(r *nya.Reader) string {
+	seen := map[string]bool{}
+	for _, e := range r.Entries {
+		if e.EntryType != nya.EntryFile {
+			continue
+		}
+		switch e.CompressionID {
+		case nya.CompressLzma2:
+			seen["lzma2"] = true
+		case nya.CompressZstd:
+			seen["zstd"] = true
+		default:
+			seen[fmt.Sprintf("id-%d", e.CompressionID)] = true
+		}
+	}
+	switch len(seen) {
+	case 0:
+		return "none"
+	case 1:
+		for name := range seen {
+			return name
+		}
+	}
+	names := make([]string, 0, len(seen))
+	for name := range seen {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return "mixed (" + strings.Join(names, ", ") + ")"
 }
 
 func open(path, password string) (*nya.Reader, error) {
