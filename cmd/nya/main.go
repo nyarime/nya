@@ -21,7 +21,7 @@ Usage:
   nya extract [flags] <archive.nya> [dir]    extract an archive (default: current directory)
   nya verify  <archive.nya>                  check stored BLAKE3 digests
   nya info    <archive.nya>                  show header details
-  nya repair  <archive.nya> [out.nya]        rebuild a damaged archive using its FEC data
+  nya repair  <archive> [out]                 repair NYA / ZIP / RAR (format detected by magic)
   nya augment <archive.nya> [out.nya]        increase FEC repair data (Leopard-RS / Hybrid / RaptorQ)
   nya convert [flags] <in.zip|7z|rar> <out.nya>  unpack legacy archive and repack as NYA (zip/7z/rar)
   nya manifest <archive.nya> -o <manifest.nyam>  build download manifest for nya-get
@@ -279,7 +279,7 @@ func cmdRepair(args []string) error {
 		return fmt.Errorf("repair needs an archive path and an optional output path")
 	}
 	in := fs.Arg(0)
-	out := in + ".repaired"
+	var out string
 	if fs.NArg() == 2 {
 		out = fs.Arg(1)
 	}
@@ -288,10 +288,22 @@ func cmdRepair(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%s: %d/%d chunks repaired, %d failed\n",
-		out, res.RepairedChunks, res.TotalChunks, res.FailedChunks)
-	if res.FailedChunks > 0 {
-		return fmt.Errorf("%d chunks could not be recovered", res.FailedChunks)
+	if res.OutputPath != "" {
+		out = res.OutputPath
+	}
+	switch res.Format {
+	case nya.FormatZIP, nya.FormatRAR:
+		fmt.Printf("%s (%s): rebuilt %d/%d entries → %s\n",
+			filepath.Base(in), res.Format, res.RepairedChunks, res.FilesFound, out)
+		if res.RepairedChunks == 0 {
+			return fmt.Errorf("no entries could be recovered")
+		}
+	default:
+		fmt.Printf("%s (nya): %d/%d chunks repaired, %d failed → %s\n",
+			filepath.Base(in), res.RepairedChunks, res.TotalChunks, res.FailedChunks, out)
+		if res.FailedChunks > 0 {
+			return fmt.Errorf("%d chunks could not be recovered", res.FailedChunks)
+		}
 	}
 	return nil
 }
