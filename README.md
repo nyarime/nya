@@ -51,6 +51,8 @@ nya extract backup.nya ./restored                  # extract
 nya verify backup.nya                              # check stored digests
 nya info backup.nya                                # header details, including codec
 nya repair damaged.nya fixed.nya                   # rebuild using the parity data
+nya convert legacy.zip repaired.nya                # unpack zip/7z/rar → NYA (+FEC)
+nya convert -fec 20 old.rar backup.nya             # WinRAR-style recovery, but configurable
 nya manifest GamePack.nya -o GamePack.nyam --url https://cdn/game.nya  # download index
 nya sfx pack.nya -o pack.bin                  # wrap as self-extractor (Rust stub)
 nya create -sfx game.bin -level 3 ./GameData/ # create + wrap in one step
@@ -67,6 +69,24 @@ nya-get -c 16 GamePack.nyam    # parallel Range download + resume
 ```
 
 See [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) for the `.nyam` manifest schema.
+
+### Convert legacy archives (zip / 7z / rar → NYA)
+
+NYA is the compression product; [Nyarc](https://github.com/nyarime/Nyarc) is for firmware.
+Use **`nya convert`** to unpack a damaged or legacy archive and repack it as `.nya` with
+optional FEC — something zip and 7z cannot do natively, and WinRAR only partially
+addresses with fixed-size recovery records.
+
+```bash
+nya convert game.zip game.nya                      # zip via built-in reader
+nya convert -fec 30 archive.7z archive.nya         # 7z via p7zip (7z on PATH)
+nya convert -source-password secret old.rar new.nya  # encrypted RAR input
+nya convert -level 9 -solid -fec 10 bundle.zip bundle.nya
+```
+
+Aliases: `nya import`, `nya repack`. Formats: **zip** (pure Go); **7z, rar, tar.\*** require
+[7-Zip](https://www.7-zip.org/) / `p7zip-full`. Paths are stored as **UTF-8** (中文 filenames
+roundtrip correctly). See [docs/BENCHMARK-FEC.md](docs/BENCHMARK-FEC.md) for FEC vs WinRAR/7z.
 
 Levels run 0 to 9, the way 7-Zip and WinRAR present them:
 

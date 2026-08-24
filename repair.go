@@ -105,10 +105,16 @@ func Repair(path string, outputPath string) (*RepairResult, error) {
 		if out == "" {
 			out = path
 		}
-		wf, werr := os.OpenFile(out, os.O_RDWR, 0644)
-		if werr == nil {
-			wf.WriteAt(r.data, GlobalHeaderSize)
-			wf.Close()
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return result, err
+		}
+		if int(GlobalHeaderSize)+len(r.data) > len(raw) {
+			return result, fmt.Errorf("repair: archive shorter than data area")
+		}
+		copy(raw[GlobalHeaderSize:GlobalHeaderSize+len(r.data)], r.data)
+		if err := os.WriteFile(out, raw, 0644); err != nil {
+			return result, err
 		}
 	}
 
@@ -158,6 +164,16 @@ func repairSolid(r *Reader, path, outputPath string) (*RepairResult, error) {
 			return result, nil
 		}
 		copy(r.data[ChunkHeaderSize:], repaired[:len(compData)])
+		nh := Blake3Sum256(repaired[:len(compData)])
+		newHash := binary.LittleEndian.Uint64(nh[:8])
+		r.data[24] = byte(newHash)
+		r.data[25] = byte(newHash >> 8)
+		r.data[26] = byte(newHash >> 16)
+		r.data[27] = byte(newHash >> 24)
+		r.data[28] = byte(newHash >> 32)
+		r.data[29] = byte(newHash >> 40)
+		r.data[30] = byte(newHash >> 48)
+		r.data[31] = byte(newHash >> 56)
 		result.RepairedChunks = 1
 		logf("  ✅ Solid chunk修复成功!" + "\n")
 

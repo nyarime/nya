@@ -22,7 +22,8 @@ Usage:
   nya verify  <archive.nya>                  check stored BLAKE3 digests
   nya info    <archive.nya>                  show header details
   nya repair  <archive.nya> [out.nya]        rebuild a damaged archive using its FEC data
-  nya augment <archive.nya> [out.nya]        append RaptorQ fountain repair symbols
+  nya augment <archive.nya> [out.nya]        increase FEC repair data (Leopard-RS / Hybrid / RaptorQ)
+  nya convert [flags] <in.zip|7z|rar> <out.nya>  unpack legacy archive and repack as NYA (zip/7z/rar)
   nya manifest <archive.nya> -o <manifest.nyam>  build download manifest for nya-get
   nya sfx     [flags] <archive.nya> -o <out.exe> wrap archive as self-extractor (Rust stub)
 
@@ -56,6 +57,8 @@ func main() {
 		err = cmdRepair(os.Args[2:])
 	case "augment":
 		err = cmdAugment(os.Args[2:])
+	case "convert", "import", "repack":
+		err = cmdConvert(os.Args[2:])
 	case "manifest":
 		err = cmdManifest(os.Args[2:])
 	case "sfx":
@@ -295,7 +298,7 @@ func cmdRepair(args []string) error {
 
 func cmdAugment(args []string) error {
 	fs := flag.NewFlagSet("augment", flag.ExitOnError)
-	extra := fs.Int("fec", 10, "extra RaptorQ repair as a percentage of payload")
+	extra := fs.Int("fec", 10, "extra repair data as a percentage of payload (adds to existing -fec, or sets initial when archive had -fec 0)")
 	fs.Parse(args)
 	if fs.NArg() < 1 || fs.NArg() > 2 {
 		return fmt.Errorf("augment needs an archive path and an optional output path")
@@ -309,7 +312,73 @@ func cmdAugment(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%s: appended %d repair symbols (%d bytes)\n", out, res.ExtraSymbols, res.ExtraBytes)
+	fmt.Printf("%s: +%s repair data (now ~%d%% payload redundancy)\n", out, nya.HumanSize(res.ExtraBytes), res.NewPercent)
+	return nil
+}
+
+func cmdConvert(args []string) error {
+	fs := flag.NewFlagSet("convert", flag.ExitOnError)
+	level := fs.Int("level", nya.LevelDefault,
+		"0 store, 1 fastest, 3 fast, 5 normal, 7 good, 9 best")
+	fec := fs.Int("fec", 10, "recovery data as a percentage of the payload (repack adds FEC unlike zip/7z)")
+	fecType := fs.String("fec-type", "hybrid",
+		"FEC codec when -fec > 0: hybrid (default), raptorq or ldpc")
+	solid := fs.Bool("solid", false, "solid compression (recommended for many small files)")
+	codec := fs.String("codec", "",
+		"override the level's codec: lzma2, zstd or store")
+	password := fs.String("password", "", "encrypt the output .nya with this password")
+	sourcePassword := fs.String("source-password", "", "password for encrypted zip/7z/rar input")
+	workers := fs.Int("workers", 0, "number of compression workers (0 = automatic)")
+	fs.Parse(args)
+
+	if fs.NArg() != 2 {
+		return fmt.Errorf("convert needs an input archive and output .nya path")
+	}
+	src, dst := fs.Arg(0), fs.Arg(1)
+	if !strings.HasSuffix(strings.ToLower(dst), ".nya") {
+		return fmt.Errorf("output must be a .nya path")
+	}
+	if !nya.Convertable(src) {
+		return fmt.Errorf("input %q is not a supported archive (supported: %s)", src, nya.ListConvertFormats())
+	}
+
+	var fecTypeVal uint8
+	if *fec > 0 {
+		switch *fecType {
+		case "hybrid", "":
+			fecTypeVal = nya.FECHybrid
+		case "raptorq":
+			fecTypeVal = nya.FECRaptorQ
+		case "ldpc":
+			fecTypeVal = nya.FECLDPC
+		default:
+			return fmt.Errorf("unknown fec-type %q, want hybrid, raptorq or ldpc", *fecType)
+		}
+	}
+
+	opts := nya.ConvertOptions{
+		FECPercent:     *fec,
+		Level:          *level,
+		Solid:          *solid,
+		Codec:          *codec,
+		SourcePassword: *sourcePassword,
+		FECType:        fecTypeVal,
+		Workers:        *workers,
+	}
+	if *password != "" {
+		opts.Password = []byte(*password)
+	}
+
+	start := time.Now()
+	res, err := nya.ConvertArchive(src, dst, opts)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("%s → %s  %s  [%s]", filepath.Base(src), dst, nya.HumanSize(int(res.OutputSize)), nya.LevelName(*level))
+	if *fec > 0 {
+		fmt.Printf("  +%d%% FEC", *fec)
+	}
+	fmt.Printf("  (%s)  in %s\n", res.SourceFormat, time.Since(start).Round(time.Millisecond))
 	return nil
 }
 
