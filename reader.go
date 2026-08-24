@@ -9,13 +9,12 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-
 )
 
 const (
-	MaxDecompressSize = 0 // no hard limit; use ratio detection
-	BombRatioThreshold = 1000 // single chunk compression ratio > 1000:1 = suspicious
-	BombRepeatThreshold = 10  // 10+ consecutive identical chunk hashes = bomb
+	MaxDecompressSize   = 0    // no hard limit; use ratio detection
+	BombRatioThreshold  = 1000 // single chunk compression ratio > 1000:1 = suspicious
+	BombRepeatThreshold = 10   // 10+ consecutive identical chunk hashes = bomb
 )
 
 type Reader struct {
@@ -23,16 +22,16 @@ type Reader struct {
 	fecData    []byte
 	FecOffset  int64
 	FecLen     int64
-	Password []byte
-	Header  *GlobalHeader
-	Entries []DirEntry
+	Password   []byte
+	Header     *GlobalHeader
+	Entries    []DirEntry
 
 	// OnEntry, when set, is called by Extract once per entry with the error
 	// from restoring it, so callers can report progress. Extract itself is
 	// silent.
 	OnEntry func(e DirEntry, err error)
 
-	data    []byte
+	data []byte
 }
 
 func (r *Reader) notify(e DirEntry, err error) {
@@ -43,11 +42,15 @@ func (r *Reader) notify(e DirEntry, err error) {
 
 func Open(path string, password ...[]byte) (*Reader, error) {
 	f, err := os.Open(path)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	defer f.Close()
 
 	gh, err := ReadGlobalHeader(f)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 
 	data := make([]byte, gh.DataAreaSize)
 	if _, err := io.ReadFull(f, data); err != nil {
@@ -65,7 +68,9 @@ func Open(path string, password ...[]byte) (*Reader, error) {
 	entries := make([]DirEntry, 0, entryCount)
 	for i := uint64(0); i < entryCount; i++ {
 		e, err := ReadDirEntry(f)
-		if err != nil { break }
+		if err != nil {
+			break
+		}
 		entries = append(entries, *e)
 	}
 
@@ -75,7 +80,7 @@ func Open(path string, password ...[]byte) (*Reader, error) {
 	var fecDataLen uint32
 	binary.Read(f, binary.LittleEndian, &fecDataLen)
 	fecOffset, _ := f.Seek(0, 1)
-	f.Seek(int64(fecDataLen), 1)  // 跳过FEC data
+	f.Seek(int64(fecDataLen), 1) // 跳过FEC data
 
 	// 读hash表
 	var hashTables [][]uint32
@@ -83,11 +88,15 @@ func Open(path string, password ...[]byte) (*Reader, error) {
 	binary.Read(f, binary.LittleEndian, &totalHashes)
 	if totalHashes > 0 && totalHashes < 100000000 {
 		allH := make([]uint32, totalHashes)
-		for j := uint32(0); j < totalHashes; j++ { binary.Read(f, binary.LittleEndian, &allH[j]) }
+		for j := uint32(0); j < totalHashes; j++ {
+			binary.Read(f, binary.LittleEndian, &allH[j])
+		}
 		hashTables = append(hashTables, allH) // 单个flat数组
 	}
 	r := &Reader{Header: gh, Entries: entries, data: data, HashTables: hashTables, FecOffset: fecOffset, FecLen: int64(fecDataLen)}
-	if len(password) > 0 { r.Password = password[0] }
+	if len(password) > 0 {
+		r.Password = password[0]
+	}
 	return r, nil
 }
 
@@ -111,7 +120,9 @@ func (r *Reader) Extract(dir string) error {
 
 	for _, e := range r.Entries {
 		outPath, err := sanitizePath(dir, e.Path)
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 		os.MkdirAll(filepath.Dir(outPath), 0755)
 
 		// Handle special entry types
@@ -154,17 +165,23 @@ func (r *Reader) Extract(dir string) error {
 		}
 
 		// EntryFile
-		if e.EntryType != EntryFile { continue }
+		if e.EntryType != EntryFile {
+			continue
+		}
 
 		var fullData bytes.Buffer
 		off := e.FirstDataOff
 
 		for c := uint32(0); c < e.ChunkCount; c++ {
-			if off+ChunkHeaderSize > uint64(len(r.data)) { break }
+			if off+ChunkHeaderSize > uint64(len(r.data)) {
+				break
+			}
 
 			chBuf := bytes.NewReader(r.data[off:])
 			ch, err := ReadChunkHeader(chBuf)
-			if err != nil { break }
+			if err != nil {
+				break
+			}
 
 			compData := make([]byte, ch.CompressedSize)
 			chBuf.Read(compData)
@@ -175,7 +192,9 @@ func (r *Reader) Extract(dir string) error {
 			// 解密(可选)
 			if len(r.Password) > 0 {
 				dec2, err := Decrypt(compData, r.Password)
-				if err == nil { compData = dec2 }
+				if err == nil {
+					compData = dec2
+				}
 			}
 			// 解压独立帧
 			var raw []byte
@@ -183,18 +202,24 @@ func (r *Reader) Extract(dir string) error {
 			for pos+4 <= len(compData) {
 				blockLen := int(binary.LittleEndian.Uint32(compData[pos : pos+4]))
 				pos += 4
-				if pos+blockLen > len(compData) { break }
+				if pos+blockLen > len(compData) {
+					break
+				}
 				blockData := compData[pos : pos+blockLen]
 				var block []byte
 				if e.CompressionID == CompressLzma2 {
 					block, err = decompressLzma2Block(blockData)
 				} else {
 					dec, derr := r.zstdReaderFor(blockData)
-					if derr != nil { break }
+					if derr != nil {
+						break
+					}
 					block, err = io.ReadAll(dec)
 					dec.Close()
 				}
-				if err != nil { break }
+				if err != nil {
+					break
+				}
 				raw = append(raw, block...)
 				pos += blockLen
 			}
@@ -218,7 +243,9 @@ func (r *Reader) Extract(dir string) error {
 			off += ChunkHeaderSize + uint64(ch.CompressedSize) + fecSize
 		}
 
-		if err := checkSymlink(outPath); err != nil { return err }
+		if err := checkSymlink(outPath); err != nil {
+			return err
+		}
 		os.WriteFile(outPath, fullData.Bytes(), os.FileMode(e.Mode))
 		restoreMeta(outPath, &e)
 		r.notify(e, nil)
@@ -237,7 +264,9 @@ func (r *Reader) Verify() bool {
 	}
 
 	for _, e := range r.Entries {
-		if e.EntryType != EntryFile { continue }
+		if e.EntryType != EntryFile {
+			continue
+		}
 		off := e.FirstDataOff
 		for c := uint32(0); c < e.ChunkCount; c++ {
 			if !r.verifyChunkAt(off) {
@@ -245,7 +274,9 @@ func (r *Reader) Verify() bool {
 			}
 			chBuf := bytes.NewReader(r.data[off:])
 			ch, err := ReadChunkHeader(chBuf)
-			if err != nil { return false }
+			if err != nil {
+				return false
+			}
 			off += ChunkHeaderSize + uint64(ch.CompressedSize) +
 				uint64(ch.RepairCount)*uint64(ch.SymbolSize)
 		}
@@ -254,13 +285,19 @@ func (r *Reader) Verify() bool {
 }
 
 func (r *Reader) verifyChunkAt(off uint64) bool {
-	if off+ChunkHeaderSize > uint64(len(r.data)) { return false }
+	if off+ChunkHeaderSize > uint64(len(r.data)) {
+		return false
+	}
 	ch, err := ReadChunkHeader(bytes.NewReader(r.data[off:]))
-	if err != nil { return false }
+	if err != nil {
+		return false
+	}
 
 	compStart := off + ChunkHeaderSize
 	compEnd := compStart + ch.CompressedSize
-	if compEnd > uint64(len(r.data)) { return false }
+	if compEnd > uint64(len(r.data)) {
+		return false
+	}
 
 	h := Blake3Sum256(r.data[compStart:compEnd])
 	return binary.LittleEndian.Uint64(h[:8]) == ch.Blake3Short
@@ -268,11 +305,15 @@ func (r *Reader) verifyChunkAt(off uint64) bool {
 
 func (r *Reader) extractSolid(dir string) error {
 	// 读整个solid chunk
-	if len(r.data) < ChunkHeaderSize { return ErrCorrupted }
+	if len(r.data) < ChunkHeaderSize {
+		return ErrCorrupted
+	}
 
 	chBuf := bytes.NewReader(r.data)
 	ch, err := ReadChunkHeader(chBuf)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 
 	compData := make([]byte, ch.CompressedSize)
 	chBuf.Read(compData)
@@ -280,24 +321,35 @@ func (r *Reader) extractSolid(dir string) error {
 	// 解密(可选)
 	if len(r.Password) > 0 {
 		dec2, err := Decrypt(compData, r.Password)
-		if err == nil { compData = dec2 }
+		if err == nil {
+			compData = dec2
+		}
 	}
 	// 解压整个solid流
 	isLzma2 := false
 	for _, e := range r.Entries {
-		if e.CompressionID == CompressLzma2 { isLzma2 = true; break }
+		if e.CompressionID == CompressLzma2 {
+			isLzma2 = true
+			break
+		}
 	}
 	var solidData []byte
 	if isLzma2 {
 		var derr error
 		solidData, derr = decompressLzma2Block(compData)
-		if derr != nil { return derr }
+		if derr != nil {
+			return derr
+		}
 	} else {
 		dec, derr := r.zstdReaderFor(compData)
-		if derr != nil { return derr }
+		if derr != nil {
+			return derr
+		}
 		solidData, err = io.ReadAll(dec)
 		dec.Close()
-		if err != nil { return err }
+		if err != nil {
+			return err
+		}
 	}
 	// Bomb detection for solid: check ratio
 	if len(compData) > 0 {
@@ -310,7 +362,9 @@ func (r *Reader) extractSolid(dir string) error {
 	// 按entry切文件
 	for _, e := range r.Entries {
 		outPath, sErr := sanitizePath(dir, e.Path)
-		if sErr != nil { return sErr }
+		if sErr != nil {
+			return sErr
+		}
 		os.MkdirAll(filepath.Dir(outPath), 0755)
 
 		switch e.EntryType {
@@ -334,14 +388,20 @@ func (r *Reader) extractSolid(dir string) error {
 				mkfifo(outPath, e.Mode)
 			} else {
 				var mode uint32 = 0666
-				if e.EntryType == EntryCharDev { mode |= 0020000 } else { mode |= 0060000 }
+				if e.EntryType == EntryCharDev {
+					mode |= 0020000
+				} else {
+					mode |= 0060000
+				}
 				mknod(outPath, mode, e.DevMajor, e.DevMinor)
 			}
 			restoreMeta(outPath, &e)
 			continue
 		}
 
-		if e.EntryType != EntryFile { continue }
+		if e.EntryType != EntryFile {
+			continue
+		}
 
 		start := e.FirstDataOff // solid内偏移
 		end := start + e.OriginalSize
@@ -359,7 +419,9 @@ func (r *Reader) extractSolid(dir string) error {
 			}
 		}
 
-		if err := checkSymlink(outPath); err != nil { return err }
+		if err := checkSymlink(outPath); err != nil {
+			return err
+		}
 		os.WriteFile(outPath, fileData, os.FileMode(e.Mode))
 		restoreMeta(outPath, &e)
 		r.notify(e, nil)
@@ -389,4 +451,3 @@ func restoreMeta(path string, e *DirEntry) {
 		setXattrs(path, e.Xattrs)
 	}
 }
-

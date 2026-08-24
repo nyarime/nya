@@ -58,7 +58,7 @@ func TestDecompressLZ4FrameCompressedBlock(t *testing.T) {
 	// Literals: ABCD
 	// Offset: 4 (LE)
 	compressed := []byte{
-		0x40,             // token: litLen=4, matchLen=0 (meaning 4)
+		0x40,               // token: litLen=4, matchLen=0 (meaning 4)
 		'A', 'B', 'C', 'D', // literals
 		0x04, 0x00, // offset = 4
 	}
@@ -82,8 +82,8 @@ func TestDecompressLZ4FrameOverlappingMatch(t *testing.T) {
 	// Literal: A
 	// Offset: 1
 	compressed := []byte{
-		0x17, // token: litLen=1, matchLen=7 (meaning 11)
-		'A',  // literal
+		0x17,       // token: litLen=1, matchLen=7 (meaning 11)
+		'A',        // literal
 		0x01, 0x00, // offset = 1
 	}
 

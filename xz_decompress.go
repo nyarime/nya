@@ -85,17 +85,17 @@ const (
 	lzmaNumAlignBits      = 4
 	lzmaAlignTableSize    = 1 << lzmaNumAlignBits // 16
 
-	lzmaEndPosModelIndex  = 14
+	lzmaEndPosModelIndex   = 14
 	lzmaStartPosModelIndex = 4
-	lzmaNumFullDistances  = 1 << (lzmaEndPosModelIndex >> 1) // 128
+	lzmaNumFullDistances   = 1 << (lzmaEndPosModelIndex >> 1) // 128
 
 	lzmaNumLitStates = 7
 
-	lzmaMatchLenMin = 2
+	lzmaMatchLenMin    = 2
 	lzmaLenNumLowBits  = 3
-	lzmaLenNumLowSyms  = 1 << lzmaLenNumLowBits  // 8
+	lzmaLenNumLowSyms  = 1 << lzmaLenNumLowBits // 8
 	lzmaLenNumMidBits  = 3
-	lzmaLenNumMidSyms  = 1 << lzmaLenNumMidBits  // 8
+	lzmaLenNumMidSyms  = 1 << lzmaLenNumMidBits // 8
 	lzmaLenNumHighBits = 8
 	lzmaLenNumHighSyms = 1 << lzmaLenNumHighBits // 256
 
@@ -300,11 +300,11 @@ func (ld *lzmaLenDecoder) decode(rd *rangeDecoder, posState uint32) (uint32, err
 // ── LZMA Decoder ────────────────────────────────────────────────────────────
 
 type lzmaDecoder struct {
-	rc   *rangeDecoder
-	dict []byte
-	pos  uint64 // total bytes decoded
-	dPos int    // position in dict buffer (circular)
-	dSize int   // dict capacity
+	rc    *rangeDecoder
+	dict  []byte
+	pos   uint64 // total bytes decoded
+	dPos  int    // position in dict buffer (circular)
+	dSize int    // dict capacity
 
 	state uint32
 	reps  [4]uint32
@@ -319,10 +319,10 @@ type lzmaDecoder struct {
 	isRepG2    [lzmaNumStates]uint16
 	isRep0Long [lzmaNumStates << lzmaNumPosBitsMax]uint16
 
-	posSlot     [lzmaNumLenToPosStates][]uint16
-	posSpecial  [lzmaNumFullDistances - lzmaStartPosModelIndex]uint16
-	posAlign    [lzmaAlignTableSize]uint16
-	litProbs    []uint16
+	posSlot    [lzmaNumLenToPosStates][]uint16
+	posSpecial [lzmaNumFullDistances - lzmaStartPosModelIndex]uint16
+	posAlign   [lzmaAlignTableSize]uint16
+	litProbs   []uint16
 
 	matchLen *lzmaLenDecoder
 	repLen   *lzmaLenDecoder

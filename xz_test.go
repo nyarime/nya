@@ -13,17 +13,17 @@ func TestXZSimple(t *testing.T) {
 func TestLzma2ChunkControl(t *testing.T) {
 	// Verify control byte classification
 	cases := []struct {
-		ctrl byte
+		ctrl                         byte
 		props, stateReset, dictReset bool
 	}{
-		{0x80, false, false, false},   // no reset
-		{0x9F, false, false, false},   // no reset (max)
-		{0xA0, false, true, false},    // state reset only
-		{0xBF, false, true, false},    // state reset only (max)
-		{0xC0, true, true, false},     // state + props
-		{0xDF, true, true, false},     // state + props (max)
-		{0xE0, true, true, true},      // full reset
-		{0xFF, true, true, true},      // full reset (max)
+		{0x80, false, false, false}, // no reset
+		{0x9F, false, false, false}, // no reset (max)
+		{0xA0, false, true, false},  // state reset only
+		{0xBF, false, true, false},  // state reset only (max)
+		{0xC0, true, true, false},   // state + props
+		{0xDF, true, true, false},   // state + props (max)
+		{0xE0, true, true, true},    // full reset
+		{0xFF, true, true, true},    // full reset (max)
 	}
 	for _, tc := range cases {
 		c := tc.ctrl

@@ -23,26 +23,26 @@ type solidFileEntry struct {
 }
 
 type Writer struct {
-	w             io.WriteSeeker
-	entries       []DirEntry
-	dataBuf       bytes.Buffer
-	fecPercent    int
-	compressLevel int
-	solid         bool
-	password      []byte
-	dict          []byte
-	dataOff       uint64
-	hashTables    [][]uint32
-	fecBuf        bytes.Buffer
-	basePath      string
-	workers       int
+	w                 io.WriteSeeker
+	entries           []DirEntry
+	dataBuf           bytes.Buffer
+	fecPercent        int
+	compressLevel     int
+	solid             bool
+	password          []byte
+	dict              []byte
+	dataOff           uint64
+	hashTables        [][]uint32
+	fecBuf            bytes.Buffer
+	basePath          string
+	workers           int
 	zstdEnc           interface{}
 	compressionMethod string // "zstd" (default) or "lzma2"
 
 	// Solid mode accumulation
-	solidBuf      bytes.Buffer
-	solidEntries  []solidFileEntry
-	solidBCJArch  string // detected BCJ arch for solid stream
+	solidBuf     bytes.Buffer
+	solidEntries []solidFileEntry
+	solidBCJArch string // detected BCJ arch for solid stream
 }
 
 func NewWriter(w io.WriteSeeker, fecPercent int, compressLevel int) *Writer {
@@ -424,7 +424,7 @@ func (nw *Writer) addFileSolid(relPath string, raw []byte, info os.FileInfo) err
 		ChunkCount:    1,
 		CompressionID: nw.compressionID(),
 		FECType:       FECRaptorQ,
-		BCJFilter:     BCJNone, // set later in Close
+		BCJFilter:     BCJNone,  // set later in Close
 		FirstDataOff:  solidOff, // offset within decompressed solid stream
 	})
 	fillUnixMeta(&nw.entries[len(nw.entries)-1], info)

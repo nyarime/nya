@@ -2,8 +2,7 @@ package nya
 
 import "fmt"
 
-import (
-)
+import ()
 
 // zcFSECustomTable holds a custom FSE encoding table built from actual symbol frequencies.
 type zcFSECustomTable struct {
@@ -51,7 +50,9 @@ func zcBuildCustomFSEEncoder(freqs map[byte]int, maxAccLog int, maxSymbol int) (
 		}
 		nonZeroCount++
 		p := cnt * tableSize / totalCount
-		if p < 1 { p = 1 }
+		if p < 1 {
+			p = 1
+		}
 		probs[sym] = int16(p)
 		assigned += p
 	}
@@ -62,15 +63,21 @@ func zcBuildCustomFSEEncoder(freqs map[byte]int, maxAccLog int, maxSymbol int) (
 	// Adjust largest to make sum exact: positive_sum + neg1_count = tableSize
 	neg1Count := 0
 	for _, p := range probs {
-		if p == -1 { neg1Count++ }
+		if p == -1 {
+			neg1Count++
+		}
 	}
 	target := tableSize - neg1Count
 	diff := target - assigned
 	bestSym := -1
 	for sym := 0; sym <= actualMax; sym++ {
-		if probs[sym] > 0 && (bestSym < 0 || probs[sym] > probs[bestSym]) { bestSym = sym }
+		if probs[sym] > 0 && (bestSym < 0 || probs[sym] > probs[bestSym]) {
+			bestSym = sym
+		}
 	}
-	if bestSym >= 0 { probs[bestSym] += int16(diff) }
+	if bestSym >= 0 {
+		probs[bestSym] += int16(diff)
+	}
 
 	// Step 3.5: Fix probs for encoding constraints
 	zcFixProbsForEncoding(probs, accLog)
@@ -135,7 +142,9 @@ func zcSerializeFSEHeader(probs []int16, accLog int) []byte {
 			for sym < len(probs) && probs[sym] == 0 {
 				sym++
 			}
-			if sym >= len(probs) { break }
+			if sym >= len(probs) {
+				break
+			}
 			// Encode skip count
 			for sym >= start+24 {
 				write(0xFFFF, 16)
@@ -147,7 +156,9 @@ func zcSerializeFSEHeader(probs []int16, accLog int) []byte {
 			}
 			write(uint32(sym-start), 2)
 		}
-		if sym >= len(probs) { break }
+		if sym >= len(probs) {
+			break
+		}
 
 		count := int(probs[sym])
 		max := (2*threshold - 1) - remaining
@@ -190,7 +201,11 @@ func zcFixProbsForEncoding(probs []int16, accLog int) {
 	for sym := 0; sym < len(probs) && remaining > 1; sym++ {
 		prob := probs[sym]
 		var val int
-		if prob == -1 { val = 0 } else { val = int(prob) + 1 }
+		if prob == -1 {
+			val = 0
+		} else {
+			val = int(prob) + 1
+		}
 
 		// Max encodable value at this state
 		upperBound := (1 << uint(nbBits)) - 1 - threshold + 1
@@ -198,7 +213,9 @@ func zcFixProbsForEncoding(probs []int16, accLog int) {
 		// Long max: lowBits_max*2 + 1 - upperBound where lowBits_max = (1<<(nbBits-1))-1
 		maxLong := ((1<<uint(nbBits-1))-1)*2 + 1 - upperBound
 		maxVal := maxLong
-		if upperBound-1 > maxVal { maxVal = upperBound - 1 }
+		if upperBound-1 > maxVal {
+			maxVal = upperBound - 1
+		}
 
 		if val > maxVal && val > 0 {
 			// Can't encode this val — clamp
@@ -211,14 +228,23 @@ func zcFixProbsForEncoding(probs []int16, accLog int) {
 
 		// Update remaining
 		p := probs[sym]
-		if p == -1 { remaining-- } else if p > 0 { remaining -= int(p) }
+		if p == -1 {
+			remaining--
+		} else if p > 0 {
+			remaining -= int(p)
+		}
 
 		// Skip zeros
 		if p == 0 {
-			for sym+1 < len(probs) && probs[sym+1] == 0 { sym++ }
+			for sym+1 < len(probs) && probs[sym+1] == 0 {
+				sym++
+			}
 		}
 
-		for remaining < threshold { threshold >>= 1; nbBits-- }
+		for remaining < threshold {
+			threshold >>= 1
+			nbBits--
+		}
 	}
 
 	// Ensure remaining == 1 at the end (add extra to last non-zero symbol if needed)

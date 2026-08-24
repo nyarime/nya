@@ -19,7 +19,7 @@ func XzCompress(src []byte, dictSize int) ([]byte, error) {
 
 	// Stream Header (12 bytes)
 	out = append(out, 0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00) // magic
-	streamFlags := []byte{0x00, 0x00}                       // no integrity check
+	streamFlags := []byte{0x00, 0x00}                     // no integrity check
 	crc := crc32.ChecksumIEEE(streamFlags)
 	out = append(out, streamFlags...)
 	out = binary.LittleEndian.AppendUint32(out, crc)
@@ -27,7 +27,7 @@ func XzCompress(src []byte, dictSize int) ([]byte, error) {
 	// Block Header
 	dictProp := xzEncodeDictSize(dictSize)
 	filterData := []byte{0x21, 0x01, dictProp} // filter ID=0x21 (LZMA2), size=1, props
-	blockFlags := byte(0x00)                    // 1 filter, no sizes
+	blockFlags := byte(0x00)                   // 1 filter, no sizes
 
 	var blockHeader []byte
 	blockHeader = append(blockHeader, 0x00) // placeholder for size
@@ -62,7 +62,7 @@ func XzCompress(src []byte, dictSize int) ([]byte, error) {
 	out = binary.LittleEndian.AppendUint32(out, indexCRC)
 
 	// Stream Footer (12 bytes)
-	backwardSize := (len(out) - indexStart) / 4 - 1
+	backwardSize := (len(out)-indexStart)/4 - 1
 	var footer []byte
 	footer = binary.LittleEndian.AppendUint32(footer, uint32(backwardSize))
 	footer = append(footer, streamFlags...)

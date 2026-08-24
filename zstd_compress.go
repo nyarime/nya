@@ -341,8 +341,14 @@ func zstdTryCompressBlock(src []byte, level int) []byte {
 }
 
 func bytesEqualFast(a, b []byte) bool {
-	if len(a) != len(b) { return false }
-	for i := range a { if a[i] != b[i] { return false } }
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
 	return true
 }
 
@@ -506,10 +512,10 @@ const zcWindowMax = 4 * 1024 * 1024 // 4MB sliding window
 // allowing inter-block match references. The zstd frame format already supports
 // this — the decoder maintains the full decompressed output as a window.
 type zstdEncoderState struct {
-	window        []byte   // sliding window of recent uncompressed data
-	ht            []int32  // persistent hash table
+	window        []byte  // sliding window of recent uncompressed data
+	ht            []int32 // persistent hash table
 	htReady       bool
-	repeatOffsets [3]int   // repeat offsets persisted across blocks
+	repeatOffsets [3]int // repeat offsets persisted across blocks
 }
 
 // seedWindow initialises the window with dictionary/prefix data without
@@ -627,7 +633,9 @@ func (s *zstdEncoderState) compressBlock(block []byte, level int) []byte {
 			winData := s.window[:wOff]
 			for len(winData) > 0 {
 				chunk := winData
-				if len(chunk) > 128*1024 { chunk = winData[:128*1024] }
+				if len(chunk) > 128*1024 {
+					chunk = winData[:128*1024]
+				}
 				bh := uint32(len(chunk)) << 3 // raw block
 				verify = append(verify, byte(bh), byte(bh>>8), byte(bh>>16))
 				verify = append(verify, chunk...)
@@ -667,7 +675,10 @@ func (s *zstdEncoderState) findSeqsWindowed(srcOff int, level int) []zstdSeq {
 	var seqs []zstdSeq
 	pos := srcOff
 	litStart := srcOff
-	repeatOffsets := s.repeatOffsets; if repeatOffsets == ([3]int{}) { repeatOffsets = [3]int{1, 4, 8} }
+	repeatOffsets := s.repeatOffsets
+	if repeatOffsets == ([3]int{}) {
+		repeatOffsets = [3]int{1, 4, 8}
+	}
 
 	for pos+zcMinMatch <= blockEnd {
 		// Try repeat offsets first
@@ -799,8 +810,6 @@ func zstdMatchLenWindow(win []byte, pos, matchPos, limit int) int {
 	return l
 }
 
-
-
 // ──────────────────────────── block building ────────────────────────────
 
 func zstdBuildBlock(src []byte, seqs []zstdSeq, offsets ...[3]int) []byte {
@@ -818,7 +827,10 @@ func zstdBuildBlock(src []byte, seqs []zstdSeq, offsets ...[3]int) []byte {
 	// This avoids having to encode FSE table headers.
 
 	// Process offsets through repeat-offset logic to get coded offset values
-	offHist := [3]int{1, 4, 8}; if len(offsets) > 0 { offHist = offsets[0] }
+	offHist := [3]int{1, 4, 8}
+	if len(offsets) > 0 {
+		offHist = offsets[0]
+	}
 	type codedSeq struct {
 		llCode  int
 		llExtra uint32
@@ -923,7 +935,9 @@ func zstdBuildBlock(src []byte, seqs []zstdSeq, offsets ...[3]int) []byte {
 	} else if useCustomFSE && nbSeq >= 16 {
 		// Try custom FSE table for LL
 		llFreqs := make(map[byte]int)
-		for _, c := range coded { llFreqs[byte(c.llCode)]++ }
+		for _, c := range coded {
+			llFreqs[byte(c.llCode)]++
+		}
 		if hdr, tbl, err := zcBuildCustomFSEEncoder(llFreqs, 9, 35); err == nil && len(hdr) > 0 {
 			// Verify: decoder can parse our header (maxLog=9 matches decoder)
 			if _, _, parseErr := zstdBuildFSETableFromHeader(hdr, 9); parseErr == nil {
@@ -938,7 +952,9 @@ func zstdBuildBlock(src []byte, seqs []zstdSeq, offsets ...[3]int) []byte {
 		ofMode = 1
 	} else if useCustomFSE && nbSeq >= 16 {
 		ofFreqs := make(map[byte]int)
-		for _, c := range coded { ofFreqs[byte(c.ofCode)]++ }
+		for _, c := range coded {
+			ofFreqs[byte(c.ofCode)]++
+		}
 		if hdr, tbl, err := zcBuildCustomFSEEncoder(ofFreqs, 8, 28); err == nil && len(hdr) > 0 {
 			if _, _, parseErr := zstdBuildFSETableFromHeader(hdr, 8); parseErr == nil {
 				ofMode = 2
@@ -952,7 +968,9 @@ func zstdBuildBlock(src []byte, seqs []zstdSeq, offsets ...[3]int) []byte {
 		mlMode = 1
 	} else if useCustomFSE && nbSeq >= 16 {
 		mlFreqs := make(map[byte]int)
-		for _, c := range coded { mlFreqs[byte(c.mlCode)]++ }
+		for _, c := range coded {
+			mlFreqs[byte(c.mlCode)]++
+		}
 		if hdr, tbl, err := zcBuildCustomFSEEncoder(mlFreqs, 9, 52); err == nil && len(hdr) > 0 {
 			if _, _, parseErr := zstdBuildFSETableFromHeader(hdr, 9); parseErr == nil {
 				mlMode = 2
@@ -996,7 +1014,6 @@ func zstdBuildBlock(src []byte, seqs []zstdSeq, offsets ...[3]int) []byte {
 	} else if mlMode == 2 {
 		seqHdr = append(seqHdr, mlCustomHdr...)
 	}
-
 
 	// Build bitstream using backward state computation (tANS encoding).
 	//
@@ -1215,7 +1232,7 @@ func zcEncodeLiterals(lits []byte) []byte {
 	}
 
 	totalCompressed := len(huffHeader) + compressedStreamSize + 1 // +1 for potential sentinel byte overhead
-	overhead := 3 // compressed literals header (use 3 bytes for sizeFormat 0)
+	overhead := 3                                                 // compressed literals header (use 3 bytes for sizeFormat 0)
 	if totalCompressed+overhead >= len(lits)+1 {
 		// Not worth it
 		return zcRawLiterals(lits)
@@ -1259,7 +1276,7 @@ func zcBuildHuffmanLens(freq []int, maxBits int) []int {
 	// Build Huffman tree using a simple sorted-list approach
 	type node struct {
 		freq  int
-		sym   int  // -1 for internal nodes
+		sym   int // -1 for internal nodes
 		left  int
 		right int
 	}
@@ -1550,7 +1567,7 @@ func zcCompressedLiteralsSection(lits []byte, huffHeader, stream []byte, compres
 		// byte1[3:0]=regenSize[7:4], byte1[5:4]=regenSize[9:8], byte1[7:6]=compSize[1:0]
 		// byte2=compSize[9:2]
 		val := uint32(regenSize) | (uint32(compressedSize) << 10)
-		b0 := byte(2) | byte(0<<2) | byte((val&0xF)<<4)      // litType=2, sf=0, regen[3:0]
+		b0 := byte(2) | byte(0<<2) | byte((val&0xF)<<4) // litType=2, sf=0, regen[3:0]
 		b1 := byte((val >> 4) & 0xFF)
 		b2 := byte((val >> 12) & 0xFF)
 		header = []byte{b0, b1, b2}
@@ -1743,8 +1760,9 @@ func zcFindState(tbl *zcPredTable, sym int) int {
 //
 // Decoder does: nextState = newState[curState] + readBits(numBits[curState])
 // So we need: targetState = newState[sourceState] + val
-//           → val = targetState - newState[sourceState]
-//           → val must be in [0, 1<<numBits[sourceState])
+//
+//	→ val = targetState - newState[sourceState]
+//	→ val must be in [0, 1<<numBits[sourceState])
 func zcEncodeTransition(tbl *zcPredTable, sym int, targetState int) (int, int, int) {
 	candidates := tbl.sym2state[byte(sym)]
 	for _, s := range candidates {
@@ -1780,8 +1798,8 @@ func zcEncodeTransition(tbl *zcPredTable, sym int, targetState int) (int, int, i
 // where bit 0 = LSB of byte 0.
 
 type zcBitWriter struct {
-	bits    []byte // byte buffer
-	nbits   int    // total bits written
+	bits  []byte // byte buffer
+	nbits int    // total bits written
 }
 
 // addBits writes nbBits of val, LSB first, at the current position.

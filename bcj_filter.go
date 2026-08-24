@@ -99,22 +99,32 @@ func BCJFilterMIPS(data []byte, encode bool) []byte {
 // BCJArchToID converts arch string to BCJ filter ID.
 func BCJArchToID(arch string) uint8 {
 	switch arch {
-	case "x86":   return BCJX86
-	case "arm":   return BCJARM
-	case "arm64": return BCJARM64
-	case "mips":  return BCJMIPS
-	default:      return BCJNone
+	case "x86":
+		return BCJX86
+	case "arm":
+		return BCJARM
+	case "arm64":
+		return BCJARM64
+	case "mips":
+		return BCJMIPS
+	default:
+		return BCJNone
 	}
 }
 
 // BCJIDToArch converts BCJ filter ID to arch string.
 func BCJIDToArch(id uint8) string {
 	switch id {
-	case BCJX86:   return "x86"
-	case BCJARM:   return "arm"
-	case BCJARM64: return "arm64"
-	case BCJMIPS:  return "mips"
-	default:       return ""
+	case BCJX86:
+		return "x86"
+	case BCJARM:
+		return "arm"
+	case BCJARM64:
+		return "arm64"
+	case BCJMIPS:
+		return "mips"
+	default:
+		return ""
 	}
 }
 

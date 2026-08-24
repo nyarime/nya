@@ -4,17 +4,18 @@
 // Unlike RAR (max 10% recovery), NAR uses RaptorQ for 50%+ corruption recovery.
 //
 // Layout:
-//   [Global Header 128B]
-//   [Data Area: compressed chunks + FEC parity]
-//   [Central Directory: file index]
-//   [Global Footer: optional]
+//
+//	[Global Header 128B]
+//	[Data Area: compressed chunks + FEC parity]
+//	[Central Directory: file index]
+//	[Global Footer: optional]
 package nya
 
 import (
 	"encoding/binary"
 	"errors"
-	"io"
 	"fmt"
+	"io"
 )
 
 // Magic bytes
@@ -41,19 +42,19 @@ const (
 
 // Header flags
 const (
-	FlagHasFooter      = 1 << 0
-	FlagSolidCompress  = 1 << 1 // v2
-	FlagEncrypted      = 1 << 2 // v2
-	FlagHasGlobalFEC   = 1 << 3 // v2
+	FlagHasFooter     = 1 << 0
+	FlagSolidCompress = 1 << 1 // v2
+	FlagEncrypted     = 1 << 2 // v2
+	FlagHasGlobalFEC  = 1 << 3 // v2
 )
 
 // Compression IDs
 const (
-	CompressNone    uint16 = 0
-	CompressZstd    uint16 = 1 // default
-	CompressS2      uint16 = 2
-	CompressBrotli  uint16 = 3
-	CompressLZ4     uint16 = 4
+	CompressNone     uint16 = 0
+	CompressZstd     uint16 = 1 // default
+	CompressS2       uint16 = 2
+	CompressBrotli   uint16 = 3
+	CompressLZ4      uint16 = 4
 	CompressZstdDict uint16 = 5 // v2
 	CompressLzma2    uint16 = 6 // --best mode
 )
@@ -93,9 +94,9 @@ const (
 )
 
 var (
-	ErrNotNAR       = errors.New("nar: not a NYA archive")
-	ErrUnsupported  = errors.New("nar: unsupported version")
-	ErrCorrupted    = errors.New("nar: data corrupted")
+	ErrNotNAR      = errors.New("nar: not a NYA archive")
+	ErrUnsupported = errors.New("nar: unsupported version")
+	ErrCorrupted   = errors.New("nar: data corrupted")
 )
 
 // GlobalHeader 128 bytes
@@ -107,7 +108,7 @@ type GlobalHeader struct {
 	DataAreaSize     uint64
 	CentralDirOffset uint64
 	CentralDirSize   uint64
-	CreationTime     int64  // unix nano
+	CreationTime     int64 // unix nano
 	TotalOrigSize    uint64
 	Blake3           [32]byte // Data Area BLAKE3-256
 	Reserved         [40]byte
@@ -133,11 +134,11 @@ func ReadGlobalHeader(r io.Reader) (*GlobalHeader, error) {
 
 // ChunkHeader 32 bytes (per data block)
 type ChunkHeader struct {
-	OriginalSize     uint64
-	CompressedSize   uint64
-	RepairCount      uint32
-	SymbolSize       uint32
-	Blake3Short      uint64 // first 8 bytes of BLAKE3
+	OriginalSize   uint64
+	CompressedSize uint64
+	RepairCount    uint32
+	SymbolSize     uint32
+	Blake3Short    uint64 // first 8 bytes of BLAKE3
 }
 
 func (c *ChunkHeader) Write(w io.Writer) error {
@@ -179,10 +180,10 @@ type DirEntry struct {
 	Gid        uint32
 	UserName   string
 	GroupName  string
-	LinkTarget string             // symlink target or hardlink name
-	DevMajor   uint32             // for char/block devices
+	LinkTarget string // symlink target or hardlink name
+	DevMajor   uint32 // for char/block devices
 	DevMinor   uint32
-	Xattrs     map[string][]byte  // extended attributes
+	Xattrs     map[string][]byte // extended attributes
 }
 
 func WriteDirEntry(w io.Writer, e *DirEntry) error {
@@ -297,12 +298,20 @@ func ReadDirEntry(r io.Reader) (*DirEntry, error) {
 			e.Xattrs = make(map[string][]byte, xattrCount)
 			for i := uint32(0); i < xattrCount; i++ {
 				key, err := readLenStr(r)
-				if err != nil { break }
+				if err != nil {
+					break
+				}
 				var vlen uint32
-				if err := binary.Read(r, binary.LittleEndian, &vlen); err != nil { break }
-				if vlen > 65536 { break }
+				if err := binary.Read(r, binary.LittleEndian, &vlen); err != nil {
+					break
+				}
+				if vlen > 65536 {
+					break
+				}
 				val := make([]byte, vlen)
-				if _, err := io.ReadFull(r, val); err != nil { break }
+				if _, err := io.ReadFull(r, val); err != nil {
+					break
+				}
 				e.Xattrs[key] = val
 			}
 		}

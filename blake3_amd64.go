@@ -35,6 +35,7 @@ func blake3Compress4T(results *[4][16]uint32, tmsgs *[4][112]uint32, cvs *[4][8]
 
 // blake3ChunkCV1Full processes 1 full chunk with pre-transposed messages.
 // tmsgs: 16 blocks × [112]uint32 (7 rounds × 4 vectors × 4 words)
+//
 //go:noescape
 func blake3ChunkCV1Full(result *[8]uint32, tmsgs *[16][112]uint32, counter uint64)
 
@@ -46,6 +47,7 @@ func blake3ChunkCV4Full(result *[4][8]uint32, data []byte, chunkIdx uint64)
 
 // blake3Process8Chunks processes 8 contiguous full chunks using AVX2 8-way SoA
 // with VPGATHERDD for message loading.
+//
 //go:noescape
 func blake3Process8Chunks(results *[8][8]uint32, data *byte, startCounter uint64)
 
@@ -53,6 +55,7 @@ func blake3Process8Chunks(results *[8][8]uint32, data *byte, startCounter uint64
 // with VPGATHERDD for message loading and VPRORD for native rotation.
 // Results are stored in SoA layout: 8 ZMMs × 16 uint32s = [8][16]uint32
 // where result[word][chunk] = CV word 'word' for chunk 'chunk'.
+//
 //go:noescape
 func blake3Process16Chunks(results *[8][16]uint32, data *byte, startCounter uint64)
 
@@ -115,10 +118,22 @@ func blake3WordsFromBytesUnsafe(b *[64]byte) [16]uint32 {
 func blake3TransposeMsg(block *[16]uint32) [112]uint32 {
 	var out [112]uint32
 	// Round 0: identity permutation
-	out[0] = block[0]; out[1] = block[2]; out[2] = block[4]; out[3] = block[6]
-	out[4] = block[1]; out[5] = block[3]; out[6] = block[5]; out[7] = block[7]
-	out[8] = block[8]; out[9] = block[10]; out[10] = block[12]; out[11] = block[14]
-	out[12] = block[9]; out[13] = block[11]; out[14] = block[13]; out[15] = block[15]
+	out[0] = block[0]
+	out[1] = block[2]
+	out[2] = block[4]
+	out[3] = block[6]
+	out[4] = block[1]
+	out[5] = block[3]
+	out[6] = block[5]
+	out[7] = block[7]
+	out[8] = block[8]
+	out[9] = block[10]
+	out[10] = block[12]
+	out[11] = block[14]
+	out[12] = block[9]
+	out[13] = block[11]
+	out[14] = block[13]
+	out[15] = block[15]
 	// Rounds 1-6: use permutation table
 	for round := 1; round < 7; round++ {
 		p := &blake3PermRounds[round]

@@ -10,7 +10,7 @@ import (
 
 // RepairResult 修复结果
 type RepairResult struct {
-	TotalChunks    int
+	TotalChunks     int
 	CorruptedChunks int
 	RepairedChunks  int
 	FailedChunks    int
@@ -25,7 +25,7 @@ func Repair(path string, outputPath string) (*RepairResult, error) {
 	}
 
 	result := &RepairResult{}
-	
+
 	// 从文件读FEC data(不在内存中)
 	if r.FecLen > 0 && len(r.fecData) == 0 {
 		ff, err := os.Open(path)
@@ -44,28 +44,37 @@ func Repair(path string, outputPath string) (*RepairResult, error) {
 	}
 
 	for _, e := range r.Entries {
-		if e.EntryType != EntryFile { continue }
+		if e.EntryType != EntryFile {
+			continue
+		}
 
 		off := e.FirstDataOff
-		if off+ChunkHeaderSize > uint64(len(r.data)) { continue }
+		if off+ChunkHeaderSize > uint64(len(r.data)) {
+			continue
+		}
 
 		chBuf := bytes.NewReader(r.data[off:])
 		ch, err := ReadChunkHeader(chBuf)
-		if err != nil { continue }
+		if err != nil {
+			continue
+		}
 
 		result.TotalChunks++
 
 		// 读压缩数据
 		compStart := off + ChunkHeaderSize
 		compEnd := compStart + ch.CompressedSize
-		if compEnd > uint64(len(r.data)) { continue }
+		if compEnd > uint64(len(r.data)) {
+			continue
+		}
 		compData := r.data[compStart:compEnd]
 
 		// FEC数据在文件末尾(Central Dir后), 不在Data Area
 		fecData := r.fecData
 
 		// CRC校验
-		h := Blake3Sum256(compData); actualHash := binary.LittleEndian.Uint64(h[:8])
+		h := Blake3Sum256(compData)
+		actualHash := binary.LittleEndian.Uint64(h[:8])
 		if actualHash != ch.Blake3Short {
 			result.CorruptedChunks++
 			logf("  chunk %s: CRC mismatch (expected %x, got %x)\n", e.Path, ch.Blake3Short, actualHash)
@@ -73,7 +82,10 @@ func Repair(path string, outputPath string) (*RepairResult, error) {
 
 			// RaptorQ修复
 			// 合并所有hash为flat
-			var allH []uint32; if len(r.HashTables) > 0 { allH = r.HashTables[0] }
+			var allH []uint32
+			if len(r.HashTables) > 0 {
+				allH = r.HashTables[0]
+			}
 			repaired, err := raptorqRepair(compData, fecData, int(e.FECParams.Param3), allH)
 			if err != nil {
 				result.FailedChunks++
@@ -85,7 +97,8 @@ func Repair(path string, outputPath string) (*RepairResult, error) {
 			copy(r.data[compStart:compEnd], repaired[:len(compData)])
 
 			// 更新CRC
-			nh := Blake3Sum256(repaired[:len(compData)]); newHash := binary.LittleEndian.Uint64(nh[:8])
+			nh := Blake3Sum256(repaired[:len(compData)])
+			newHash := binary.LittleEndian.Uint64(nh[:8])
 			r.data[off+24] = byte(newHash)
 			r.data[off+25] = byte(newHash >> 8)
 			r.data[off+26] = byte(newHash >> 16)
@@ -103,7 +116,9 @@ func Repair(path string, outputPath string) (*RepairResult, error) {
 	if result.CorruptedChunks > 0 {
 		// 直接写回修复后的数据到文件
 		out := outputPath
-		if out == "" { out = path }
+		if out == "" {
+			out = path
+		}
 		wf, werr := os.OpenFile(out, os.O_RDWR, 0644)
 		if werr == nil {
 			// 写回整个data area
@@ -124,7 +139,9 @@ func repairSolid(r *Reader, path, outputPath string) (*RepairResult, error) {
 
 	chBuf := bytes.NewReader(r.data)
 	ch, err := ReadChunkHeader(chBuf)
-	if err != nil { return result, err }
+	if err != nil {
+		return result, err
+	}
 
 	compData := r.data[ChunkHeaderSize : ChunkHeaderSize+ch.CompressedSize]
 	fecData := r.fecData
@@ -146,7 +163,9 @@ func repairSolid(r *Reader, path, outputPath string) (*RepairResult, error) {
 		logf("  ✅ Solid chunk修复成功!" + "\n")
 
 		out := outputPath
-		if out == "" { out = path }
+		if out == "" {
+			out = path
+		}
 		raw, _ := os.ReadFile(path)
 		copy(raw[GlobalHeaderSize:], r.data)
 		os.WriteFile(out, raw, 0644)
@@ -158,11 +177,15 @@ func repairSolid(r *Reader, path, outputPath string) (*RepairResult, error) {
 // rawRepair: CentralDir damaged, use GlobalHeader to locate FEC
 func rawRepair(path string, outputPath string) (*RepairResult, error) {
 	f, err := os.Open(path)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	defer f.Close()
 
 	gh, err := ReadGlobalHeader(f)
-	if err != nil { return nil, fmt.Errorf("global header corrupt: %w", err) }
+	if err != nil {
+		return nil, fmt.Errorf("global header corrupt: %w", err)
+	}
 
 	logf("  Raw repair mode (CentralDir damaged)\n")
 	logf("  DataArea: %d, CentralDir at %d (%d bytes)\n",
@@ -193,7 +216,9 @@ func rawRepair(path string, outputPath string) (*RepairResult, error) {
 	f.Seek(hashPos, 0)
 	var hashCount uint32
 	binary.Read(f, binary.LittleEndian, &hashCount)
-	if hashCount > 100000000 { hashCount = 0 }
+	if hashCount > 100000000 {
+		hashCount = 0
+	}
 	var hashes []uint32
 	for i := uint32(0); i < hashCount; i++ {
 		var h uint32
@@ -207,11 +232,15 @@ func rawRepair(path string, outputPath string) (*RepairResult, error) {
 	}
 	chBuf := bytes.NewReader(data)
 	ch, err := ReadChunkHeader(chBuf)
-	if err != nil { return nil, fmt.Errorf("chunk header corrupt: %w", err) }
+	if err != nil {
+		return nil, fmt.Errorf("chunk header corrupt: %w", err)
+	}
 
 	compStart := uint64(ChunkHeaderSize)
 	compEnd := compStart + uint64(ch.CompressedSize)
-	if compEnd > uint64(len(data)) { compEnd = uint64(len(data)) }
+	if compEnd > uint64(len(data)) {
+		compEnd = uint64(len(data))
+	}
 	compData := data[compStart:compEnd]
 
 	logf("  Chunk: comp=%d, repair=%d, sym=%d\n",
@@ -226,7 +255,9 @@ func rawRepair(path string, outputPath string) (*RepairResult, error) {
 	copy(data[compStart:compEnd], repaired[:len(compData)])
 
 	out := outputPath
-	if out == "" { out = path }
+	if out == "" {
+		out = path
+	}
 	wf, _ := os.OpenFile(out, os.O_RDWR, 0644)
 	if wf != nil {
 		wf.WriteAt(data, GlobalHeaderSize)
