@@ -246,16 +246,26 @@ recovery work on corruption rather than only on erasures.
 
 When a password is supplied the compressed payload of every chunk is sealed
 with AES-256-GCM. The stored form is `nonce || ciphertext || tag` with a
-12-byte nonce, and the key is `SHA-256(password)`.
+12-byte nonce.
 
-Two properties are worth stating plainly:
+### v1.2 (minor version 2, recommended)
 
-- There is no salt and no iterated key derivation, so the scheme gives no
-  meaningful resistance to offline brute force of a weak password. The header
-  has no room to record KDF parameters, so fixing this needs a format change.
-- The `Encrypted` flag is not set, so an archive does not advertise that a
-  password is required. A reader that is given no password will fail to
-  decompress rather than report a clear error.
+- `FlagEncrypted` and `FlagKDFArgon2id` are set in the global header.
+- `GlobalHeader.Reserved` bytes 0–25 hold KDF parameters:
+  - `[0:16]` random salt
+  - `[16:20]` Argon2id memory (KiB), little-endian uint32
+  - `[20:24]` Argon2id time iterations, little-endian uint32
+  - `[24]` parallelism (uint8)
+  - `[25]` KDF version (currently `1`)
+- Key = `Argon2id(password, salt, time, memory, threads)` → 32 bytes.
+
+Readers **must** reject opening encrypted archives when no password is supplied.
+
+### Legacy (minor 0–1, pre-v1.2 writers)
+
+- Key = `SHA-256(password)` with no salt.
+- `FlagEncrypted` was not set; callers had to know a password might be required.
+- Still supported for read when a password is supplied.
 
 ## Version history
 

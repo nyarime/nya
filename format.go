@@ -43,6 +43,7 @@ const (
 	FlagEncrypted     = 1 << 2 // v2
 	FlagHasGlobalFEC  = 1 << 3 // v2
 	FlagHasDownloadIndex = 1 << 4 // reserved: embedded transport index (see SPEC-DOWNLOAD.md)
+	// FlagKDFArgon2id is defined in crypto.go (1 << 5)
 )
 
 // Compression IDs

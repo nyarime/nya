@@ -268,6 +268,14 @@ func cmdInfo(args []string) error {
 	fmt.Printf("uncompressed:    %s\n", nya.HumanSize(int(h.TotalOrigSize)))
 	fmt.Printf("data area:       %s\n", nya.HumanSize(int(h.DataAreaSize)))
 	fmt.Printf("solid:           %t\n", h.Flags&nya.FlagSolidCompress != 0)
+	fmt.Printf("encrypted:       %t\n", h.Flags&nya.FlagEncrypted != 0)
+	if h.Flags&nya.FlagEncrypted != 0 {
+		if h.Flags&nya.FlagKDFArgon2id != 0 {
+			fmt.Printf("kdf:             Argon2id (v1.2)\n")
+		} else {
+			fmt.Printf("kdf:             SHA-256 (legacy)\n")
+		}
+	}
 	fmt.Printf("recovery data:   %s\n", nya.HumanSize(int(r.FecLen)))
 	return nil
 }

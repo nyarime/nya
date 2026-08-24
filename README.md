@@ -180,10 +180,9 @@ relative to each other rather than as absolute numbers.
 | 17 MB ELF | 17438777 | 49.38% (2318ms) | 46.99% (4518ms) | 45.67% (1799ms) | 49.41% (3415ms) |
 | 120-file tree, solid | 1105916 | 24.82% (726ms) | 22.50% (316ms) | 22.26% (111ms) | 23.04% (265ms) |
 
-Close on single files, still behind on many-file archives. Two things account
-for the remainder: the parser is greedy with one position of lookahead rather
-than a full optimal parse, and files are stored in directory order instead of
-being grouped by similarity the way 7-Zip groups them.
+Close on single files, still behind on many-file archives without `-solid`.
+Solid mode applies extension grouping and optimal LZMA2 parsing to close
+much of the gap on many-file trees.
 
 Extraction speed is the other half of the trade. LZMA2 decompresses at
 18–59 MB/s here against 127–275 MB/s for the zstd path, so an archive that is
@@ -197,7 +196,7 @@ readable by any conformant zstd or xz implementation.
 ## Compatibility
 
 Archives record `VersionMajor.VersionMinor` in the global header. This
-implementation **writes 1.1** and **reads 1.0 and 1.1**.
+implementation **writes 1.1** (or **1.2** when encrypted) and **reads 1.0 through 1.2**.
 
 See **[COMPATIBILITY.md](COMPATIBILITY.md)** for the long-term policy (one
 `.nya` container, `.nyam` sidecar only, no `.nyax`).
@@ -207,22 +206,22 @@ See **[COMPATIBILITY.md](COMPATIBILITY.md)** for the long-term policy (one
 
 ## Known limitations
 
-- Custom (mode 2) FSE tables for sequence codes are disabled. The current
-  serialisation round-trips through this package but is rejected by other
-  zstd decoders, so it stays off until it is fixed; the cost is roughly 1% of
-  ratio.
-- Password-based encryption derives its key with a bare SHA-256 of the
-  password, because the header carries no salt or KDF parameters. It resists
-  casual inspection, not offline brute force. See `SPEC.md`.
-- An encrypted archive is not marked as such in its header; the caller has to
-  know a password is required.
+- Password-based encryption uses **Argon2id** key derivation (v1.2,
+  `VersionMinor = 2`): random 16-byte salt and parameters stored in the
+  global header `Reserved` region; `FlagEncrypted` and `FlagKDFArgon2id`
+  are set. Archives written before v1.2 used bare SHA-256(password) with
+  no header flag — still readable when a password is supplied.
 - The writer emits one chunk per entry, so `ChunkCount` is always 1.
-- The LZMA2 parser prices its choices but only looks one position ahead. A
-  full optimal parse — dynamic programming over a lookahead window — is what
-  stands between this and `xz -9`.
-- Solid archives store files in directory order. Grouping by extension and
-  similarity first, as 7-Zip does, is most of the remaining gap on
-  many-file archives.
+- Custom (mode 2) FSE tables for sequence codes remain disabled (~1% ratio).
+
+## License
+
+NYA is free software: you may use, modify, and redistribute it under the
+terms of the [GNU General Public License v3.0](LICENSE).
+
+**Dual licensing:** If you need to embed or ship NYA in a proprietary /
+closed-source product without GPL obligations, contact
+**license@nyarime.com** for a commercial license.
 
 ## Format
 

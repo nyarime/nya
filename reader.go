@@ -106,6 +106,9 @@ func Open(path string, password ...[]byte) (*Reader, error) {
 		}
 	}
 	r := &Reader{Header: gh, Entries: entries, data: data, HashTables: hashTables, FecOffset: fecOffset, FecLen: int64(fecDataLen), globalMetaFec: globalMeta}
+	if gh.Flags&FlagEncrypted != 0 && len(password) == 0 {
+		return nil, ErrPasswordRequired
+	}
 	if len(password) > 0 {
 		r.Password = password[0]
 	}
@@ -202,10 +205,11 @@ func (r *Reader) Extract(dir string) error {
 
 			// 解密(可选)
 			if len(r.Password) > 0 {
-				dec2, err := Decrypt(compData, r.Password)
-				if err == nil {
-					compData = dec2
+				dec2, err := DecryptPayload(compData, r.Password, r.Header)
+				if err != nil {
+					return fmt.Errorf("nya: decrypt %s: %w", e.Path, err)
 				}
+				compData = dec2
 			}
 			// 解压独立帧
 			var raw []byte
@@ -334,10 +338,11 @@ func (r *Reader) extractSolid(dir string) error {
 
 	// 解密(可选)
 	if len(r.Password) > 0 {
-		dec2, err := Decrypt(compData, r.Password)
-		if err == nil {
-			compData = dec2
+		dec2, err := DecryptPayload(compData, r.Password, r.Header)
+		if err != nil {
+			return fmt.Errorf("nya: decrypt solid stream: %w", err)
 		}
+		compData = dec2
 	}
 	// 解压整个solid流
 	codec := CompressZstd

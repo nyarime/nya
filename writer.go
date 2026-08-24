@@ -29,6 +29,8 @@ type Writer struct {
 	compressLevel     int
 	solid             bool
 	password          []byte
+	kdfSalt           [argon2SaltLen]byte
+	kdfSaltSet        bool
 	dict              []byte
 	dataOff           uint64
 	hashTables        [][]uint32
@@ -155,7 +157,11 @@ func (nw *Writer) compressRaw(data []byte) ([]byte, error) {
 	case nw.usesZstd():
 		return ZstdCompressWithWindow(data, nw.compressLevel), nil
 	default:
-		return Lzma2CompressOpts(data, nw.lzmaOpts)
+		opts := nw.lzmaOpts
+		if nw.solid {
+			opts.OptimalParse = true
+		}
+		return Lzma2CompressOpts(data, opts)
 	}
 }
 
@@ -307,10 +313,11 @@ func (nw *Writer) addFileNormal(relPath string, raw []byte, info os.FileInfo) er
 
 	// Encrypt
 	if len(nw.password) > 0 {
-		encrypted, err := Encrypt(compData, nw.password)
-		if err == nil {
-			compData = encrypted
+		encrypted, err := nw.sealCompressed(compData)
+		if err != nil {
+			return err
 		}
+		compData = encrypted
 	}
 
 	// FEC
@@ -469,10 +476,11 @@ func (nw *Writer) closeSolid() error {
 
 	// Encrypt
 	if len(nw.password) > 0 {
-		encrypted, err := Encrypt(compData, nw.password)
-		if err == nil {
-			compData = encrypted
+		encrypted, err := nw.sealCompressed(compData)
+		if err != nil {
+			return err
 		}
+		compData = encrypted
 	}
 
 	// FEC
@@ -544,6 +552,28 @@ func (nw *Writer) closeSolid() error {
 	return nw.finalizeArchive(gh, data, dirBuf.Bytes())
 }
 
+func (nw *Writer) sealCompressed(compData []byte) ([]byte, error) {
+	if len(nw.password) == 0 {
+		return compData, nil
+	}
+	if !nw.kdfSaltSet {
+		salt, err := NewWriterKDFSalt()
+		if err != nil {
+			return nil, err
+		}
+		nw.kdfSalt = salt
+		nw.kdfSaltSet = true
+	}
+	p := KDFParams{
+		Argon2id:  true,
+		Salt:      nw.kdfSalt,
+		MemoryKiB: argon2MemoryKiB,
+		Time:      argon2Time,
+		Threads:   argon2Threads,
+	}
+	return EncryptPayload(compData, nw.password, p)
+}
+
 func (nw *Writer) closeNormal() error {
 	data := nw.dataBuf.Bytes()
 
@@ -578,6 +608,9 @@ func (nw *Writer) finalizeArchive(gh GlobalHeader, data, dirBytes []byte) error 
 		if len(nw.globalMetaFec) > 0 {
 			gh.Flags |= FlagHasGlobalFEC
 		}
+	}
+	if nw.kdfSaltSet {
+		WriteKDFParams(&gh, nw.kdfSalt)
 	}
 
 	gh.Write(nw.w)

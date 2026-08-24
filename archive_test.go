@@ -101,8 +101,12 @@ func TestArchiveRoundtripModes(t *testing.T) {
 			if err != nil {
 				t.Fatal("Open:", err)
 			}
-			if got := r.Header.VersionMinor; got != VersionMinor {
-				t.Errorf("archive minor version = %d, want %d", got, VersionMinor)
+			wantMinor := VersionMinor
+			if tc.password != "" {
+				wantMinor = 2
+			}
+			if got := r.Header.VersionMinor; got != wantMinor {
+				t.Errorf("archive minor version = %d, want %d", got, wantMinor)
 			}
 			if !r.Verify() {
 				t.Error("Verify reported a damaged archive")

@@ -32,7 +32,8 @@ VersionMajor.VersionMinor  (global header bytes 8–11)
 | Minor | Writer | Reader | Notes |
 | ---: | --- | --- | --- |
 | **0** | Legacy (frozen) | Required forever | Pre-RFC8878 zstd sequence tables; self-consistent old archives |
-| **1** | **Current default** | Required | RFC 8878 zstd; new archives from this package use **1.1** |
+| **1** | **Current default** | Required | RFC 8878 zstd; Argon2id encryption (minor 2) |
+| **2** | Encrypted output | Required | Same as 1.1 plus Argon2id KDF in header Reserved |
 
 **Policy:** bump **minor** for additive, backward-compatible changes (new flags,
 optional tail sections). Bump **major** only for breaking layout changes.
