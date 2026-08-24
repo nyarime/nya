@@ -488,8 +488,8 @@ func (nw *Writer) closeSolid() error {
 
 	gh := GlobalHeader{
 		Magic:        MagicHeader,
-		VersionMajor: 1,
-		VersionMinor: 0,
+		VersionMajor: VersionMajor,
+		VersionMinor: VersionMinor,
 		Flags:        FlagSolidCompress,
 		DataAreaSize: uint64(len(data)),
 		CreationTime: time.Now().UnixNano(),
@@ -532,8 +532,8 @@ func (nw *Writer) closeNormal() error {
 
 	gh := GlobalHeader{
 		Magic:        MagicHeader,
-		VersionMajor: 1,
-		VersionMinor: 0,
+		VersionMajor: VersionMajor,
+		VersionMinor: VersionMinor,
 		DataAreaSize: uint64(len(data)),
 		CreationTime: time.Now().UnixNano(),
 	}

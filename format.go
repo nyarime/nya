@@ -29,6 +29,16 @@ const (
 	FECParamsSize    = 16
 )
 
+// Format version written by this package.
+//
+// Minor version 1 is the first to emit RFC 8878-conformant zstd frames;
+// archives that report minor version 0 are decoded with the legacy sequence
+// code tables in zstd_legacy.go.
+const (
+	VersionMajor uint16 = 1
+	VersionMinor uint16 = 1
+)
+
 // Header flags
 const (
 	FlagHasFooter      = 1 << 0

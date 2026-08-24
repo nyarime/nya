@@ -905,14 +905,22 @@ func zstdBuildBlock(src []byte, seqs []zstdSeq, offsets ...[3]int) []byte {
 		}
 	}
 
-	// Determine modes: RLE (1) if all same, try Custom FSE (2), fallback Predefined (0)
+	// Determine modes: RLE (1) if all same, try Custom FSE (2), fallback Predefined (0).
+	//
+	// Custom tables are disabled: the serialisation below round-trips through
+	// this package's own readFSETable but is rejected by conformant zstd
+	// decoders, which would make our frames unreadable elsewhere. Predefined
+	// and RLE tables cost roughly 1% of ratio and interoperate. Re-enable once
+	// zcBuildCustomFSEEncoder emits spec-compliant tables.
+	const useCustomFSE = false
+
 	var llMode, ofMode, mlMode byte
 	var llCustomHdr, ofCustomHdr, mlCustomHdr []byte
 	var llCustomTbl, ofCustomTbl, mlCustomTbl *zcFSECustomTable
 
 	if llSame {
 		llMode = 1
-	} else if nbSeq >= 16 {
+	} else if useCustomFSE && nbSeq >= 16 {
 		// Try custom FSE table for LL
 		llFreqs := make(map[byte]int)
 		for _, c := range coded { llFreqs[byte(c.llCode)]++ }
@@ -928,7 +936,7 @@ func zstdBuildBlock(src []byte, seqs []zstdSeq, offsets ...[3]int) []byte {
 
 	if ofSame {
 		ofMode = 1
-	} else if false && nbSeq >= 16 {
+	} else if useCustomFSE && nbSeq >= 16 {
 		ofFreqs := make(map[byte]int)
 		for _, c := range coded { ofFreqs[byte(c.ofCode)]++ }
 		if hdr, tbl, err := zcBuildCustomFSEEncoder(ofFreqs, 8, 28); err == nil && len(hdr) > 0 {
@@ -942,7 +950,7 @@ func zstdBuildBlock(src []byte, seqs []zstdSeq, offsets ...[3]int) []byte {
 
 	if mlSame {
 		mlMode = 1
-	} else if false && nbSeq >= 16 {
+	} else if useCustomFSE && nbSeq >= 16 {
 		mlFreqs := make(map[byte]int)
 		for _, c := range coded { mlFreqs[byte(c.mlCode)]++ }
 		if hdr, tbl, err := zcBuildCustomFSEEncoder(mlFreqs, 9, 52); err == nil && len(hdr) > 0 {
@@ -1371,37 +1379,33 @@ func zcBuildHuffmanLens(freq []int, maxBits int) []int {
 
 // zcCanonicalCodes generates canonical Huffman codes from bit lengths.
 func zcCanonicalCodes(bitLens []int) (codes [256]uint32, codeLens [256]int) {
-	// Find max bit length
+	// zstd does not use the DEFLATE convention of giving the shortest codes
+	// the lowest values. Its decoding table is filled starting from weight 1,
+	// i.e. the longest codes, so the longest codes take the low code values.
+	//
+	// A symbol of length L covers 2^(maxBL-L) slots of a 2^maxBL entry table
+	// and its code is the slot index shifted down by that same amount. Walking
+	// the table in order, longest codes first and symbols ascending within a
+	// length, reproduces exactly the layout buildHuffmanTable expects.
 	maxBL := 0
 	for _, bl := range bitLens {
 		if bl > maxBL {
 			maxBL = bl
 		}
 	}
-
-	// Count codes per bit length
-	var blCount [16]int
-	for _, bl := range bitLens {
-		if bl > 0 {
-			blCount[bl]++
-		}
+	if maxBL == 0 {
+		return
 	}
 
-	// Generate starting code for each length (canonical Huffman)
-	var nextCode [16]uint32
-	code := uint32(0)
-	for bits := 1; bits <= maxBL; bits++ {
-		code = (code + uint32(blCount[bits-1])) << 1
-		nextCode[bits] = code
-	}
-
-	// Assign codes
-	for sym := 0; sym < 256; sym++ {
-		bl := bitLens[sym]
-		if bl > 0 {
-			codes[sym] = nextCode[bl]
-			codeLens[sym] = bl
-			nextCode[bl]++
+	pos := uint32(0)
+	for bl := maxBL; bl >= 1; bl-- {
+		shift := uint(maxBL - bl)
+		for sym := 0; sym < 256; sym++ {
+			if bitLens[sym] == bl {
+				codes[sym] = pos >> shift
+				codeLens[sym] = bl
+				pos += 1 << shift
+			}
 		}
 	}
 	return
@@ -1410,43 +1414,34 @@ func zcCanonicalCodes(bitLens []int) (codes [256]uint32, codeLens [256]int) {
 // zcHuffmanCompressStream encodes literals using Huffman codes into a forward bitstream
 // with a sentinel high bit, compatible with zstd's 1-stream format.
 func zcHuffmanCompressStream(lits []byte, codes [256]uint32, codeLens [256]int) []byte {
-	// Forward bitstream: bits are packed MSB-first within bytes.
-	// The stream ends with a sentinel 1-bit padding.
-	// Layout: [code bits MSB first...] [1-bit sentinel] [zero padding to byte boundary]
-	// The decoder finds the sentinel by looking at the last byte's highest set bit.
+	// RFC 8878 4.2.2: Huffman-coded streams are read backwards. Viewing the
+	// output as a little-endian bit array (bit k is bit k%8 of byte k/8), the
+	// decoder starts at the highest set bit of the last byte — the sentinel —
+	// and walks down to bit 0.
+	//
+	// So the sentinel goes at bit index totalBits, and the symbol codes fill
+	// the indices below it in order, each written most-significant bit first.
 
-	// Calculate total bits needed
 	totalBits := 0
 	for _, b := range lits {
 		totalBits += codeLens[b]
 	}
 
-	// Add 1 for sentinel bit, round up to bytes
-	totalWithSentinel := totalBits + 1
-	nBytes := (totalWithSentinel + 7) / 8
-
+	nBytes := (totalBits + 1 + 7) / 8
 	out := make([]byte, nBytes)
 
-	// Write codes MSB-first (bit position 0 = MSB of byte 0)
-	bitPos := 0
+	pos := totalBits
+	out[pos/8] |= 1 << uint(pos%8) // sentinel
+
 	for _, b := range lits {
 		code := codes[b]
-		cl := codeLens[b]
-		// Write cl bits, MSB first
-		for i := cl - 1; i >= 0; i-- {
-			byteIdx := bitPos / 8
-			bitIdx := 7 - (bitPos % 8) // MSB first within byte
+		for i := codeLens[b] - 1; i >= 0; i-- {
+			pos--
 			if (code>>uint(i))&1 != 0 {
-				out[byteIdx] |= 1 << uint(bitIdx)
+				out[pos/8] |= 1 << uint(pos%8)
 			}
-			bitPos++
 		}
 	}
-
-	// Write sentinel 1-bit
-	byteIdx := bitPos / 8
-	bitIdx := 7 - (bitPos % 8)
-	out[byteIdx] |= 1 << uint(bitIdx)
 
 	return out
 }

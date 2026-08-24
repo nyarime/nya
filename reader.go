@@ -83,6 +83,15 @@ func (r *Reader) List() []DirEntry {
 	return r.Entries
 }
 
+// zstdReaderFor decompresses a zstd frame from this archive, selecting the
+// legacy sequence code tables for archives written before minor version 1.
+func (r *Reader) zstdReaderFor(data []byte) (io.ReadCloser, error) {
+	if r.Header != nil && r.Header.VersionMinor < 1 {
+		return ZstdNewReaderLegacy(bytes.NewReader(data))
+	}
+	return ZstdNewReader(bytes.NewReader(data))
+}
+
 func (r *Reader) Extract(dir string) error {
 	if r.Header.Flags&FlagSolidCompress != 0 {
 		return r.extractSolid(dir)
@@ -168,7 +177,7 @@ func (r *Reader) Extract(dir string) error {
 				if e.CompressionID == CompressLzma2 {
 					block, err = decompressLzma2Block(blockData)
 				} else {
-					dec, derr := ZstdNewReader(bytes.NewReader(blockData))
+					dec, derr := r.zstdReaderFor(blockData)
 					if derr != nil { break }
 					block, err = io.ReadAll(dec)
 					dec.Close()
@@ -258,7 +267,7 @@ func (r *Reader) extractSolid(dir string) error {
 		solidData, derr = decompressLzma2Block(compData)
 		if derr != nil { return derr }
 	} else {
-		dec, derr := ZstdNewReader(bytes.NewReader(compData))
+		dec, derr := r.zstdReaderFor(compData)
 		if derr != nil { return derr }
 		solidData, err = io.ReadAll(dec)
 		dec.Close()

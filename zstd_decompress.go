@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"math/bits"
-	"os/exec"
 )
 
 const zstdMagic = 0xFD2FB528
@@ -23,11 +22,21 @@ type zstdReader struct {
 
 // ZstdNewReader returns an io.ReadCloser that decompresses zstd data from r.
 func ZstdNewReader(r io.Reader) (io.ReadCloser, error) {
+	return zstdNewReader(r, false)
+}
+
+// ZstdNewReaderLegacy is ZstdNewReader for frames written by the pre-v1.1
+// encoder. See zstd_legacy.go.
+func ZstdNewReaderLegacy(r io.Reader) (io.ReadCloser, error) {
+	return zstdNewReader(r, true)
+}
+
+func zstdNewReader(r io.Reader, legacy bool) (io.ReadCloser, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}
-	dec, err := DecompressZstd(data)
+	dec, err := decompressZstd(data, legacy)
 	if err != nil {
 		return nil, err
 	}
@@ -57,9 +66,16 @@ func zstdBuildFSETableFromHeader(header []byte, maxAccLog int) (*fseTable, int, 
 
 // DecompressZstd decompresses Zstandard compressed data.
 func DecompressZstd(data []byte) ([]byte, error) {
-	if out, ok := zstdDecompressExternal(data); ok {
-		return out, nil
-	}
+	return decompressZstd(data, false)
+}
+
+// DecompressZstdLegacy decompresses a frame produced by the pre-v1.1 encoder,
+// which used non-conformant sequence code tables. See zstd_legacy.go.
+func DecompressZstdLegacy(data []byte) ([]byte, error) {
+	return decompressZstd(data, true)
+}
+
+func decompressZstd(data []byte, legacy bool) ([]byte, error) {
 	if len(data) < 4 {
 		return nil, fmt.Errorf("zstd: data too short")
 	}
@@ -68,34 +84,14 @@ func DecompressZstd(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("zstd: invalid magic 0x%08X", magic)
 	}
 
-	d := &zstdDecoder{data: data, pos: 4}
+	d := &zstdDecoder{data: data, pos: 4, legacy: legacy}
 	return d.decodeFrame()
-}
-
-func zstdDecompressExternal(data []byte) ([]byte, bool) {
-	zstdPath, err := exec.LookPath("zstd")
-	if err != nil {
-		return nil, false
-	}
-	cmd := exec.Command(zstdPath, "-dc")
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return nil, false
-	}
-	go func() {
-		_, _ = stdin.Write(data)
-		_ = stdin.Close()
-	}()
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, false
-	}
-	return out, true
 }
 
 type zstdDecoder struct {
 	data          []byte
 	pos           int
+	legacy        bool
 	windowSize    uint64
 	contentSize   uint64
 	hasContentSz  bool
@@ -233,7 +229,7 @@ func (d *zstdDecoder) decodeFrame() ([]byte, error) {
 // ---- Compressed Block Decoding ----
 
 func (d *zstdDecoder) decodeCompressedBlock(blockData []byte, prevOutput []byte) ([]byte, error) {
-	r := &blockReader{data: blockData, pos: 0}
+	r := &blockReader{data: blockData, pos: 0, legacy: d.legacy}
 
 	// Literals Section
 	literals, err := r.decodeLiterals()
@@ -254,6 +250,9 @@ func (d *zstdDecoder) decodeCompressedBlock(blockData []byte, prevOutput []byte)
 type blockReader struct {
 	data []byte
 	pos  int
+	// legacy selects the pre-RFC-conformance sequence code tables kept for
+	// reading NYA v1.0 archives. See zstd_legacy.go.
+	legacy bool
 }
 
 type sequence struct {
@@ -277,10 +276,13 @@ func (r *blockReader) decodeLiterals() ([]byte, error) {
 		sizeFormat := (hdr >> 2) & 3
 		var size int
 		switch {
-		case sizeFormat < 2:
+		// RFC 8878 3.1.1.3.1.1: for Raw/RLE literals only the low bit of
+		// Size_Format is significant for the 1-byte form, so 00 and 10 both
+		// mean "5-bit size in a 1-byte header".
+		case sizeFormat&1 == 0:
 			size = int(hdr >> 3)
 			r.pos++
-		case sizeFormat == 2:
+		case sizeFormat == 1:
 			if r.pos+1 >= len(r.data) {
 				return nil, fmt.Errorf("truncated raw lit header")
 			}
@@ -305,10 +307,10 @@ func (r *blockReader) decodeLiterals() ([]byte, error) {
 		sizeFormat := (hdr >> 2) & 3
 		var size int
 		switch {
-		case sizeFormat < 2:
+		case sizeFormat&1 == 0:
 			size = int(hdr >> 3)
 			r.pos++
-		case sizeFormat == 2:
+		case sizeFormat == 1:
 			if r.pos+1 >= len(r.data) {
 				return nil, fmt.Errorf("truncated RLE lit header")
 			}
@@ -350,22 +352,24 @@ func (r *blockReader) decodeCompressedLiterals(litType byte) ([]byte, error) {
 	var regeneratedSize, compressedSize int
 	var numStreams int
 
+	// RFC 8878 3.1.1.3.1.1: Size_Format 00 selects a single Huffman stream,
+	// 01/10/11 select four streams with progressively wider size fields.
 	switch sizeFormat {
-	case 0: // 4 streams, sizes use 10 bits each
-		if r.pos+3 > len(r.data) {
-			return nil, fmt.Errorf("truncated compressed lit header")
-		}
-		v := uint32(r.data[r.pos]) | uint32(r.data[r.pos+1])<<8 | uint32(r.data[r.pos+2])<<16
-		numStreams = 4
-		regeneratedSize = int((v >> 4) & 0x3FF)
-		compressedSize = int((v >> 14) & 0x3FF)
-		r.pos += 3
-	case 1: // 1 stream, sizes use 10 bits each
+	case 0: // 1 stream, sizes use 10 bits each
 		if r.pos+3 > len(r.data) {
 			return nil, fmt.Errorf("truncated compressed lit header")
 		}
 		v := uint32(r.data[r.pos]) | uint32(r.data[r.pos+1])<<8 | uint32(r.data[r.pos+2])<<16
 		numStreams = 1
+		regeneratedSize = int((v >> 4) & 0x3FF)
+		compressedSize = int((v >> 14) & 0x3FF)
+		r.pos += 3
+	case 1: // 4 streams, sizes use 10 bits each
+		if r.pos+3 > len(r.data) {
+			return nil, fmt.Errorf("truncated compressed lit header")
+		}
+		v := uint32(r.data[r.pos]) | uint32(r.data[r.pos+1])<<8 | uint32(r.data[r.pos+2])<<16
+		numStreams = 4
 		regeneratedSize = int((v >> 4) & 0x3FF)
 		compressedSize = int((v >> 14) & 0x3FF)
 		r.pos += 3
@@ -564,11 +568,13 @@ func buildHuffmanTable(weights []byte, numSymbols int) (*huffmanTree, error) {
 	tableSize := 1 << tableLog
 	tree.table = make([]huffEntry, tableSize)
 
-	// Sort symbols by weight and fill table
+	// Fill the table rank by rank, from the longest codes (weight 1) up. A
+	// symbol of weight w has nbBits = tableLog+1-w and therefore covers
+	// 2^(tableLog-nbBits) = 2^(w-1) consecutive slots.
 	var pos int
-	for w := byte(1); w <= byte(tableLog)+1; w++ {
+	for w := byte(1); w <= byte(tableLog); w++ {
 		nbBits := byte(tableLog) + 1 - w
-		length := 1 << nbBits
+		length := 1 << (w - 1)
 		for sym := 0; sym < numSymbols; sym++ {
 			if weights[sym] == w {
 				for j := 0; j < length && pos+j < tableSize; j++ {
@@ -863,28 +869,46 @@ func buildPredefinedOffset() *fseTable {
 }
 
 // Baseline and extra bits tables from the zstd spec
+// Literals_Length_Code baselines and extra bit counts (RFC 8878, Table 5).
 var litLenBaseline = [36]int{
 	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
-	16, 18, 20, 24, 28, 32, 40, 48, 64, 128, 256, 512, 1024, 2048, 4096, 8192,
-	16384, 32768, 65536, 131072,
+	16, 18, 20, 22, 24, 28, 32, 40, 48, 64, 128, 256, 512, 1024, 2048, 4096,
+	8192, 16384, 32768, 65536,
 }
 var litLenExtraBits = [36]int{
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	1, 1, 1, 2, 2, 3, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13,
-	14, 15, 16, 17,
+	1, 1, 1, 1, 2, 2, 3, 3, 4, 6, 7, 8, 9, 10, 11, 12,
+	13, 14, 15, 16,
 }
 
+// Match_Length_Code baselines and extra bit counts (RFC 8878, Table 6).
 var matchLenBaseline = [53]int{
 	3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
 	19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34,
-	35, 37, 39, 43, 47, 51, 59, 67, 83, 99, 131, 259, 515, 1027, 2051, 4099,
-	8195, 16387, 32771, 65539, 131075,
+	35, 37, 39, 41, 43, 47, 51, 59, 67, 83, 99, 131, 259, 515, 1027, 2051,
+	4099, 8195, 16387, 32771, 65539,
 }
 var matchLenExtraBits = [53]int{
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	1, 1, 1, 2, 2, 2, 3, 3, 4, 4, 5, 7, 8, 9, 10, 11,
+	1, 1, 1, 1, 2, 2, 3, 3, 4, 4, 5, 7, 8, 9, 10, 11,
 	12, 13, 14, 15, 16,
+}
+
+// seqCodes bundles the Literals_Length and Match_Length code translation
+// tables so a decoder can pick the conformant or the legacy set per frame.
+type seqCodes struct {
+	llBaseline  []int
+	llExtraBits []int
+	mlBaseline  []int
+	mlExtraBits []int
+}
+
+var conformantSeqCodes = seqCodes{
+	llBaseline:  litLenBaseline[:],
+	llExtraBits: litLenExtraBits[:],
+	mlBaseline:  matchLenBaseline[:],
+	mlExtraBits: matchLenExtraBits[:],
 }
 
 func (r *blockReader) decodeSequences() ([]sequence, error) {
@@ -965,6 +989,11 @@ func (r *blockReader) decodeSequences() ([]sequence, error) {
 		return nil, fmt.Errorf("init ML state: %w", err)
 	}
 
+	codes := conformantSeqCodes
+	if r.legacy {
+		codes = legacySeqCodes
+	}
+
 	sequences := make([]sequence, numSequences)
 
 	for i := 0; i < numSequences; i++ {
@@ -988,9 +1017,9 @@ func (r *blockReader) decodeSequences() ([]sequence, error) {
 
 		// Match length
 		var matchLen int
-		if mlCode < len(matchLenBaseline) {
-			extra := matchLenExtraBits[mlCode]
-			matchLen = matchLenBaseline[mlCode]
+		if mlCode < len(codes.mlBaseline) {
+			extra := codes.mlExtraBits[mlCode]
+			matchLen = codes.mlBaseline[mlCode]
 			if extra > 0 {
 				extraVal, _ := br.readBitsForward(extra)
 				matchLen += extraVal
@@ -999,9 +1028,9 @@ func (r *blockReader) decodeSequences() ([]sequence, error) {
 
 		// Literal length
 		var litLen int
-		if llCode < len(litLenBaseline) {
-			extra := litLenExtraBits[llCode]
-			litLen = litLenBaseline[llCode]
+		if llCode < len(codes.llBaseline) {
+			extra := codes.llExtraBits[llCode]
+			litLen = codes.llBaseline[llCode]
 			if extra > 0 {
 				extraVal, _ := br.readBitsForward(extra)
 				litLen += extraVal
@@ -1078,60 +1107,49 @@ func executeSequences(literals []byte, sequences []sequence, prevOutput []byte) 
 		output = append(output, literals[litPos:litPos+seq.litLen]...)
 		litPos += seq.litLen
 
-		// Handle repeat offsets
-		actualOffset := seq.offset
-		if seq.litLen > 0 {
-			switch actualOffset {
-			case 1:
-				actualOffset = offset1
-			case 2:
-				actualOffset = offset2
-			case 3:
-				actualOffset = offset3
-			default:
-				actualOffset -= 3
-			}
+		// Resolve the offset and update the repeated offset list.
+		// RFC 8878 3.1.1.5: an Offset_Value above 3 is a literal offset; 1..3
+		// select a repeated offset, and a zero literal length shifts that
+		// selection up by one so that 3 means "Repeated_Offset1 - 1".
+		var actualOffset int
+		if seq.offset > 3 {
+			actualOffset = seq.offset - 3
+			offset3, offset2, offset1 = offset2, offset1, actualOffset
 		} else {
-			switch actualOffset {
+			sel := seq.offset
+			if seq.litLen == 0 {
+				sel++
+			}
+			switch sel {
 			case 1:
-				actualOffset = offset2
+				actualOffset = offset1 // list unchanged
 			case 2:
-				actualOffset = offset3
+				actualOffset = offset2
+				offset1, offset2 = offset2, offset1 // offset3 is preserved
 			case 3:
+				actualOffset = offset3
+				offset3, offset2, offset1 = offset2, offset1, offset3
+			default: // sel == 4
 				actualOffset = offset1 - 1
-				if actualOffset == 0 {
+				if actualOffset < 1 {
 					actualOffset = 1
 				}
-			default:
-				actualOffset -= 3
+				offset3, offset2, offset1 = offset2, offset1, actualOffset
 			}
 		}
 
-		// Update offset history
-		if actualOffset != offset1 {
-			offset3 = offset2
-			offset2 = offset1
-			offset1 = actualOffset
-		}
-
-		// Copy match from already decoded output + prevOutput
-		allData := append(prevOutput, output...)
-		matchStart := len(allData) - actualOffset
+		// Copy the match. Sources may overlap the bytes being written, so read
+		// one byte at a time from the data decoded so far.
+		matchStart := len(prevOutput) + len(output) - actualOffset
 		if matchStart < 0 {
-			return nil, fmt.Errorf("match offset %d exceeds available data %d", actualOffset, len(allData))
+			return nil, fmt.Errorf("match offset %d exceeds available data %d", actualOffset, len(prevOutput)+len(output))
 		}
 		for j := 0; j < seq.matchLen; j++ {
 			idx := matchStart + j
-			if idx < len(allData) {
-				output = append(output, allData[idx])
+			if idx < len(prevOutput) {
+				output = append(output, prevOutput[idx])
 			} else {
-				// Overlapping match — read from output that was already appended
-				outIdx := idx - len(prevOutput)
-				if outIdx >= 0 && outIdx < len(output) {
-					output = append(output, output[outIdx])
-				} else {
-					output = append(output, 0)
-				}
+				output = append(output, output[idx-len(prevOutput)])
 			}
 		}
 	}
@@ -1203,7 +1221,19 @@ func (br *reverseBitReader) refill() {
 
 func (br *reverseBitReader) peekBits(n int) (int, error) {
 	if n > br.bitsAvail {
-		return 0, fmt.Errorf("not enough bits: need %d have %d", n, br.bitsAvail)
+		// The container only holds the bytes pulled in so far; pull in more
+		// before giving up.
+		br.refill()
+	}
+	if n > br.bitsAvail {
+		if br.bitsAvail <= 0 {
+			return 0, fmt.Errorf("not enough bits: need %d have %d", n, br.bitsAvail)
+		}
+		// Tail of the stream: fewer than n bits are left, so pad the low end
+		// with zeroes the way a wide-container decoder would. The final codes
+		// are still shorter than n, so this keeps them decodable.
+		v := br.bitContainer & ((1 << uint(br.bitsAvail)) - 1)
+		return int(v << uint(n-br.bitsAvail)), nil
 	}
 	return int((br.bitContainer >> uint(br.bitsAvail-n)) & ((1 << uint(n)) - 1)), nil
 }
