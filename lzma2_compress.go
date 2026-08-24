@@ -35,16 +35,27 @@ const lzma2MinSegment = 4 << 20
 // whole segment. Compressing each 64 KiB chunk in isolation, as this used to,
 // capped the effective dictionary at the chunk size whatever dictSize said.
 func Lzma2Compress(src []byte, dictSize int) ([]byte, error) {
+	return Lzma2CompressOpts(src, Lzma2Options{DictSize: dictSize})
+}
+
+// Lzma2CompressOpts compresses src with explicit encoder settings.
+func Lzma2CompressOpts(src []byte, opts Lzma2Options) ([]byte, error) {
 	if len(src) == 0 {
 		return []byte{0x00}, nil // end marker only
 	}
-	if dictSize <= 0 {
-		dictSize = lzma2DictSize
+	if opts.DictSize <= 0 {
+		opts.DictSize = lzma2DictSize
+	}
+	if opts.Depth <= 0 {
+		opts.Depth = lzmaDefaultDepth
+	}
+	if opts.NiceLen <= 0 {
+		opts.NiceLen = lzmaDefaultNiceLen
 	}
 
 	bounds := lzma2SegmentBounds(len(src))
 	if len(bounds) == 1 {
-		out, err := lzma2CompressSegment(src, dictSize)
+		out, err := lzma2CompressSegment(src, opts)
 		if err != nil {
 			return nil, err
 		}
@@ -61,7 +72,7 @@ func Lzma2Compress(src []byte, dictSize int) ([]byte, error) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			parts[i], errs[i] = lzma2CompressSegment(src[start:end], dictSize)
+			parts[i], errs[i] = lzma2CompressSegment(src[start:end], opts)
 		}(i, b[0], b[1])
 	}
 	wg.Wait()
@@ -101,8 +112,10 @@ func lzma2SegmentBounds(n int) [][2]int {
 // lzma2CompressSegment emits the chunks for one independent segment, without
 // the stream end marker. Every segment starts with a dictionary reset, since
 // the worker never saw the bytes before it.
-func lzma2CompressSegment(src []byte, dictSize int) ([]byte, error) {
-	enc := newLzmaEncoder(src, dictSize)
+func lzma2CompressSegment(src []byte, opts Lzma2Options) ([]byte, error) {
+	enc := newLzmaEncoder(src, opts.DictSize)
+	enc.depth = opts.Depth
+	enc.niceLen = opts.NiceLen
 
 	var out []byte
 	first := true
@@ -396,6 +409,14 @@ type lzmaEncoder struct {
 	// bytes, keeping it inside the 16-bit compressed size field.
 	compLimit int
 
+	// depth caps how far the match finder walks a hash chain, and niceLen is
+	// the match length at which the parser stops looking for better.
+	depth   int
+	niceLen int
+
+	// matches is scratch reused by findMatchesAt.
+	matches []lzmaMatch
+
 	// Hash chain match finder
 	hashTable []int32 // hash → position
 	chain     []int32 // chain[pos] → prev pos with same hash
@@ -403,12 +424,25 @@ type lzmaEncoder struct {
 }
 
 const (
-	lzmaHashBits    = 16
-	lzmaHashSize    = 1 << lzmaHashBits
-	lzmaMinMatch    = 2
-	lzmaMaxMatch    = 273 // 2 + 8 + 8 + 256 - 1
-	lzmaMaxChainLen = 32  // max chain depth for greedy
+	lzmaHashBits = 16
+	lzmaHashSize = 1 << lzmaHashBits
+	lzmaMinMatch = 2
+	lzmaMaxMatch = 273 // 2 + 8 + 8 + 256 - 1
+
+	lzmaDefaultDepth   = 32
+	lzmaDefaultNiceLen = 64
 )
+
+// Lzma2Options tunes the encoder's effort.
+type Lzma2Options struct {
+	// DictSize is the match window in bytes. Zero picks the package default.
+	DictSize int
+	// Depth caps the hash chain walk per position. Zero picks the default.
+	Depth int
+	// NiceLen is the match length at which the parser stops looking for a
+	// better option. Zero picks the default.
+	NiceLen int
+}
 
 func newLzmaEncoder(src []byte, dictSize int) *lzmaEncoder {
 	enc := &lzmaEncoder{
@@ -416,6 +450,8 @@ func newLzmaEncoder(src []byte, dictSize int) *lzmaEncoder {
 		src:      src,
 		dictSize: dictSize,
 		limit:    len(src),
+		depth:    lzmaDefaultDepth,
+		niceLen:  lzmaDefaultNiceLen,
 		lc:       3,
 		lp:       0,
 		pb:       2,
@@ -495,18 +531,41 @@ func (enc *lzmaEncoder) findMatch() (dist uint32, length int) {
 	return enc.findMatchAt(enc.pos)
 }
 
-// findMatchAt searches for the best match starting at pos. Positions up to
-// pos must already be indexed; see advanceHash.
+// lzmaMatch is one match candidate: a length and the nearest distance that
+// achieves it.
+type lzmaMatch struct {
+	dist   uint32
+	length int
+}
+
+// findMatchAt returns the longest match at pos.
 func (enc *lzmaEncoder) findMatchAt(pos int) (dist uint32, length int) {
-	if pos+lzmaMinMatch > enc.limit {
+	m := enc.findMatchesAt(pos)
+	if len(m) == 0 {
 		return 0, 0
+	}
+	last := m[len(m)-1]
+	return last.dist, last.length
+}
+
+// findMatchesAt collects the match candidates at pos, in increasing length,
+// each at the nearest distance that reaches that length. Returning the whole
+// frontier rather than only the longest lets the parser weigh a short nearby
+// match against a longer distant one, which matters because distance is what
+// dominates the encoded cost.
+//
+// The result aliases scratch space on the encoder and is valid until the next
+// call. Positions up to pos must already be indexed; see advanceHash.
+func (enc *lzmaEncoder) findMatchesAt(pos int) []lzmaMatch {
+	enc.matches = enc.matches[:0]
+	if pos+lzmaMinMatch > enc.limit {
+		return enc.matches
 	}
 
 	h := enc.hash4(pos)
 	candidate := enc.hashTable[h]
 
 	bestLen := 1
-	bestDist := uint32(0)
 	maxDist := pos
 	if maxDist > enc.dictSize {
 		maxDist = enc.dictSize
@@ -519,7 +578,7 @@ func (enc *lzmaEncoder) findMatchAt(pos int) (dist uint32, length int) {
 	}
 
 	chainLen := 0
-	for candidate >= 0 && chainLen < lzmaMaxChainLen {
+	for candidate >= 0 && chainLen < enc.depth {
 		d := pos - int(candidate)
 		if d > maxDist || d <= 0 {
 			break
@@ -540,7 +599,11 @@ func (enc *lzmaEncoder) findMatchAt(pos int) (dist uint32, length int) {
 		}
 		if ml > bestLen {
 			bestLen = ml
-			bestDist = uint32(d - 1) // 0-based distance
+			// Candidates are walked nearest first, so the first time a length
+			// is reached it is at the smallest distance for that length.
+			if ml >= lzmaMinMatch {
+				enc.matches = append(enc.matches, lzmaMatch{dist: uint32(d - 1), length: ml})
+			}
 			if ml >= maxLen {
 				break
 			}
@@ -549,10 +612,7 @@ func (enc *lzmaEncoder) findMatchAt(pos int) (dist uint32, length int) {
 		chainLen++
 	}
 
-	if bestLen < lzmaMinMatch {
-		return 0, 0
-	}
-	return bestDist, bestLen
+	return enc.matches
 }
 
 // findRepMatch checks if any of the 4 rep distances match at current position.

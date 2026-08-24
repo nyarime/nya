@@ -287,6 +287,69 @@ func TestLzma2RoundtripPublicAPI(t *testing.T) {
 	}
 }
 
+// Every level must round-trip, and a higher level must never produce a bigger
+// archive than a lower one. A larger dictionary used to make things worse,
+// because the match finder only offered its longest match and the parser had
+// no way to prefer a nearer, shorter one.
+func TestLevelsRoundtripAndImprove(t *testing.T) {
+	srcDir, want := buildTree(t)
+	base := filepath.Base(srcDir)
+
+	sizes := map[int]int64{}
+	for _, level := range []int{LevelStore, LevelFastest, LevelFast, LevelNormal, LevelGood, LevelBest} {
+		archive := filepath.Join(t.TempDir(), "lvl.nya")
+		f, err := os.Create(archive)
+		if err != nil {
+			t.Fatal(err)
+		}
+		w := NewWriterOpts(f, 0, level, false)
+		if err := w.AddFile(srcDir); err != nil {
+			t.Fatal(err)
+		}
+		if err := w.Close(); err != nil {
+			t.Fatal(err)
+		}
+		fi, err := f.Stat()
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.Close()
+		sizes[level] = fi.Size()
+
+		r, err := Open(archive)
+		if err != nil {
+			t.Fatalf("level %d: %v", level, err)
+		}
+		out := t.TempDir()
+		if err := r.Extract(out); err != nil {
+			t.Fatalf("level %d: %v", level, err)
+		}
+		for name, content := range want {
+			got, err := os.ReadFile(filepath.Join(out, base, name))
+			if err != nil {
+				t.Errorf("level %d, %s: %v", level, name, err)
+				continue
+			}
+			if !bytes.Equal(got, content) {
+				t.Errorf("level %d, %s: content mismatch", level, name)
+			}
+		}
+		t.Logf("level %d (%s): %d bytes", level, LevelName(level), fi.Size())
+	}
+
+	if sizes[LevelFastest] >= sizes[LevelStore] {
+		t.Errorf("fastest (%d) did not beat store (%d)", sizes[LevelFastest], sizes[LevelStore])
+	}
+	ordered := []int{LevelFast, LevelNormal, LevelGood, LevelBest}
+	for i := 1; i < len(ordered); i++ {
+		lo, hi := ordered[i-1], ordered[i]
+		if sizes[hi] > sizes[lo] {
+			t.Errorf("level %d produced %d bytes, worse than level %d at %d",
+				hi, sizes[hi], lo, sizes[lo])
+		}
+	}
+}
+
 func TestSanitizePathRejectsEscapes(t *testing.T) {
 	dir := t.TempDir()
 	for _, bad := range []string{

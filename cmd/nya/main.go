@@ -23,8 +23,10 @@ Usage:
   nya info    <archive.nya>                  show header details
   nya repair  <archive.nya> [out.nya]        rebuild a damaged archive using its FEC data
 
-Archives use LZMA2 by default. Pass "-codec zstd" to create for a much
-faster decompressor at the cost of a bigger archive.
+Levels run 0 to 9, the way 7-Zip and WinRAR present them: 0 stores, 1 is
+fastest, 5 is the default, 9 is smallest. Levels up to 4 use Zstandard for
+quick extraction; 5 and above use LZMA2 for size. "-codec" overrides that
+choice if you want a specific one.
 
 Run "nya <command> -h" for the flags of a command.
 `
@@ -65,20 +67,24 @@ func main() {
 
 func cmdCreate(args []string) error {
 	fs := flag.NewFlagSet("create", flag.ExitOnError)
-	level := fs.Int("level", 9, "compression level, 1 (fastest) to 19 (smallest); zstd only")
+	level := fs.Int("level", nya.LevelDefault,
+		"0 store, 1 fastest, 3 fast, 5 normal, 7 good, 9 best")
 	fec := fs.Int("fec", 0, "percentage of RaptorQ recovery data to add")
 	solid := fs.Bool("solid", false, "compress all files as one stream (better ratio, slower random access)")
-	codec := fs.String("codec", nya.CompressionLZMA2,
-		"lzma2 for the smallest archive, or zstd for much faster extraction")
+	codec := fs.String("codec", "",
+		"override the level's codec: lzma2, zstd or store")
 	password := fs.String("password", "", "encrypt the payload with this password")
 	workers := fs.Int("workers", 0, "number of compression workers (0 = automatic)")
 	fs.Parse(args)
 
+	if *level < 0 || *level > 9 {
+		return fmt.Errorf("level %d is out of range, want 0 to 9", *level)
+	}
 	switch *codec {
-	case nya.CompressionLZMA2, nya.CompressionZstd:
+	case "", nya.CompressionLZMA2, nya.CompressionZstd, nya.CompressionStore:
 	default:
-		return fmt.Errorf("unknown codec %q, want %q or %q",
-			*codec, nya.CompressionLZMA2, nya.CompressionZstd)
+		return fmt.Errorf("unknown codec %q, want %q, %q or %q",
+			*codec, nya.CompressionLZMA2, nya.CompressionZstd, nya.CompressionStore)
 	}
 	if fs.NArg() != 2 {
 		return fmt.Errorf("create needs an archive path and one input path")
@@ -97,7 +103,9 @@ func cmdCreate(args []string) error {
 	} else {
 		w = nya.NewWriterOpts(f, *fec, *level, *solid)
 	}
-	w.SetCompression(*codec)
+	if *codec != "" {
+		w.SetCompression(*codec)
+	}
 	if *workers > 0 {
 		w.SetWorkers(*workers)
 	}
@@ -115,7 +123,7 @@ func cmdCreate(args []string) error {
 		return err
 	}
 	orig := inputSize(input)
-	fmt.Printf("%s  %s", archive, nya.HumanSize(int(fi.Size())))
+	fmt.Printf("%s  %s  [%s]", archive, nya.HumanSize(int(fi.Size())), nya.LevelName(*level))
 	if orig > 0 {
 		fmt.Printf("  (%.1f%% of %s)", 100*float64(fi.Size())/float64(orig), nya.HumanSize(int(orig)))
 	}
@@ -257,6 +265,8 @@ func archiveCodec(r *nya.Reader) string {
 			seen["lzma2"] = true
 		case nya.CompressZstd:
 			seen["zstd"] = true
+		case nya.CompressNone:
+			seen["store"] = true
 		default:
 			seen[fmt.Sprintf("id-%d", e.CompressionID)] = true
 		}

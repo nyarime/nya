@@ -14,7 +14,7 @@ the BLAKE3 implementation and the container are all written from scratch;
 
 | Layer | What it does |
 | --- | --- |
-| Compression | LZMA2 by default, or Zstandard (RFC 8878) for fast extraction |
+| Compression | LZMA2 at levels 5–9, Zstandard (RFC 8878) at 1-4, stored at 0 |
 | Pre-filters | BCJ branch conversion for x86, ARM, AArch64 and MIPS binaries; delta filter |
 | Integrity | BLAKE3-256 over every chunk, with AVX2/AVX-512/SSE2/NEON assembly paths |
 | Recovery | RaptorQ parity symbols, sized as a percentage of the payload |
@@ -34,8 +34,9 @@ go install github.com/nyarime/nya/cmd/nya@latest
 ## Command line
 
 ```bash
-nya create backup.nya ./project                    # create
-nya create -codec zstd backup.nya ./project        # trade size for fast extraction
+nya create backup.nya ./project                    # create at the default level
+nya create -level 9 -solid backup.nya ./project    # smallest
+nya create -level 1 backup.nya ./project           # fastest
 nya create -fec 30 backup.nya ./data               # add 30% recovery data
 nya list backup.nya                                # inspect
 nya extract backup.nya ./restored                  # extract
@@ -44,9 +45,20 @@ nya info backup.nya                                # header details, including c
 nya repair damaged.nya fixed.nya                   # rebuild using the parity data
 ```
 
+Levels run 0 to 9, the way 7-Zip and WinRAR present them:
+
+| level | name | codec |
+| ---: | --- | --- |
+| 0 | store | none |
+| 1–2 | fastest | Zstandard |
+| 3–4 | fast | Zstandard |
+| 5–6 | normal (default) | LZMA2 |
+| 7–8 | good | LZMA2, larger window and deeper search |
+| 9 | best | LZMA2, maximum window and search |
+
 `create` also accepts `-solid` to compress every file as a single stream,
-`-password` to encrypt the payload, `-level` for the zstd level and
-`-workers` to cap concurrency.
+`-codec` to override the level's choice, `-password` to encrypt the payload
+and `-workers` to cap concurrency.
 
 ## Library
 
@@ -66,8 +78,8 @@ func main() {
 	}
 	defer f.Close()
 
-	// 10% recovery data, compression level 9, non-solid.
-	w := nya.NewWriterOpts(f, 10, 9, false)
+	// 10% recovery data, best compression, non-solid.
+	w := nya.NewWriterOpts(f, 10, nya.LevelBest, false)
 	if err := w.AddFile("./project"); err != nil {
 		panic(err)
 	}
@@ -100,39 +112,33 @@ The codecs are usable on their own: `ZstdCompress`, `DecompressZstd`,
 `Lzma2Compress`, `XzCompress`, `Blake3Sum256`, and the BCJ and delta filters
 are all exported.
 
-## Choosing a codec
+## Where it stands
 
 Percentages are compressed size relative to the input, so lower is better.
-Measured on one machine at level 9; treat them as ratios between the columns
-rather than absolute numbers. `ref zstd` is
-`github.com/klauspost/compress/zstd` at its default level, as a yardstick.
+Measured on one machine against the reference archivers; treat the columns as
+relative to each other rather than as absolute numbers.
 
-| corpus | size | nya lzma2 | nya zstd | ref zstd |
-| --- | ---: | ---: | ---: | ---: |
-| structured text | 819412 | **9.4%** | 35.7% | 11.7% |
-| markdown | 39359 | **49.1%** | 64.2% | 54.9% |
-| ELF binary | 48072 | **35.5%** | 44.4% | 39.5% |
-| exact repeats | 192000 | 0.2% | 0.0% | 0.0% |
-| random | 200000 | 100.0% | 100.0% | 100.0% |
+| corpus | size | nya (level 9) | xz -9 | 7z -mx9 | zstd -19 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| structured text | 3295292 | 6.12% (558ms) | 5.51% (1386ms) | 5.61% (731ms) | 8.96% (2365ms) |
+| markdown | 39359 | 52.94% | 46.28% | 46.50% | 47.93% |
+| ELF binary | 48072 | 33.47% | 32.75% | 31.16% | 35.03% |
+| 17 MB ELF | 17438777 | 49.38% (2318ms) | 46.99% (4518ms) | 45.67% (1799ms) | 49.41% (3415ms) |
+| 120-file tree, solid | 1105916 | 24.82% (726ms) | 22.50% (316ms) | 22.26% (111ms) | 23.04% (265ms) |
 
-LZMA2 is the default because it wins on size everywhere that matters, beating
-even the reference zstd encoder on every corpus except pure repetition. What
-it costs is decompression speed:
+Close on single files, still behind on many-file archives. Two things account
+for the remainder: the parser is greedy with one position of lookahead rather
+than a full optimal parse, and files are stored in directory order instead of
+being grouped by similarity the way 7-Zip groups them.
 
-| corpus | lzma2 | zstd |
-| --- | ---: | ---: |
-| structured text | 59 MB/s | 275 MB/s |
-| markdown | 18 MB/s | 127 MB/s |
-| ELF binary | 23 MB/s | 177 MB/s |
+Extraction speed is the other half of the trade. LZMA2 decompresses at
+18–59 MB/s here against 127–275 MB/s for the zstd path, so an archive that is
+read far more often than written is worth writing at level 1–4.
 
-So LZMA2 extracts roughly five to seven times slower. Pass `-codec zstd` when
-an archive is read far more often than it is written, or when extraction time
-is on a critical path; keep the default when size is what matters.
-
-The zstd encoder here uses a simpler match finder and fewer entropy coding
-modes than the reference implementation, which is why it trails on ratio. Its
-frames are checked against a third-party decoder, so `.nya` payloads written
-with `-codec zstd` are readable by any conformant zstd implementation.
+The zstd encoder uses a simpler match finder and fewer entropy coding modes
+than the reference implementation, which is why it trails on ratio. Both
+codecs are checked against third-party decoders, so `.nya` payloads are
+readable by any conformant zstd or xz implementation.
 
 ## Compatibility
 
@@ -158,11 +164,12 @@ version 1.1 and reads both:
 - An encrypted archive is not marked as such in its header; the caller has to
   know a password is required.
 - The writer emits one chunk per entry, so `ChunkCount` is always 1.
-- The LZMA2 encoder parses greedily. That is what keeps it behind `xz -9`:
-  on structured text it reaches 12.9% where `xz -9` reaches 5.5%, while
-  running about ten times faster. Closing the gap means optimal parsing, not
-  a bigger dictionary or a deeper search — neither of those moves the number
-  measurably today.
+- The LZMA2 parser prices its choices but only looks one position ahead. A
+  full optimal parse — dynamic programming over a lookahead window — is what
+  stands between this and `xz -9`.
+- Solid archives store files in directory order. Grouping by extension and
+  similarity first, as 7-Zip does, is most of the remaining gap on
+  many-file archives.
 
 ## Format
 

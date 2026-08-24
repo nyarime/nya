@@ -157,16 +157,16 @@ and must not follow an existing symlink when writing.
 
 | Value | Codec | Status |
 | ---: | --- | --- |
-| 0 | stored | reserved |
-| 1 | Zstandard | selected by `-codec zstd` |
+| 0 | stored | level 0 |
+| 1 | Zstandard | levels 1-4 |
 | 2 | S2 | reserved |
 | 3 | Brotli | reserved |
 | 4 | LZ4 | reserved |
 | 5 | Zstandard with dictionary | reserved |
-| 6 | LZMA2 | default |
+| 6 | LZMA2 | levels 5-9, the default |
 
-Only 1 and 6 are produced and consumed today. The ID is recorded per entry,
-so a reader must not assume one codec for a whole archive.
+Only 0, 1 and 6 are produced and consumed today. The ID is recorded per
+entry, so a reader must not assume one codec for a whole archive.
 
 ### FEC types
 

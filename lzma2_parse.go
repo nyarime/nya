@@ -24,10 +24,6 @@ type lzmaMove struct {
 	price  uint32
 }
 
-// lzmaNiceLen is the match length at or above which the parser stops looking
-// for something better and just takes the match.
-const lzmaNiceLen = 64
-
 // step emits one coding decision at the current position.
 func (enc *lzmaEncoder) step() {
 	pos := enc.pos
@@ -45,7 +41,7 @@ func (enc *lzmaEncoder) step() {
 	// One position of lookahead. Emitting a literal here can pay for itself
 	// if it unlocks a much better match at pos+1, so compare the two plans
 	// over the bytes each of them covers.
-	if best.length < lzmaNiceLen && pos+1 < enc.limit {
+	if best.length < enc.niceLen && pos+1 < enc.limit {
 		litPrice := enc.priceLiteral(pos)
 
 		savedState := enc.state
@@ -117,15 +113,15 @@ func (enc *lzmaEncoder) bestMoveAt(pos int) lzmaMove {
 		}
 	}
 
-	if dist, matchLen := enc.findMatchAt(pos); matchLen >= lzmaMinMatch {
-		for _, l := range candidateLengths(matchLen) {
-			consider(lzmaMove{
-				kind:   moveMatch,
-				dist:   dist,
-				length: l,
-				price:  enc.priceMatch(dist, l, posState),
-			})
-		}
+	// Price the whole length/distance frontier. A nearby three byte match can
+	// beat a distant twenty byte one once the distance code is paid for.
+	for _, m := range enc.findMatchesAt(pos) {
+		consider(lzmaMove{
+			kind:   moveMatch,
+			dist:   m.dist,
+			length: m.length,
+			price:  enc.priceMatch(m.dist, m.length, posState),
+		})
 	}
 
 	return best

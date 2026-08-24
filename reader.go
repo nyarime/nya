@@ -207,15 +207,18 @@ func (r *Reader) Extract(dir string) error {
 				}
 				blockData := compData[pos : pos+blockLen]
 				var block []byte
-				if e.CompressionID == CompressLzma2 {
+				switch {
+				case e.CompressionID == CompressNone:
+					block = append([]byte(nil), blockData...)
+				case e.CompressionID == CompressLzma2:
 					block, err = decompressLzma2Block(blockData)
-				} else {
-					dec, derr := r.zstdReaderFor(blockData)
-					if derr != nil {
-						break
+				default:
+					var dec io.ReadCloser
+					dec, err = r.zstdReaderFor(blockData)
+					if err == nil {
+						block, err = io.ReadAll(dec)
+						dec.Close()
 					}
-					block, err = io.ReadAll(dec)
-					dec.Close()
 				}
 				if err != nil {
 					break
@@ -326,21 +329,24 @@ func (r *Reader) extractSolid(dir string) error {
 		}
 	}
 	// 解压整个solid流
-	isLzma2 := false
+	codec := CompressZstd
 	for _, e := range r.Entries {
-		if e.CompressionID == CompressLzma2 {
-			isLzma2 = true
+		if e.EntryType == EntryFile {
+			codec = e.CompressionID
 			break
 		}
 	}
 	var solidData []byte
-	if isLzma2 {
+	switch codec {
+	case CompressNone:
+		solidData = compData
+	case CompressLzma2:
 		var derr error
 		solidData, derr = decompressLzma2Block(compData)
 		if derr != nil {
 			return derr
 		}
-	} else {
+	default:
 		dec, derr := r.zstdReaderFor(compData)
 		if derr != nil {
 			return derr

@@ -37,7 +37,10 @@ type Writer struct {
 	basePath          string
 	workers           int
 	zstdEnc           interface{}
-	compressionMethod string // "zstd" (default) or "lzma2"
+	compressionMethod string // see CompressionLZMA2, CompressionZstd, CompressionStore
+	codecPinned       bool   // SetCompression was called, so a level must not override it
+	level             int
+	lzmaOpts          Lzma2Options
 
 	// Solid mode accumulation
 	solidBuf     bytes.Buffer
@@ -45,18 +48,25 @@ type Writer struct {
 	solidBCJArch string // detected BCJ arch for solid stream
 }
 
-func NewWriter(w io.WriteSeeker, fecPercent int, compressLevel int) *Writer {
-	return NewWriterOpts(w, fecPercent, compressLevel, false)
+// NewWriter creates a writer at the given compression level. See the Level
+// constants; LevelBest is 9.
+func NewWriter(w io.WriteSeeker, fecPercent int, level int) *Writer {
+	return NewWriterOpts(w, fecPercent, level, false)
 }
 
-func NewWriterOpts(w io.WriteSeeker, fecPercent int, compressLevel int, solid bool, password ...[]byte) *Writer {
+// NewWriterOpts creates a writer with the full set of options. level runs
+// from LevelStore to LevelBest and selects both the codec and how hard it
+// searches; a negative level picks LevelDefault. fecPercent is how much
+// recovery data to add, as a percentage of the payload.
+func NewWriterOpts(w io.WriteSeeker, fecPercent int, level int, solid bool, password ...[]byte) *Writer {
 	if fecPercent < 0 {
 		fecPercent = 0
 	}
-	if compressLevel <= 0 {
-		compressLevel = 9
+	if level < 0 {
+		level = LevelDefault
 	}
-	w2 := &Writer{w: w, fecPercent: fecPercent, compressLevel: compressLevel, solid: solid}
+	w2 := &Writer{w: w, fecPercent: fecPercent, solid: solid}
+	w2.SetLevel(level)
 	if len(password) > 0 {
 		w2.password = password[0]
 	}
@@ -72,6 +82,9 @@ const (
 
 	// CompressionZstd trades ratio for a much faster decompressor.
 	CompressionZstd = "zstd"
+
+	// CompressionStore writes the payload uncompressed.
+	CompressionStore = "store"
 )
 
 // lzma2DictSize is the dictionary the writer asks LZMA2 for. It matches the
@@ -81,9 +94,26 @@ const lzma2DictSize = 4 * 1024 * 1024
 func (nw *Writer) SetDict(dict []byte) { nw.dict = dict }
 func (nw *Writer) SetWorkers(n int)    { nw.workers = n }
 
-// SetCompression selects the codec: CompressionLZMA2 (the default) or
-// CompressionZstd. Any other value falls back to the default.
-func (nw *Writer) SetCompression(method string) { nw.compressionMethod = method }
+// SetCompression selects the codec: CompressionLZMA2 (the default),
+// CompressionZstd or CompressionStore. Setting it explicitly overrides the
+// codec a level would have chosen.
+func (nw *Writer) SetCompression(method string) {
+	nw.compressionMethod = method
+	nw.codecPinned = true
+}
+
+// SetLevel applies a compression level between LevelStore and LevelBest,
+// choosing the codec and how hard it searches. A codec set explicitly with
+// SetCompression is left alone.
+func (nw *Writer) SetLevel(level int) {
+	spec := specForLevel(level)
+	nw.level = level
+	nw.lzmaOpts = spec.lzma
+	nw.compressLevel = spec.zstdLevel
+	if !nw.codecPinned {
+		nw.compressionMethod = spec.codec
+	}
+}
 
 // usesZstd reports whether this writer emits zstd rather than LZMA2. A
 // dictionary implies zstd, since only that encoder can use one.
@@ -91,12 +121,20 @@ func (nw *Writer) usesZstd() bool {
 	return nw.compressionMethod == CompressionZstd || len(nw.dict) > 0
 }
 
+func (nw *Writer) usesStore() bool {
+	return nw.compressionMethod == CompressionStore && len(nw.dict) == 0
+}
+
 // compressionID returns the format compression ID for the current codec.
 func (nw *Writer) compressionID() uint16 {
-	if nw.usesZstd() {
+	switch {
+	case nw.usesStore():
+		return CompressNone
+	case nw.usesZstd():
 		return CompressZstd
+	default:
+		return CompressLzma2
 	}
-	return CompressLzma2
 }
 
 // compressRaw compresses data using the configured codec (no BCJ).
@@ -106,10 +144,14 @@ func (nw *Writer) compressionID() uint16 {
 // whole entry, so silently switching would produce an archive that cannot be
 // read back.
 func (nw *Writer) compressRaw(data []byte) ([]byte, error) {
-	if nw.usesZstd() {
+	switch {
+	case nw.usesStore():
+		return data, nil
+	case nw.usesZstd():
 		return ZstdCompressWithWindow(data, nw.compressLevel), nil
+	default:
+		return Lzma2CompressOpts(data, nw.lzmaOpts)
 	}
-	return Lzma2Compress(data, lzma2DictSize)
 }
 
 func (nw *Writer) AddFile(path string) error {
@@ -387,8 +429,11 @@ func (nw *Writer) compressBlockWithBCJ(block []byte, bcjArch string) ([]byte, er
 		data = filtered
 	}
 
+	if nw.usesStore() {
+		return data, nil
+	}
 	if !nw.usesZstd() {
-		return Lzma2Compress(data, lzma2DictSize)
+		return Lzma2CompressOpts(data, nw.lzmaOpts)
 	}
 	if len(nw.dict) > 0 {
 		return ZstdCompressWithDict(data, nw.compressLevel, nw.dict), nil
