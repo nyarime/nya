@@ -1,0 +1,6 @@
+github.com/nyarime/gofec v1.3.0 h1:sOQzVmi+I47aym6i1P7I4mtRcNgkhOdV4hA8CVHl9/M=
+github.com/nyarime/gofec v1.3.0/go.mod h1:IiqozIeFR4BG6MbtzHyq+QMHD8BSKQ3oz2GCxcJEin0=
+golang.org/x/crypto v0.50.0 h1:zO47/JPrL6vsNkINmLoo/PH1gcxpls50DNogFvB5ZGI=
+golang.org/x/crypto v0.50.0/go.mod h1:3muZ7vA7PBCE6xgPX7nkzzjiUq87kRItoJQM1Yo8S+Q=
+golang.org/x/sys v0.43.0 h1:Rlag2XtaFTxp19wS8MXlJwTvoh8ArU6ezoyFsMyCTNI=
+golang.org/x/sys v0.43.0/go.mod h1:4GL1E5IUh+htKOUEOaiffhrAeqysfVGipDYzABqnCmw=
