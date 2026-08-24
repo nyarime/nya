@@ -34,6 +34,7 @@ VersionMajor.VersionMinor  (global header bytes 8–11)
 | **0** | Legacy (frozen) | Required forever | Pre-RFC8878 zstd sequence tables; self-consistent old archives |
 | **1** | **Current default** | Required | RFC 8878 zstd; Argon2id encryption (minor 2) |
 | **2** | Encrypted output | Required | **Argon2id** KDF: 16-byte salt + memory/time/thread params in header `Reserved[0:25]`; flags `FlagEncrypted` + `FlagKDFArgon2id`. Payload remains AES-256-GCM. Legacy archives that used bare SHA-256(password) with no header flag remain readable when a password is supplied. |
+| **3** | Multi-chunk non-solid | Required | `ChunkCount > 1` for files > 4 MiB (non-solid); per-chunk FEC; `-multi-chunk` / `-chunk-size` on create. v1.2 readers reject minor 3; v1.0–1.2 archives (`ChunkCount = 1`) remain readable. |
 
 **Policy:** bump **minor** for additive, backward-compatible changes (new flags,
 optional tail sections). Bump **major** only for breaking layout changes.

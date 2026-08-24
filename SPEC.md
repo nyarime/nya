@@ -142,7 +142,7 @@ entryCount * DirEntry
 | 4 | Mode | Go `os.FileMode` bits |
 | 8 | MTimeNano | Unix nanoseconds, signed |
 | 8 | OriginalSize | |
-| 4 | ChunkCount | always 1 |
+| 4 | ChunkCount | 1 for v1.0–1.2; **≥ 1** for v1.3 multi-chunk |
 | 2 | CompressionID | see below |
 | 1 | FECType | see below |
 | 1 | BCJFilter | see below |

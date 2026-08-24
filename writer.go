@@ -9,6 +9,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 )
 
@@ -38,6 +39,9 @@ type Writer struct {
 	globalMetaFec     []byte
 	basePath          string
 	workers           int
+	multiChunk        bool // split large non-solid files (default true)
+	chunkSize         int  // 0 = auto per SPEC-MULTICHUNK
+	hasMultiChunk     bool // any entry emitted ChunkCount > 1
 	zstdEnc           interface{}
 	compressionMethod string // see CompressionLZMA2, CompressionZstd, CompressionStore
 	codecPinned       bool   // SetCompression was called, so a level must not override it
@@ -67,7 +71,7 @@ func NewWriterOpts(w io.WriteSeeker, fecPercent int, level int, solid bool, pass
 	if level < 0 {
 		level = LevelDefault
 	}
-	w2 := &Writer{w: w, fecPercent: fecPercent, solid: solid, fecType: DefaultFECType}
+	w2 := &Writer{w: w, fecPercent: fecPercent, solid: solid, fecType: DefaultFECType, multiChunk: true}
 	w2.SetLevel(level)
 	if len(password) > 0 {
 		w2.password = password[0]
@@ -100,6 +104,23 @@ const lzma2DictSize = 4 * 1024 * 1024
 
 func (nw *Writer) SetDict(dict []byte) { nw.dict = dict }
 func (nw *Writer) SetWorkers(n int)    { nw.workers = n }
+
+// SetMultiChunk enables splitting non-solid files larger than 4 MiB into
+// multiple on-disk chunks (VersionMinor 3). Solid archives are unaffected.
+func (nw *Writer) SetMultiChunk(on bool) { nw.multiChunk = on }
+
+// SetChunkSize overrides the raw chunk size for multi-chunk entries (0 = auto).
+func (nw *Writer) SetChunkSize(n int) { nw.chunkSize = n }
+
+func (nw *Writer) archiveVersionMinor() uint16 {
+	if nw.hasMultiChunk {
+		return VersionMinorMultiChunk
+	}
+	if len(nw.password) > 0 {
+		return 2
+	}
+	return VersionMinor
+}
 
 // SetCompression selects the codec: CompressionLZMA2 (the default),
 // CompressionZstd or CompressionStore. Setting it explicitly overrides the
@@ -283,117 +304,236 @@ func (nw *Writer) resolveAbsPath(relPath string) string {
 	return relPath
 }
 
-// addFileNormal compresses each file independently with BCJ pre-filtering.
+// addFileNormal compresses each file independently. BCJ is decided on the
+// whole file (like solid mode) and applied before chunk split; 512 KiB blocks
+// inside each chunk are compressed without re-applying BCJ.
 func (nw *Writer) addFileNormal(relPath string, raw []byte, info os.FileInfo) error {
-	// Detect BCJ architecture for the entire file
-	bcjArch := DetectBCJArch(raw)
-	bcjID := BCJArchToID(bcjArch)
+	raw, bcjID := nw.chooseBCJForFile(raw)
+	chunkSizes := splitRawChunkSizes(len(raw), nw.chunkSize, nw.multiChunk)
+	if len(chunkSizes) == 0 {
+		return fmt.Errorf("nya: empty file %s", relPath)
+	}
+	if len(chunkSizes) > 1 {
+		nw.hasMultiChunk = true
+	}
 
-	var allCompressed bytes.Buffer
+	firstOff := nw.dataOff
+	var entryFEC FECParams
+	var entryFECType uint8
+	payloads := make([]chunkPayload, len(chunkSizes))
 
-	for off := 0; off < len(raw); off += FECChunkRaw {
-		end := off + FECChunkRaw
-		if end > len(raw) {
-			end = len(raw)
+	workers := nw.workersForChunks()
+	if workers <= 1 || len(chunkSizes) == 1 {
+		rawOff := 0
+		for i, sz := range chunkSizes {
+			p, err := nw.buildChunkPayload(raw[rawOff:rawOff+sz])
+			if err != nil {
+				return fmt.Errorf("nya: compress %s chunk %d: %w", relPath, i, err)
+			}
+			payloads[i] = p
+			rawOff += sz
 		}
-		block := raw[off:end]
-
-		compressed, err := nw.compressBlockWithBCJ(block, bcjArch)
-		if err != nil {
+	} else {
+		if err := nw.buildChunkPayloadsParallel(raw, chunkSizes, payloads); err != nil {
 			return fmt.Errorf("nya: compress %s: %w", relPath, err)
 		}
-
-		var lenBuf [4]byte
-		binary.LittleEndian.PutUint32(lenBuf[:], uint32(len(compressed)))
-		allCompressed.Write(lenBuf[:])
-		allCompressed.Write(compressed)
 	}
 
-	compData := allCompressed.Bytes()
-
-	// Encrypt
-	if len(nw.password) > 0 {
-		encrypted, err := nw.sealCompressed(compData)
-		if err != nil {
-			return err
+	for i, p := range payloads {
+		repairCount := p.plan.repairPerBlock()
+		if repairCount < 1 {
+			repairCount = 32
 		}
-		compData = encrypted
+		bh := Blake3Sum256(p.comp)
+		hash := binary.LittleEndian.Uint64(bh[:8])
+		ch := ChunkHeader{
+			OriginalSize:   uint64(p.rawLen),
+			CompressedSize: uint64(len(p.comp)),
+			RepairCount:    uint32(repairCount),
+			SymbolSize:     uint32(p.plan.SymbolSize),
+			Blake3Short:    hash,
+		}
+		var chBuf bytes.Buffer
+		ch.Write(&chBuf)
+		chBuf.Write(p.comp)
+		nw.fecBuf.Write(p.fec)
+		nw.dataBuf.Write(chBuf.Bytes())
+		nw.dataOff += uint64(chBuf.Len())
+		if len(p.hashes) > 0 {
+			nw.hashTables = append(nw.hashTables, p.hashes)
+		} else {
+			nw.hashTables = append(nw.hashTables, GetHashTable())
+		}
+		if i == 0 {
+			entryFEC = p.plan.toParams()
+			entryFECType = p.plan.Type
+		}
 	}
 
-	// FEC
-	var fec []byte
-	var fecPlan fecPlan
-	if len(compData) >= fecMinPayload && nw.fecPercent > 0 {
-		fec, _, fecPlan = encodeFEC(compData, nw.fecPercent, nw.fecType, nw.solid)
-	}
-	repairCount := fecPlan.repairPerBlock()
-	if repairCount < 1 {
-		repairCount = 32
-	}
-
-	// BLAKE3
-	bh := Blake3Sum256(compData)
-	hash := binary.LittleEndian.Uint64(bh[:8])
-
-	ch := ChunkHeader{
-		OriginalSize:   uint64(len(raw)),
-		CompressedSize: uint64(len(compData)),
-		RepairCount:    uint32(repairCount),
-		SymbolSize:     uint32(fecPlan.SymbolSize),
-		Blake3Short:    hash,
-	}
-	firstOff := nw.dataOff
-
-	var chBuf bytes.Buffer
-	ch.Write(&chBuf)
-	chBuf.Write(compData)
-	nw.fecBuf.Write(fec)
-	nw.dataBuf.Write(chBuf.Bytes())
-	nw.dataOff += uint64(chBuf.Len())
-
-	nw.hashTables = append(nw.hashTables, GetHashTable())
-
-	fecParams := fecPlan.toParams()
 	nw.entries = append(nw.entries, DirEntry{
 		Path:          relPath,
 		EntryType:     EntryFile,
 		Mode:          uint32(info.Mode()),
 		MTimeNano:     info.ModTime().UnixNano(),
 		OriginalSize:  uint64(len(raw)),
-		ChunkCount:    1,
+		ChunkCount:    uint32(len(chunkSizes)),
 		CompressionID: nw.compressionID(),
-		FECType:       fecPlan.Type,
+		FECType:       entryFECType,
 		BCJFilter:     bcjID,
-		FECParams:     fecParams,
+		FECParams:     entryFEC,
 		FirstDataOff:  firstOff,
 	})
-	// Fill Unix metadata on last entry
 	fillUnixMeta(&nw.entries[len(nw.entries)-1], info)
 	nw.entries[len(nw.entries)-1].Xattrs = listXattr(nw.resolveAbsPath(relPath))
 	return nil
 }
 
-// compressBlockWithBCJ applies BCJ filter (if arch set) then compresses.
-// BCJ is always applied when arch != "" for consistency with reader.
-func (nw *Writer) compressBlockWithBCJ(block []byte, bcjArch string) ([]byte, error) {
-	data := block
-	if bcjArch != "" {
-		filtered := make([]byte, len(block))
-		copy(filtered, block)
-		ApplyBCJFilterArch(filtered, bcjArch, true)
-		data = filtered
+func (nw *Writer) workersForChunks() int {
+	if nw.workers > 0 {
+		return nw.workers
 	}
+	return 4
+}
 
+func (nw *Writer) buildChunkPayload(raw []byte) (chunkPayload, error) {
+	var allCompressed bytes.Buffer
+	for off := 0; off < len(raw); off += FECChunkRaw {
+		end := off + FECChunkRaw
+		if end > len(raw) {
+			end = len(raw)
+		}
+		block := raw[off:end]
+		compressed, err := nw.compressBlock(block)
+		if err != nil {
+			return chunkPayload{}, err
+		}
+		var lenBuf [4]byte
+		binary.LittleEndian.PutUint32(lenBuf[:], uint32(len(compressed)))
+		allCompressed.Write(lenBuf[:])
+		allCompressed.Write(compressed)
+	}
+	compData := allCompressed.Bytes()
+	if len(nw.password) > 0 {
+		encrypted, err := nw.sealCompressed(compData)
+		if err != nil {
+			return chunkPayload{}, err
+		}
+		compData = encrypted
+	}
+	var fec []byte
+	var hashes []uint32
+	var plan fecPlan
+	if len(compData) >= fecMinPayload && nw.fecPercent > 0 {
+		fec, hashes, plan = encodeFEC(compData, nw.fecPercent, nw.fecType, false)
+	}
+	return chunkPayload{comp: compData, fec: fec, hashes: hashes, plan: plan, rawLen: len(raw)}, nil
+}
+
+type chunkPayload struct {
+	comp   []byte
+	fec    []byte
+	hashes []uint32
+	plan   fecPlan
+	rawLen int
+}
+
+func (nw *Writer) buildChunkPayloadsParallel(raw []byte, sizes []int, out []chunkPayload) error {
+	type job struct {
+		i   int
+		off int
+		sz  int
+	}
+	jobs := make(chan job)
+	errs := make(chan error, len(sizes))
+	var wg sync.WaitGroup
+	workers := nw.workersForChunks()
+	if workers > len(sizes) {
+		workers = len(sizes)
+	}
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := range jobs {
+				p, err := nw.buildChunkPayload(raw[j.off:j.off+j.sz])
+				if err != nil {
+					errs <- err
+					return
+				}
+				out[j.i] = p
+			}
+		}()
+	}
+	off := 0
+	for i, sz := range sizes {
+		jobs <- job{i: i, off: off, sz: sz}
+		off += sz
+	}
+	close(jobs)
+	wg.Wait()
+	select {
+	case err := <-errs:
+		return err
+	default:
+	}
+	return nil
+}
+
+// chooseBCJForFile decides whether to apply BCJ to the whole file before
+// chunking. Like solid mode, BCJ is only kept when it shrinks the blocked
+// compressed payload; this avoids false-positive pattern detection corrupting
+// non-code data.
+func (nw *Writer) chooseBCJForFile(raw []byte) ([]byte, uint8) {
+	bcjArch := DetectBCJArch(raw)
+	if bcjArch == "" {
+		return raw, BCJNone
+	}
+	filtered := make([]byte, len(raw))
+	copy(filtered, raw)
+	ApplyBCJFilterArch(filtered, bcjArch, true)
+
+	origLen, err := nw.blockedCompressedLen(raw)
+	if err != nil {
+		return raw, BCJNone
+	}
+	bcjLen, err := nw.blockedCompressedLen(filtered)
+	if err != nil {
+		return raw, BCJNone
+	}
+	if bcjLen < origLen {
+		return filtered, BCJArchToID(bcjArch)
+	}
+	return raw, BCJNone
+}
+
+func (nw *Writer) blockedCompressedLen(raw []byte) (int, error) {
+	total := 0
+	for off := 0; off < len(raw); off += FECChunkRaw {
+		end := off + FECChunkRaw
+		if end > len(raw) {
+			end = len(raw)
+		}
+		comp, err := nw.compressBlock(raw[off:end])
+		if err != nil {
+			return 0, err
+		}
+		total += 4 + len(comp)
+	}
+	return total, nil
+}
+
+// compressBlock compresses one raw block (BCJ already applied at file level).
+func (nw *Writer) compressBlock(block []byte) ([]byte, error) {
 	if nw.usesStore() {
-		return data, nil
+		return append([]byte(nil), block...), nil
 	}
 	if !nw.usesZstd() {
-		return Lzma2CompressOpts(data, nw.lzmaOpts)
+		return Lzma2CompressOpts(block, nw.lzmaOpts)
 	}
 	if len(nw.dict) > 0 {
-		return ZstdCompressWithDict(data, nw.compressLevel, nw.dict), nil
+		return ZstdCompressWithDict(block, nw.compressLevel, nw.dict), nil
 	}
-	return ZstdCompressWithWindow(data, nw.compressLevel), nil
+	return ZstdCompressWithWindow(block, nw.compressLevel), nil
 }
 
 // addFileSolid accumulates file data for solid compression.
@@ -532,7 +672,7 @@ func (nw *Writer) closeSolid() error {
 	gh := GlobalHeader{
 		Magic:        MagicHeader,
 		VersionMajor: VersionMajor,
-		VersionMinor: VersionMinor,
+		VersionMinor: nw.archiveVersionMinor(),
 		Flags:        FlagSolidCompress,
 		DataAreaSize: uint64(len(data)),
 		CreationTime: time.Now().UnixNano(),
@@ -580,7 +720,7 @@ func (nw *Writer) closeNormal() error {
 	gh := GlobalHeader{
 		Magic:        MagicHeader,
 		VersionMajor: VersionMajor,
-		VersionMinor: VersionMinor,
+		VersionMinor: nw.archiveVersionMinor(),
 		DataAreaSize: uint64(len(data)),
 		CreationTime: time.Now().UnixNano(),
 	}
