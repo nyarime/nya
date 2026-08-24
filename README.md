@@ -70,7 +70,18 @@ nya-get -c 16 GamePack.nyam    # parallel Range download + resume
 
 See [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) for the `.nyam` manifest schema.
 
-### Convert legacy archives (zip / 7z / rar → NYA)
+### Unified repair (`nya repair`)
+
+One command repairs by **magic bytes** (extension can be wrong or missing):
+
+```bash
+nya repair damaged.nya              # NYA FEC repair
+nya repair corrupted.dat            # ZIP if content is PK… (even with wrong ext)
+nya repair broken.rar fixed.rar     # RAR structure rebuild (RAR4/RAR5 store blocks)
+```
+
+7z is not supported for repair (no recovery record). Use `nya convert` if 7z can still extract.
+
 
 NYA is the compression product; [Nyarc](https://github.com/nyarime/Nyarc) is for firmware.
 Use **`nya convert`** to unpack a damaged or legacy archive and repack it as `.nya` with

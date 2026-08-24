@@ -8,22 +8,49 @@ import (
 	"os"
 )
 
-// RepairResult 修复结果
+// RepairResult reports repair outcome for NYA, ZIP, or RAR archives.
 type RepairResult struct {
+	Format          string
+	OutputPath      string
 	TotalChunks     int
 	CorruptedChunks int
 	RepairedChunks  int
 	FailedChunks    int
+	FilesFound      int
 }
 
-// Repair 修复损坏的.nya文件
+// Repair fixes a damaged archive. Format is detected from file magic bytes,
+// not the extension (a .dat file containing ZIP data is treated as ZIP).
 func Repair(path string, outputPath string) (*RepairResult, error) {
+	format, err := DetectFormatByMagic(path)
+	if err != nil {
+		return nil, err
+	}
+	switch format {
+	case "nya":
+		return repairNYA(path, outputPath)
+	case FormatZIP:
+		return repairZipArchive(path, outputPath)
+	case FormatRAR:
+		return repairRarArchive(path, outputPath)
+	case FormatSevenZ:
+		return nil, fmt.Errorf("repair: 7z has no recovery record; try `nya convert` if the file still extracts")
+	default:
+		return nil, fmt.Errorf("repair: unsupported format %q", format)
+	}
+}
+
+func repairNYA(path string, outputPath string) (*RepairResult, error) {
 	r, err := Open(path)
 	if err != nil {
-		return rawRepair(path, outputPath)
+		res, err := rawRepair(path, outputPath)
+		if res != nil {
+			res.Format = "nya"
+		}
+		return res, err
 	}
 
-	result := &RepairResult{}
+	result := &RepairResult{Format: "nya"}
 
 	if r.FecLen > 0 && len(r.fecData) == 0 {
 		ff, err := os.Open(path)
@@ -105,6 +132,7 @@ func Repair(path string, outputPath string) (*RepairResult, error) {
 		if out == "" {
 			out = path
 		}
+		result.OutputPath = out
 		raw, err := os.ReadFile(path)
 		if err != nil {
 			return result, err
@@ -122,7 +150,7 @@ func Repair(path string, outputPath string) (*RepairResult, error) {
 }
 
 func repairSolid(r *Reader, path, outputPath string) (*RepairResult, error) {
-	result := &RepairResult{TotalChunks: 1}
+	result := &RepairResult{Format: "nya", TotalChunks: 1}
 
 	if len(r.data) < ChunkHeaderSize {
 		return result, ErrCorrupted
@@ -181,6 +209,7 @@ func repairSolid(r *Reader, path, outputPath string) (*RepairResult, error) {
 		if out == "" {
 			out = path
 		}
+		result.OutputPath = out
 		raw, _ := os.ReadFile(path)
 		copy(raw[GlobalHeaderSize:], r.data)
 		os.WriteFile(out, raw, 0644)
@@ -306,5 +335,5 @@ func rawRepair(path string, outputPath string) (*RepairResult, error) {
 	}
 
 	logf("  ✅ Raw repair!" + "\n")
-	return &RepairResult{TotalChunks: 1, CorruptedChunks: 1, RepairedChunks: 1}, nil
+	return &RepairResult{Format: "nya", TotalChunks: 1, CorruptedChunks: 1, RepairedChunks: 1, OutputPath: out}, nil
 }

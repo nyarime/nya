@@ -26,8 +26,14 @@ type ImportOptions struct {
 	Password string // source archive password (zip/7z/rar)
 }
 
-// DetectArchiveFormat inspects extension and magic bytes.
+// DetectArchiveFormat inspects magic bytes first, then extension as a hint.
 func DetectArchiveFormat(path string) (string, error) {
+	if format, err := DetectFormatByMagic(path); err == nil && format != FormatUnknown {
+		if format == "nya" {
+			return FormatUnknown, fmt.Errorf("import: file is NYA, not a foreign archive")
+		}
+		return format, nil
+	}
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
 	case ".zip", ".jar", ".apk", ".cbz", ".docx", ".xlsx", ".pptx", ".epub":
@@ -55,7 +61,7 @@ func DetectArchiveFormat(path string) (string, error) {
 	if len(header) >= 4 && header[0] == 'P' && header[1] == 'K' {
 		return FormatZIP, nil
 	}
-	if len(header) >= 6 && string(header[:6]) == "7z\xBC\xAF\x27\x1C" {
+	if len(header) >= 6 && bytes.HasPrefix(header, []byte("7z\xBC\xAF\x27\x1C")) {
 		return FormatSevenZ, nil
 	}
 	if len(header) >= 6 && bytes.HasPrefix(header, []byte("Rar!\x1a\x07")) {
