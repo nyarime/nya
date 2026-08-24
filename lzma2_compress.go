@@ -130,8 +130,6 @@ func lzma2CompressSegment(src []byte, dictSize int) ([]byte, error) {
 	return out, nil
 }
 
-
-
 // lzma2MaxCompChunk is the maximum compressed size per LZMA2 chunk (16-bit field).
 const lzma2MaxCompChunk = 1 << 16 // 65536
 
