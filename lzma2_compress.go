@@ -1,7 +1,7 @@
 package nya
 
 // LZMA2/LZMA compressor — enables NYA --best mode for maximum compression.
-// Implements: range encoder, LZ77 hash-chain match finder, LZMA state machine, LZMA2 chunked wrapper.
+// Implements: range encoder, LZ77 BT4 match finder, LZMA state machine, LZMA2 chunked wrapper.
 // Decompression uses the existing pure-Go decoder in xz_decompress.go.
 
 import (
@@ -116,6 +116,7 @@ func lzma2CompressSegment(src []byte, opts Lzma2Options) ([]byte, error) {
 	enc := newLzmaEncoder(src, opts.DictSize)
 	enc.depth = opts.Depth
 	enc.niceLen = opts.NiceLen
+	enc.useOptimal = opts.OptimalParse
 
 	var out []byte
 	first := true
@@ -417,10 +418,19 @@ type lzmaEncoder struct {
 	// matches is scratch reused by findMatchesAt.
 	matches []lzmaMatch
 
-	// Hash chain match finder
-	hashTable []int32 // hash → position
-	chain     []int32 // chain[pos] → prev pos with same hash
-	hashPos   int     // next position not yet indexed
+	// BT4 match finder (binary tree + hash2/hash3/hash4 heads)
+	cyclicSize int
+	son        []int32 // [cyclicPos*2] left, [cyclicPos*2+1] right
+	hash2Table []int32
+	hash3Table []int32
+	hashTable  []int32 // hash4 → newest position
+	hashPos    int     // next position not yet indexed
+
+	// Optimal parse buffers
+	useOptimal   bool
+	optBuf       []lzmaOptNode
+	optMoves     []lzmaMove
+	optMatchCache [][]lzmaMatch
 }
 
 const (
@@ -442,6 +452,9 @@ type Lzma2Options struct {
 	// NiceLen is the match length at which the parser stops looking for a
 	// better option. Zero picks the default.
 	NiceLen int
+	// OptimalParse enables the DP parser (7-Zip-style). It helps on some
+	// solid/repetitive corpora but is slower; off by default until tuned per level.
+	OptimalParse bool
 }
 
 func newLzmaEncoder(src []byte, dictSize int) *lzmaEncoder {
@@ -463,14 +476,11 @@ func newLzmaEncoder(src []byte, dictSize int) *lzmaEncoder {
 	}
 	enc.litProbs = make([]uint16, 0x300<<(enc.lc+enc.lp))
 	enc.hashTable = make([]int32, lzmaHashSize)
-	enc.chain = make([]int32, len(src))
-
 	for i := range enc.hashTable {
 		enc.hashTable[i] = -1
 	}
-	for i := range enc.chain {
-		enc.chain[i] = -1
-	}
+	enc.initBT4()
+	enc.optBuf = make([]lzmaOptNode, lzmaOptimumWindow+1)
 	enc.resetState()
 	return enc
 }
@@ -516,9 +526,7 @@ func (enc *lzmaEncoder) advanceHash(end int) {
 		end = len(enc.src)
 	}
 	for p := enc.hashPos; p < end; p++ {
-		h := enc.hash4(p)
-		enc.chain[p] = enc.hashTable[h]
-		enc.hashTable[h] = int32(p)
+		enc.bt4Insert(p)
 	}
 	if end > enc.hashPos {
 		enc.hashPos = end
@@ -557,62 +565,7 @@ func (enc *lzmaEncoder) findMatchAt(pos int) (dist uint32, length int) {
 // The result aliases scratch space on the encoder and is valid until the next
 // call. Positions up to pos must already be indexed; see advanceHash.
 func (enc *lzmaEncoder) findMatchesAt(pos int) []lzmaMatch {
-	enc.matches = enc.matches[:0]
-	if pos+lzmaMinMatch > enc.limit {
-		return enc.matches
-	}
-
-	h := enc.hash4(pos)
-	candidate := enc.hashTable[h]
-
-	bestLen := 1
-	maxDist := pos
-	if maxDist > enc.dictSize {
-		maxDist = enc.dictSize
-	}
-
-	remaining := enc.limit - pos
-	maxLen := lzmaMaxMatch
-	if remaining < maxLen {
-		maxLen = remaining
-	}
-
-	chainLen := 0
-	for candidate >= 0 && chainLen < enc.depth {
-		d := pos - int(candidate)
-		if d > maxDist || d <= 0 {
-			break
-		}
-
-		// Quick check: compare the byte after current best length
-		cpos := int(candidate)
-		if bestLen > 1 && enc.src[cpos+bestLen-1] != enc.src[pos+bestLen-1] {
-			candidate = enc.chain[candidate]
-			chainLen++
-			continue
-		}
-
-		// Count matching bytes
-		ml := 0
-		for ml < maxLen && enc.src[cpos+ml] == enc.src[pos+ml] {
-			ml++
-		}
-		if ml > bestLen {
-			bestLen = ml
-			// Candidates are walked nearest first, so the first time a length
-			// is reached it is at the smallest distance for that length.
-			if ml >= lzmaMinMatch {
-				enc.matches = append(enc.matches, lzmaMatch{dist: uint32(d - 1), length: ml})
-			}
-			if ml >= maxLen {
-				break
-			}
-		}
-		candidate = enc.chain[candidate]
-		chainLen++
-	}
-
-	return enc.matches
+	return enc.bt4FindMatches(pos)
 }
 
 // findRepMatch checks if any of the 4 rep distances match at current position.
@@ -838,6 +791,10 @@ func clz32(x uint32) int {
 }
 
 func (enc *lzmaEncoder) encode() {
+	if enc.useOptimal {
+		enc.encodeOptimal()
+		return
+	}
 	for enc.pos < enc.limit {
 		if enc.compLimit > 0 && len(enc.rc.out) >= enc.compLimit {
 			return

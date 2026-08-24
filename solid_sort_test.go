@@ -104,7 +104,7 @@ func TestSolidSortImprovesCompression(t *testing.T) {
 		return buf.Bytes()
 	}
 
-	opts := Lzma2Options{DictSize: lzma2DictSize, Depth: 128, NiceLen: 128}
+	opts := Lzma2Options{DictSize: lzma2DictSize, Depth: 32, NiceLen: 64}
 	walkOrder, err := Lzma2CompressOpts(concat(paths), opts)
 	if err != nil {
 		t.Fatal(err)
