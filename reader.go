@@ -26,6 +26,7 @@ type Reader struct {
 	Password   []byte
 	Header     *GlobalHeader
 	Entries    []DirEntry
+	workers    int // parallel chunk decompress (0 = automatic)
 
 	// OnEntry, when set, is called by Extract once per entry with the error
 	// from restoring it, so callers can report progress. Extract itself is
@@ -183,91 +184,15 @@ func (r *Reader) Extract(dir string) error {
 			continue
 		}
 
-		var fullData bytes.Buffer
-		off := e.FirstDataOff
-
-		for c := uint32(0); c < e.ChunkCount; c++ {
-			if off+ChunkHeaderSize > uint64(len(r.data)) {
-				break
-			}
-
-			chBuf := bytes.NewReader(r.data[off:])
-			ch, err := ReadChunkHeader(chBuf)
-			if err != nil {
-				break
-			}
-
-			compData := make([]byte, ch.CompressedSize)
-			chBuf.Read(compData)
-
-			// 解密(可选)
-			if len(r.Password) > 0 {
-				dec2, err := DecryptPayload(compData, r.Password, r.Header)
-				if err != nil {
-					return fmt.Errorf("nya: decrypt %s: %w", e.Path, err)
-				}
-				compData = dec2
-			}
-			// 解压独立帧
-			var raw []byte
-			pos := 0
-			for pos+4 <= len(compData) {
-				blockLen := int(binary.LittleEndian.Uint32(compData[pos : pos+4]))
-				pos += 4
-				if pos+blockLen > len(compData) {
-					break
-				}
-				blockData := compData[pos : pos+blockLen]
-				var block []byte
-				switch {
-				case e.CompressionID == CompressNone:
-					block = append([]byte(nil), blockData...)
-				case e.CompressionID == CompressLzma2:
-					block, err = decompressLzma2Block(blockData)
-				default:
-					var dec io.ReadCloser
-					dec, err = r.zstdReaderFor(blockData)
-					if err == nil {
-						block, err = io.ReadAll(dec)
-						dec.Close()
-					}
-				}
-				if err != nil {
-					break
-				}
-				raw = append(raw, block...)
-				pos += blockLen
-			}
-
-			if ch.OriginalSize > 0 && uint64(len(raw)) > ch.OriginalSize {
-				return fmt.Errorf("bomb detected: chunk decompressed to %d bytes, exceeds declared %d", len(raw), ch.OriginalSize)
-			}
-			if ch.OriginalSize == 0 && ch.CompressedSize > 0 && len(raw) > 0 {
-				ratio := uint64(len(raw)) / uint64(ch.CompressedSize)
-				if ratio > BombRatioThreshold {
-					return fmt.Errorf("bomb detected: chunk ratio %d:1 exceeds threshold %d:1", ratio, BombRatioThreshold)
-				}
-			}
-			fullData.Write(raw)
-			off += chunkDataStride(ch)
-		}
-
-		if e.OriginalSize > 0 && uint64(fullData.Len()) > e.OriginalSize {
-			return fmt.Errorf("bomb detected: file decompressed to %d bytes, exceeds declared %d", fullData.Len(), e.OriginalSize)
-		}
-
-		// BCJ is applied to the whole file before chunking; reverse once after
-		// all chunks are concatenated (same as solid stream handling).
-		if e.BCJFilter != BCJNone {
-			if arch := BCJIDToArch(e.BCJFilter); arch != "" {
-				ApplyBCJFilterArch(fullData.Bytes(), arch, false)
-			}
+		fullData, err := r.extractFilePayload(&e)
+		if err != nil {
+			return err
 		}
 
 		if err := checkSymlink(outPath); err != nil {
 			return err
 		}
-		os.WriteFile(outPath, fullData.Bytes(), os.FileMode(e.Mode))
+		os.WriteFile(outPath, fullData, os.FileMode(e.Mode))
 		restoreMeta(outPath, &e)
 		r.notify(e, nil)
 	}

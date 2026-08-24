@@ -112,7 +112,8 @@ Levels run 0 to 9, the way 7-Zip and WinRAR present them:
 
 `create` also accepts `-solid` to compress every file as a single stream,
 `-codec` to override the level's choice, `-password` to encrypt the payload
-and `-workers` to cap concurrency.
+and `-workers` to cap concurrency on **create** and **extract** (parallel per-chunk
+decompress when `ChunkCount > 1`).
 
 ## Library
 
