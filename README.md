@@ -158,10 +158,11 @@ version 1.1 and reads both:
 - An encrypted archive is not marked as such in its header; the caller has to
   know a password is required.
 - The writer emits one chunk per entry, so `ChunkCount` is always 1.
-- Builds are limited to amd64 and arm64. `github.com/nyarime/gofec` v1.3.0
-  declares `xor.Bytes` both in an untagged assembly stub and in a
-  `!amd64 && !arm64` fallback, so the two collide on any other architecture.
-  A build tag on the stub upstream would lift the restriction.
+- The LZMA2 encoder parses greedily. That is what keeps it behind `xz -9`:
+  on structured text it reaches 12.9% where `xz -9` reaches 5.5%, while
+  running about ten times faster. Closing the gap means optimal parsing, not
+  a bigger dictionary or a deeper search — neither of those moves the number
+  measurably today.
 
 ## Format
 

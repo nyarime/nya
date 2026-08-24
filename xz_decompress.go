@@ -1083,17 +1083,26 @@ func xzCheckSize(checkType byte) int {
 	}
 }
 
+// lzma2MaxDictSize caps the dictionary a stream header can ask us to
+// allocate. The encoded field reaches 4 GiB - 1, which does not fit an int on
+// 32-bit platforms and would let a single header byte demand an absurd
+// allocation. No real archive needs more than this; xz tops out at 64 MiB.
+const lzma2MaxDictSize = 1 << 30
+
 func decodeLzma2DictSize(b byte) int {
-	if b > 40 {
-		return 0xFFFFFFFF
+	if b >= 40 {
+		return lzma2MaxDictSize
 	}
-	if b == 40 {
-		return 0xFFFFFFFF
-	}
+	var size int
 	if b&1 == 0 {
-		return 2 << (b/2 + 11)
+		size = 2 << (b/2 + 11)
+	} else {
+		size = 3 << (b/2 + 11)
 	}
-	return 3 << (b/2 + 11)
+	if size > lzma2MaxDictSize || size <= 0 {
+		return lzma2MaxDictSize
+	}
+	return size
 }
 
 func decodeMultiByteInt(data []byte) (uint64, int) {
