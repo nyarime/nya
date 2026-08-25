@@ -33,9 +33,9 @@ func cmdSend(args []string) error {
 Usage:
   nya send [flags] <archive.nya>
 
-If cloudflared is missing, nya installs the official binary into ~/.local/bin
-(or %LocalAppData%\nya\bin on Windows) unless -no-fetch-cloudflared.
-Use -no-tunnel for LAN-only.
+If cloudflared is missing, nya silently installs the official binary into
+~/.local/bin (or %LocalAppData%\nya\bin on Windows), then runs --version
+to verify it (unless -no-fetch-cloudflared). Use -no-tunnel for LAN-only.
 
 Receiver:
   nya get --url https://xxxx.trycloudflare.com/archive.nya

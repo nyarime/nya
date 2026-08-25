@@ -57,6 +57,37 @@ func TestInstallCloudflaredBinary(t *testing.T) {
 	}
 }
 
+func TestVerifyCloudflared(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "cloudflared")
+	script := "#!/bin/sh\necho 'cloudflared version 0.0.0 (test)'\n"
+	if runtime.GOOS == "windows" {
+		bin += ".bat"
+		script = "@echo cloudflared version 0.0.0 (test)\r\n"
+	}
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyCloudflared(bin); err != nil {
+		t.Fatal(err)
+	}
+
+	bad := filepath.Join(dir, "bad")
+	if runtime.GOOS == "windows" {
+		bad += ".bat"
+		if err := os.WriteFile(bad, []byte("@echo nope\r\n@exit /b 1\r\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		if err := os.WriteFile(bad, []byte("#!/bin/sh\necho nope\nexit 1\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := verifyCloudflared(bad); err == nil {
+		t.Fatal("expected verify failure")
+	}
+}
+
 func TestFetchCloudflared(t *testing.T) {
 	if testing.Short() {
 		t.Skip("network")
@@ -79,5 +110,8 @@ func TestFetchCloudflared(t *testing.T) {
 	}
 	if p != installedCloudflaredPath() {
 		t.Fatalf("expected install path %q, got %q", installedCloudflaredPath(), p)
+	}
+	if err := verifyCloudflared(p); err != nil {
+		t.Fatal(err)
 	}
 }
