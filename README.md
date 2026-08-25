@@ -274,6 +274,7 @@ closed-source product without GPL obligations, contact
 - [SPEC.md](SPEC.md) — on-disk NYA archive layout
 - [SPEC-EXTENSIONS.md](SPEC-EXTENSIONS.md) — **v1 foundation** (tails, solid, dedup, NyaFS, sessions)
 - [docs/SPEC-MULTICHUNK.md](docs/SPEC-MULTICHUNK.md) — **multi-chunk entries** (v1.3)
+- [docs/BENCHMARK-MULTICHUNK.md](docs/BENCHMARK-MULTICHUNK.md) — **multi-chunk parallel** (compress workers, FEC repair)
 - [docs/BENCHMARK-COMPRESS.md](docs/BENCHMARK-COMPRESS.md) — compression A/B measurements
 - [SPEC-CODECS.md](SPEC-CODECS.md) — **NYA-Zstd & NYA-LZMA2** roles and roadmap
 - [SPEC-SFX.md](SPEC-SFX.md) — **self-extracting** stub + footer (Rust)
