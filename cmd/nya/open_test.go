@@ -17,6 +17,30 @@ func TestDefaultOpenDest(t *testing.T) {
 	}
 }
 
+func TestUniqueOpenDestFinderStyle(t *testing.T) {
+	dir := t.TempDir()
+	base := filepath.Join(dir, "game")
+	if uniqueOpenDest(base) != base {
+		t.Fatalf("missing path should stay unchanged")
+	}
+	if err := os.Mkdir(base, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got := uniqueOpenDest(base)
+	want := filepath.Join(dir, "game 2")
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+	if err := os.Mkdir(want, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got = uniqueOpenDest(base)
+	want = filepath.Join(dir, "game 3")
+	if got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
 func TestOpenExtractBeside(t *testing.T) {
 	dir := t.TempDir()
 	srcFile := filepath.Join(dir, "a.txt")
@@ -37,7 +61,7 @@ func TestOpenExtractBeside(t *testing.T) {
 	}
 	_ = f.Close()
 
-	dest := defaultOpenDest(archive)
+	dest := uniqueOpenDest(defaultOpenDest(archive))
 	if err := extractTo(archive, dest, "", 0); err != nil {
 		t.Fatal(err)
 	}
@@ -47,5 +71,14 @@ func TestOpenExtractBeside(t *testing.T) {
 	}
 	if string(got) != "hello" {
 		t.Fatalf("got %q", got)
+	}
+
+	dest2 := uniqueOpenDest(defaultOpenDest(archive))
+	want2 := filepath.Join(dir, "game 2")
+	if dest2 != want2 {
+		t.Fatalf("second dest %q want %q", dest2, want2)
+	}
+	if err := extractTo(archive, dest2, "", 0); err != nil {
+		t.Fatal(err)
 	}
 }

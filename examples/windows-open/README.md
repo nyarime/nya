@@ -28,14 +28,24 @@ nya associate -uninstall
 | Action | Result |
 | --- | --- |
 | Double-click `D:\Downloads\game.nya` | Creates `D:\Downloads\game\` and extracts into it |
-| Console window | Stays open until Enter (`-pause` default on Windows) |
-| Scripts | Prefer `nya extract …` or `nya open -no-pause …` |
+| Folder already exists | Creates `game 2\`, then `game 3\`, … (**macOS Finder / Archive Utility** style) |
+| Want to replace into existing folder | `nya open -overwrite game.nya` |
+| Console window | Closes when extract finishes (use `nya open -pause` to wait for Enter) |
 
 Override output directory:
 
 ```bat
 nya open -o D:\out\mygame game.nya
+nya open -overwrite -o D:\out\mygame game.nya
 ```
+
+### vs 7-Zip / Finder
+
+| Tool | Conflict default |
+| --- | --- |
+| macOS Finder | New folder `name 2` (does not merge) |
+| 7-Zip `-aou` | Rename **files** to `name_1.txt` |
+| `nya open` | Finder-style folder rename; `-overwrite` merges into existing dest |
 
 ## Manual `.reg` (optional)
 

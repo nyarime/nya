@@ -33,10 +33,23 @@ again in parity symbols.
 
 ## Install
 
-**Windows (recommended):** download `nya-*-windows-amd64-setup.exe` from
-[GitHub Releases](https://github.com/nyarime/nya/releases) — installs `nya`,
-`nya-get`, **nyaFM**, optional PATH + `.nya` association (like 7-Zip).
+**One-click (recommended when Actions/setup.exe unavailable):**
+
+```bash
+# Linux / macOS → ~/.local/bin
+curl -fsSL https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.sh | bash
+```
+
+```powershell
+# Windows (user PATH + .nya → nya open)
+irm https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.ps1 | iex
+```
+
+Uninstall: `bash scripts/install.sh --uninstall` / `install.ps1 -Uninstall`.
 See [docs/RELEASE.md](docs/RELEASE.md).
+
+**Windows setup.exe** (when built): download from
+[GitHub Releases](https://github.com/nyarime/nya/releases).
 
 **From source / Go:**
 
@@ -55,7 +68,8 @@ nya create -level 1 backup.nya ./project           # fastest
 nya create -fec 30 backup.nya ./data               # add 30% recovery data
 nya list backup.nya                                # inspect
 nya extract backup.nya ./restored                  # extract
-nya open game.nya                                  # extract beside archive → .\game\
+nya open game.nya                                  # extract beside → .\game\ (or "game 2" if exists)
+nya open -overwrite game.nya                       # extract into existing .\game\ (overwrite files)
 nya verify backup.nya                              # check stored digests
 nya info backup.nya                                # header details, including codec
 nya repair damaged.nya fixed.nya                   # rebuild using the parity data

@@ -53,6 +53,26 @@ Prefer extract-beside on double-click? After install run `nya associate` (CLI), 
 
 Uninstall removes Start Menu entries, PATH append (when added by installer), and the `.nya` ProgID written by the installer.
 
+## One-click install scripts (no Inno / no Actions)
+
+When GitHub Actions is off, or you prefer curl/irm over setup.exe:
+
+```bash
+# Linux / macOS
+curl -fsSL https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.sh | bash -s -- --uninstall
+```
+
+```powershell
+# Windows
+irm https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.ps1 | iex
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.ps1))) -Uninstall
+```
+
+Scripts download the matching Release asset, install under `~/.local` or
+`%LOCALAPPDATA%\Programs\NYA`, and on Windows optionally set PATH + `.nya` → `nya open`.
+They **complement** (not fully replace) a GUI setup.exe for non-terminal users.
+
 ## Manual / local packaging
 
 When GitHub Actions is disabled, build on a Linux amd64 host:
