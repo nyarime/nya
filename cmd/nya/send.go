@@ -41,24 +41,7 @@ func cmdSend(args []string) error {
 	out := fs.String("o", "", "when packing: write .nya here (default: temp, deleted on exit)")
 	level := fs.Int("level", nya.LevelFast, "when packing: 0–9 (default 3=fast)")
 	fs.Usage = func() {
-		fmt.Fprintf(os.Stderr, `nya send — share a file or folder over HTTP + Cloudflare Quick Tunnel
-
-Usage:
-  nya send [flags] <file>           # %s
-  nya send [flags] <directory>      # %s
-  nya send [flags] <archive.nya>    # %s
-
-Links:
-  %s
-  %s
-  %s
-
-%s
-  nya get --url https://xxxx.trycloudflare.com/index.nyam
-
-`, T("send.usage_file"), T("send.usage_dir"), T("send.usage_nya"),
-			T("send.links_file"), T("send.links_folder"), T("send.links_magic"),
-			T("send.receiver"))
+		fmt.Fprint(os.Stderr, T("send.usage"))
 		fs.PrintDefaults()
 	}
 	if err := parseFlagSet(fs, args, map[string]bool{
@@ -235,7 +218,7 @@ Links:
 		directURL = publicBase + "/" + url.PathEscape(directName)
 	}
 
-	fmt.Fprintf(os.Stderr, "\nnya send: packed %s (%s)\n", archiveName, nya.HumanSize(int(st.Size())))
+	fmt.Fprintf(os.Stderr, "\nnya send: %s (%s)\n", archiveName, nya.HumanSize(int(st.Size())))
 	printSendLinks(mode, indexURL, nyaURL, directURL, indexLocal, nyaLocal, directLocal, !*noTunnel)
 
 	select {
@@ -258,34 +241,27 @@ Links:
 
 func printSendLinks(mode sendMode, indexURL, nyaURL, directURL, indexLocal, nyaLocal, directLocal string, public bool) {
 	fmt.Fprintln(os.Stderr)
-	if public {
-		switch mode {
-		case sendModeFile:
-			fmt.Fprintln(os.Stderr, T("send.browser_direct"))
-			fmt.Fprintf(os.Stderr, "  %s\n", directURL)
-			fmt.Fprintln(os.Stderr, T("send.nya_get_file"))
-			fmt.Fprintf(os.Stderr, "  nya get --url %s\n", indexURL)
-			fmt.Fprintf(os.Stderr, T("send.payload_hint")+"\n", nyaURL)
-		case sendModeDir:
-			fmt.Fprintln(os.Stderr, T("send.browser_nya"))
-			fmt.Fprintf(os.Stderr, "  %s\n", nyaURL)
-			fmt.Fprintln(os.Stderr, T("send.nya_get_dir"))
-			fmt.Fprintf(os.Stderr, "  nya get --url %s\n", indexURL)
-		default:
-			fmt.Fprintln(os.Stderr, T("send.browser_nya_only"))
-			fmt.Fprintf(os.Stderr, "  %s\n", nyaURL)
-			fmt.Fprintln(os.Stderr, T("send.nya_get"))
-			fmt.Fprintf(os.Stderr, "  nya get --url %s\n", indexURL)
-		}
-	} else {
+	if !public {
+		indexURL, nyaURL, directURL = indexLocal, nyaLocal, directLocal
 		fmt.Fprintln(os.Stderr, T("send.lan"))
-		if directLocal != "" {
-			fmt.Fprintf(os.Stderr, T("send.browser_file")+"\n", directLocal)
-		}
-		fmt.Fprintf(os.Stderr, T("send.browser_nya_fmt")+"\n", nyaLocal)
-		fmt.Fprintf(os.Stderr, T("send.nya_get_fmt")+"\n", indexLocal)
 	}
-	fmt.Fprintln(os.Stderr)
+	switch mode {
+	case sendModeFile:
+		fmt.Fprintln(os.Stderr, T("send.direct"))
+		fmt.Fprintf(os.Stderr, "  %s\n", directURL)
+		fmt.Fprintln(os.Stderr, T("send.get"))
+		fmt.Fprintf(os.Stderr, "  nya get --url %s\n", indexURL)
+	case sendModeDir:
+		fmt.Fprintln(os.Stderr, T("send.archive"))
+		fmt.Fprintf(os.Stderr, "  %s\n", nyaURL)
+		fmt.Fprintln(os.Stderr, T("send.get"))
+		fmt.Fprintf(os.Stderr, "  nya get --url %s\n", indexURL)
+	default:
+		fmt.Fprintln(os.Stderr, T("send.archive"))
+		fmt.Fprintf(os.Stderr, "  %s\n", nyaURL)
+		fmt.Fprintln(os.Stderr, T("send.get"))
+		fmt.Fprintf(os.Stderr, "  nya get --url %s\n", indexURL)
+	}
 	fmt.Fprintln(os.Stderr, T("send.stop"))
 }
 
@@ -349,20 +325,13 @@ func packSendSource(src, out string, level int, embed bool) (archive string, cle
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "nya send: packing %s → %s\n", src, dest)
-	textLike, dense, other, scanErr := nya.ScanPayloadKinds(src)
+	fmt.Fprintf(os.Stderr, "nya send: packing %s\n", dest)
+	textLike, dense, _, scanErr := nya.ScanPayloadKinds(src)
 	if scanErr != nil {
 		cleanup()
 		return "", func() {}, scanErr
 	}
 	solid := textLike >= 2 && textLike >= dense
-	if textLike+dense+other > 0 {
-		fmt.Fprintf(os.Stderr, "nya send: content magic — text/code/log=%d dense=%d other=%d", textLike, dense, other)
-		if solid {
-			fmt.Fprint(os.Stderr, " (solid)")
-		}
-		fmt.Fprintln(os.Stderr)
-	}
 	if err := writeNyaArchive(dest, src, level, solid); err != nil {
 		cleanup()
 		return "", func() {}, err

@@ -27,12 +27,10 @@ func cmdGet(args []string) error {
 	noExtract := fs.Bool("no-extract", false, "keep the .nya only; do not restore files/dirs")
 	keepNya := fs.Bool("keep-nya", false, "after extract, keep the downloaded .nya")
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, `nya get — downloader (nyam restore, or any plain HTTP file)
+		fmt.Fprint(os.Stderr, `nya get — download and restore
 
 Usage:
-  nya get --url <https://host/index.nyam>   # compressed transfer → restore same files/dirs
-  nya get --url <https://host/pack.nya>     # bootstrap embed index, then restore
-  nya get --url <https://host/file.txt>     # plain file download with progress
+  nya get --url <index.nyam|file.nya|https://…/file>
   nya get <manifest.nyam>
 
 `)
@@ -183,7 +181,7 @@ func getViaManifest(ctx context.Context, client *http.Client, urlFlag, manifestP
 
 	switch {
 	case manifestPath == "" && urlFlag != "":
-		fmt.Fprintf(os.Stderr, "nya get: loading index from %s\n", urlFlag)
+		fmt.Fprintf(os.Stderr, "nya get: %s\n", urlFlag)
 		var err error
 		m, err = loadTransferManifest(client, urlFlag)
 		if err != nil {
@@ -273,7 +271,7 @@ func getViaManifest(ctx context.Context, client *http.Client, urlFlag, manifestP
 		nya.HumanSize(int(res.BytesWritten)),
 		res.Elapsed.Round(time.Millisecond))
 	if res.Partial {
-		fmt.Fprintf(os.Stderr, "nya get: partial fetch; not extracting\n")
+		fmt.Fprintf(os.Stderr, "nya get: partial fetch\n")
 		return nil
 	}
 	if !wantExtract {
@@ -288,7 +286,7 @@ func getViaManifest(ctx context.Context, client *http.Client, urlFlag, manifestP
 		_ = os.Remove(archiveOut)
 		_ = os.Remove(statePath)
 	}
-	fmt.Printf("nya get: restored %s → %s\n", strings.Join(restored, ", "), extractDir)
+	fmt.Printf("%s → %s\n", strings.Join(restored, ", "), extractDir)
 	return nil
 }
 

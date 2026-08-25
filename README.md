@@ -100,27 +100,20 @@ See [examples/windows-open](examples/windows-open/README.md).
 ### Send + get (TryCloudflare)
 
 ```bash
-# File — browser direct link + nyam (compressed transfer → same filename)
 nya send novel.txt
-# → Browser:  https://….trycloudflare.com/novel.txt
-# → nya get:  nya get --url https://….trycloudflare.com/index.nyam
+# Direct:  https://….trycloudflare.com/novel.txt
+# Get:     nya get --url https://….trycloudflare.com/index.nyam
 
-# Folder — browser downloads .nya archive + nyam (restore original tree)
 nya send ./GameData
-# → Browser:  https://….trycloudflare.com/….nya
-# → nya get:  nya get --url https://….trycloudflare.com/index.nyam
+# Archive: https://….trycloudflare.com/….nya
+# Get:     nya get --url https://….trycloudflare.com/index.nyam
 
 nya get --url https://xxxx.trycloudflare.com/index.nyam
-# → in = out; progress while transferring
 ```
 
-CLI UI defaults to **English**. Set `NYA_LANG=zh` (or `LANG=zh_CN`) for Chinese prompts.
+CLI defaults to English (`NYA_LANG=zh` or `LANG=zh_CN` for Chinese).
 
-Content is classified by **magic bytes** (not extension): text/code/logs compress;
-zip/jpeg/… stay dense. `nya get` also downloads plain HTTP files.
-
-Options: `-no-tunnel` (LAN only), `-no-fetch-cloudflared` (require a system `cloudflared`).
-Quick Tunnels are ephemeral (Cloudflare ToS).
+Options: `-no-tunnel`, `-no-fetch-cloudflared`. Quick Tunnels are ephemeral (Cloudflare ToS).
 
 ### Large package distribution (`nya get`)
 
