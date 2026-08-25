@@ -25,15 +25,15 @@ func TestDetectCLILang(t *testing.T) {
 
 func TestTFallback(t *testing.T) {
 	cliLang = "en"
-	if T("send.stop") != "Ctrl+C to stop." {
+	if T("send.stop") != "Ctrl+C to stop" {
 		t.Fatal(T("send.stop"))
 	}
 	cliLang = "zh"
-	if T("send.stop") != "按 Ctrl+C 停止。" {
+	if T("send.stop") != "Ctrl+C 结束" {
 		t.Fatal(T("send.stop"))
 	}
-	cliLang = "fr" // missing catalog → en
-	if T("send.stop") != "Ctrl+C to stop." {
+	cliLang = "fr"
+	if T("send.stop") != "Ctrl+C to stop" {
 		t.Fatal(T("send.stop"))
 	}
 }
