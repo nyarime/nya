@@ -109,6 +109,19 @@ Reader with `-workers N`:
   (forward-compatible test archives).
 - **Readers** on v1.3 must read v1.0–1.2 archives (ChunkCount always 1).
 
+### Old readers cannot read v1.3
+
+This is a **hard break**, not a feature flag on extract:
+
+1. Global header `VersionMinor = 3` → any reader that caps supported minor at
+   2 returns unsupported and stops (no directory listing).
+2. Default create path produces minor 3 for typical large non-solid files
+   (`-multi-chunk` defaults to true).
+3. To stay on minor 1/2 for legacy tools: `-multi-chunk=false`.
+4. Document this in release notes whenever distributing archives to third-party
+   or pinned old CLIs — see [COMPATIBILITY.md](../COMPATIBILITY.md) and
+   [ROADMAP.md](../ROADMAP.md).
+
 ## Migration path
 
 | Step | Action | Status |

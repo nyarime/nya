@@ -11,6 +11,9 @@ const (
 	LevelGood    = 7 // LZMA2, larger window and deeper search
 	LevelBest    = 9 // LZMA2, maximum window and search
 
+	// LevelDefault is still Normal (LZMA2). Many distribute/get scenes are a
+	// better fit for levels 1–4 (NYA-Zstd, fast decompress); flipping the
+	// default waits on public corpus decode benches — see ROADMAP.md.
 	LevelDefault = LevelNormal
 )
 

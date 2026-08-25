@@ -34,7 +34,7 @@ VersionMajor.VersionMinor  (global header bytes 8–11)
 | **0** | Legacy (frozen) | Required forever | Pre-RFC8878 zstd sequence tables; self-consistent old archives |
 | **1** | **Current default** | Required | RFC 8878 zstd; Argon2id encryption (minor 2) |
 | **2** | Encrypted output | Required | **Argon2id** KDF: 16-byte salt + memory/time/thread params in header `Reserved[0:25]`; flags `FlagEncrypted` + `FlagKDFArgon2id`. Payload remains AES-256-GCM. Legacy archives that used bare SHA-256(password) with no header flag remain readable when a password is supplied. |
-| **3** | Multi-chunk non-solid | Required | `ChunkCount > 1` for files > 4 MiB (non-solid); per-chunk FEC; `-multi-chunk` / `-chunk-size` on create. v1.2 readers reject minor 3; v1.0–1.2 archives (`ChunkCount = 1`) remain readable. |
+| **3** | Multi-chunk non-solid | Required | `ChunkCount > 1` for files > 4 MiB (non-solid); per-chunk FEC; `-multi-chunk` / `-chunk-size` on create. **Impact:** readers that only accept minor ≤ 2 **reject the whole archive** (no partial extract). Escape: `-multi-chunk=false`. Reference reader accepts through minor 3; older archives (`ChunkCount = 1`) remain readable. |
 
 **Policy:** bump **minor** for additive, backward-compatible changes (new flags,
 optional tail sections). Bump **major** only for breaking layout changes.
@@ -95,9 +95,10 @@ Requires **major 2** (new magic or breaking directory layout):
 | --- | --- |
 | [SPEC.md](SPEC.md) | On-disk `.nya` layout |
 | [SPEC-EXTENSIONS.md](SPEC-EXTENSIONS.md) | **v1 extension foundation** (tails, profiles) |
-| [docs/SPEC-MULTICHUNK.md](docs/SPEC-MULTICHUNK.md) | Multi-chunk entry design (planned v1.3) |
+| [docs/SPEC-MULTICHUNK.md](docs/SPEC-MULTICHUNK.md) | Multi-chunk entry design (**v1.3**, default on) |
 | [SPEC-CODECS.md](SPEC-CODECS.md) | **NYA-Zstd & NYA-LZMA2** policy |
 | [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) | `.nyam` manifest (distribution only) |
+| [ROADMAP.md](ROADMAP.md) | Product priorities (FEC + distribute first) |
 
 ## Application profiles (informative)
 
@@ -115,8 +116,23 @@ Profile bits and NyaFS conventions are in [SPEC-EXTENSIONS.md](SPEC-EXTENSIONS.m
 
 | Codec | CompressionID | Role |
 | --- | ---: | --- |
-| **NYA-Zstd** | 1 | House codec — speed, default levels (planned), RFC 8878 |
-| **NYA-LZMA2** | 6 | Best ratio — levels 7–9, raw LZMA2 bitstream |
+| **NYA-Zstd** | 1 | House codec — speed, levels 1–4, RFC 8878 (candidate for `LevelDefault`) |
+| **NYA-LZMA2** | 6 | Best ratio — levels 5–9 today; 7–9 for `--best` |
 
-Encoder improvements ship in software releases without changing IDs. See
-[SPEC-CODECS.md](SPEC-CODECS.md).
+CLI `LevelDefault` is still **5 (LZMA2)** until corpus decode benches land; see
+[ROADMAP.md](ROADMAP.md). Encoder improvements ship in software releases without
+changing IDs — [SPEC-CODECS.md](SPEC-CODECS.md).
+
+## v1.3 multi-chunk: old-reader impact
+
+Default `nya create` enables multi-chunk for non-solid files larger than 4 MiB,
+so many real game/firmware/CDN archives will be written as **minor 3**.
+
+| Reader | Behavior on minor 3 |
+| --- | --- |
+| Current `nya` (this repo) | Full extract / repair / list |
+| Tool built against ≤ v1.2 only | **Hard reject** (`ErrUnsupported`) — cannot list or extract |
+| Need interop with old readers | Create with `-multi-chunk=false` |
+
+Do not ship minor-3 archives into pipelines that still pin an old binary unless
+you control the reader upgrade. Product context: [ROADMAP.md](ROADMAP.md).

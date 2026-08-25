@@ -2,24 +2,25 @@
 
 [English](README.md) | 简体中文
 
-NYA（Nyarime Archive）是一种把常规压缩与前向纠错（FEC）结合在一起的归档格式，损坏后往往仍可读。本仓库是格式规范、参考实现与 **`nya` CLI**（含 `get` / `send` / `gui` / `sfx` 等）的**权威源**。用途包括备份、游戏分包、CDN 分发等；固件或数据库场景也可嵌入同一容器布局。
+**NYA 要解决的是：链路上坏了、传了一半，文件往往还能打开** — 而不是再做一个「略强一点的 7z / RAR」。
 
-实现为纯 Go、无 cgo，仅两个依赖。压缩器（**NYA-Zstd**、**NYA-LZMA2**）、BLAKE3 与容器均自研；`github.com/nyarime/gofec` 提供 RaptorQ / LDPC，`golang.org/x/sys` 提供扩展属性系统调用。
+一次打包同时带上压缩与可配置的前向纠错（FEC），用 `nya send` / CDN / `.nyam` 发一个 URL，再用 `nya get` + `nya repair` 拉回并修复。这条故事更贴合 **游戏分包、固件镜像、CDN 大文件、不可靠隧道**，而不是「又一个压缩格式」。产品方向见 **[ROADMAP.md](ROADMAP.md)**。
 
-**NYA-Zstd** 是默认编解码（RFC 8878，偏速度与嵌入）。**NYA-LZMA2** 走 `--best`（标准 raw LZMA2）。二者可在软件里迭代，不改磁盘上的编解码 ID — 见 [SPEC-CODECS.md](SPEC-CODECS.md)。
+本仓库是格式规范、参考实现与 **`nya` CLI**（`get` / `send` / `gui` / `sfx` …）的权威源。纯 Go、无 cgo；`github.com/nyarime/gofec` 提供 RaptorQ / LDPC，`golang.org/x/sys` 提供 xattr。**NYA-Zstd** 是家用编解码（RFC 8878）；**NYA-LZMA2** 走 `--best` — 见 [SPEC-CODECS.md](SPEC-CODECS.md)。
 
 ## 归档里有什么
 
 | 层 | 作用 |
 | --- | --- |
-| 压缩 | 等级 5–9 用 LZMA2；1–4 用 Zstandard（RFC 8878）；0 为存储 |
+| 压缩 | 等级 1–4 用 Zstandard（RFC 8878）；5–9 用 LZMA2；0 为存储 |
 | 预过滤 | x86 / ARM / AArch64 / MIPS 的 BCJ；delta 过滤 |
 | 完整性 | 每块 BLAKE3-256（含 AVX2 / AVX-512 / SSE2 / NEON） |
-| 恢复 | RaptorQ 奇偶符号，按载荷百分比配置 |
+| 恢复 | RaptorQ / Leopard-RS 奇偶，按载荷百分比配置 |
+| 分发 | 嵌入下载索引 + `.nyam`；大文件多块 Range |
 | 加密 | 可选 AES-256-GCM（压缩载荷） |
 | 元数据 | Unix 权限、属主、时间戳、符号/硬链接、设备节点、FIFO、xattr |
 
-不像 RAR 恢复记录常见的约 10% 上限，`-fec 50` 可把恢复数据做到载荷一半大小。
+不像 RAR 恢复记录常见的约 10% 上限，`-fec 50` 可把恢复数据做到载荷一半。见 [docs/BENCHMARK-FEC.md](docs/BENCHMARK-FEC.md)。
 
 ## 安装
 
@@ -279,13 +280,20 @@ zstd 编码器匹配与熵编码模式少于参考实现，故比率略逊。两
 
 ## 兼容性
 
-全局头记录 `VersionMajor.VersionMinor`。本实现**写出 1.1**（加密时为 **1.2**），**可读 1.0–1.2**。
+全局头记录 `VersionMajor.VersionMinor`。本实现**可读 1.0–1.3**。**写出**：
 
-长期策略见 **[COMPATIBILITY.md](COMPATIBILITY.md)**（一个 `.nya` 容器，旁路仅 `.nyam`，无 `.nyax`）。
+| 条件 | 写出的 minor |
+| --- | ---: |
+| 默认非 solid 且文件 ≤ 4 MiB（未加密） | **1.1** |
+| 加密 | **1.2** |
+| 任一多块条目（`ChunkCount > 1`；非 solid 且 &gt; 4 MiB 时默认） | **1.3** |
 
+长期策略见 **[COMPATIBILITY.md](COMPATIBILITY.md)**、产品方向见 **[ROADMAP.md](ROADMAP.md)**。
+
+- **1.3** — 多块非 solid + 按块 FEC。**≤ v1.2 的阅读器完全打不开**这类归档（不是「能解但不并行」）。若必须兼容旧工具，用 `-multi-chunk=false`。
 - **1.2** — Argon2id KDF + 头内 salt；`FlagEncrypted` + `FlagKDFArgon2id`。旧 SHA-256(password) 仍可读。
-- **1.1** — zstd 帧遵循 RFC 8878（非加密时的当前写出）。
-- **1.0** — 旧 zstd sequence 表；仍完全可读。重打包可升级。
+- **1.1** — zstd 帧遵循 RFC 8878。
+- **1.0** — 旧 zstd sequence 表；仍完全可读。
 
 ### 升级说明
 
@@ -293,14 +301,17 @@ zstd 编码器匹配与熵编码模式少于参考实现，故比率略逊。两
 | --- | --- | --- |
 | 1.0 zstd 表 | 1.1 | 用当前 `nya create` 重打包 |
 | SHA-256 加密 | 1.2 Argon2id | 用 `-password` 重建（旧包仍可按密码解） |
+| 需要旧（≤1.2）阅读器 | 保持 ≤1.2 | `nya create -multi-chunk=false` |
 | 非 solid 多文件 | solid + 排序 | 对目录 `nya create -solid -level 9` |
+
+**默认压缩等级仍是 5（LZMA2）**。很多分发 / `get` 场景更适合 **1–4（zstd，解压快）** — 是否改默认见 [ROADMAP.md](ROADMAP.md)，请勿假定会永远停在 5。
 
 ## 已知限制
 
-- **多块条目**（v1.3，`VersionMinor = 3`）：非 solid 且大于 4 MiB 的文件会切块（默认 raw 4 MiB；大于 64 MiB 时 8 MiB）。Solid 仍每条目一块。`-multi-chunk=false` 可关。≤ v1.2 阅读器读不了 minor 3。设计：[docs/SPEC-MULTICHUNK.md](docs/SPEC-MULTICHUNK.md)。
+- **多块（v1.3）默认开启**：非 solid 且 &gt; 4 MiB（raw 4 MiB；&gt; 64 MiB 时 8 MiB）。Solid 仍每条目一块。设计：[docs/SPEC-MULTICHUNK.md](docs/SPEC-MULTICHUNK.md)。
 - zstd sequence 的**自定义 FSE 表**仍关闭（约 1% 比率）。
 - **Optimal parse** 默认关闭；混合多文件 solid 上 greedy + 排序通常更好。库内 `OptimalParse` 可按语料打开。
-- 超大混合树上 **7-Zip solid** 编码速度仍可能占优；排序 + optimal 后比率差距大多可收窄（见基准文档）。
+- 公开 **Silesia / enwik9 / 游戏资源 / 固件** 语料与 raw 数据仍在落地 — 见 [docs/BENCHMARK-CORPUS.md](docs/BENCHMARK-CORPUS.md)。
 
 ## 许可
 
@@ -310,12 +321,16 @@ NYA 是自由软件：可在 [GNU GPL v3.0](LICENSE) 下使用、修改与再分
 
 ## 格式文档
 
+- [ROADMAP.md](ROADMAP.md) — **产品优先级**（先讲清 FEC + 分发）
 - [COMPATIBILITY.md](COMPATIBILITY.md) — **v1 LTS 策略**（采用前请读）
 - [SPEC.md](SPEC.md) — NYA 磁盘布局
 - [SPEC-EXTENSIONS.md](SPEC-EXTENSIONS.md) — **v1 基础**（tail、solid、去重、NyaFS、会话）
 - [docs/SPEC-MULTICHUNK.md](docs/SPEC-MULTICHUNK.md) — **多块条目**（v1.3）
 - [docs/BENCHMARK-MULTICHUNK.md](docs/BENCHMARK-MULTICHUNK.md) — **多块并行**（压缩 worker、FEC 修复）
 - [docs/BENCHMARK-COMPRESS.md](docs/BENCHMARK-COMPRESS.md) — 压缩 A/B
+- [docs/BENCHMARK-FEC.md](docs/BENCHMARK-FEC.md) — FEC 恢复对比
+- [docs/BENCHMARK-CORPUS.md](docs/BENCHMARK-CORPUS.md) — 公开语料与 raw 数据计划
+- [docs/NOTE-UPX.md](docs/NOTE-UPX.md) — UPX 与归档压缩在 ELF 上的关系
 - [SPEC-CODECS.md](SPEC-CODECS.md) — **NYA-Zstd & NYA-LZMA2**
 - [SPEC-SFX.md](SPEC-SFX.md) — **自解压** stub + footer（Go 参考 stub）
 - [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) — `.nyam` 与 `nya get` 传输块
