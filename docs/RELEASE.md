@@ -16,7 +16,8 @@ Workflow: [`.github/workflows/release.yml`](../.github/workflows/release.yml).
 | Asset | Contents |
 | --- | --- |
 | `nya-VERSION-windows-amd64-setup.exe` | **Inno Setup installer**: `nya.exe`, `nya-get.exe`, `nya-fm.exe`, SFX stub; optional PATH + `.nya` → nyaFM |
-| `nya-VERSION-windows-amd64.zip` | Portable Windows x64 binaries (same files, no installer) |
+| `nya-VERSION-windows-amd64.zip` | Portable Windows x64 binaries |
+| `nya-VERSION-windows-arm64.zip` | Portable Windows ARM64 CLI (`nya`, `nya-get`; no UPX yet) |
 | `nya-VERSION-linux-amd64.tar.gz` | `nya`, `nya-get`, `nya-fm`, `nya-sfx-stub` |
 | `nya-VERSION-linux-arm64.tar.gz` | CLI only (`nya`, `nya-get`) |
 | `nya-VERSION-darwin-amd64.tar.gz` | macOS Intel: CLI + nyaFM + stub |
@@ -36,8 +37,8 @@ Workflow: [`.github/workflows/release.yml`](../.github/workflows/release.yml).
 
 | Artifact | Linkage | UPX |
 | --- | --- | --- |
-| `nya` / `nya-get` (all OS in CI) | Go static (`CGO_ENABLED=0`) | Yes on Windows + Linux; **no** on macOS |
-| `nya-sfx-stub` | Windows: pack; Linux: only if fully static | Same rule |
+| `nya` / `nya-get` | Go static (`CGO_ENABLED=0`) | Linux + Windows **amd64** yes; Darwin / Windows **arm64** no |
+| `nya-sfx-stub` | Platform binary used as SFX prefix | **Never** (stub \|\| archive \|\| footer) |
 | `nya-fm` | Dynamic (GUI / system libs) | **Never** |
 
 ## Windows install experience
@@ -54,6 +55,18 @@ Uninstall removes Start Menu entries, PATH append (when added by installer), and
 
 ## Manual / local packaging
 
+When GitHub Actions is disabled, build on a Linux amd64 host:
+
+```bash
+./scripts/release-local.sh 0.1.0
+gh release create v0.1.0 dist/nya-0.1.0-* --title "NYA v0.1.0" --notes-file dist/NOTES-v0.1.0.txt
+```
+
+Produces UPX’d Go CLI for Linux/Windows, optional linux `nya-fm` + stubs, and a Windows portable zip.
+**Inno `*-setup.exe` and Windows `nya-fm.exe` still need a Windows machine** (see below).
+
+### Windows Inno installer (on Windows)
+
 ```bash
 # Go
 mkdir -p dist/windows-amd64
@@ -63,6 +76,7 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o dist/windows-amd64/nya-get.e
 # Rust (on Windows)
 cargo build -p nya-fm -p nya-sfx-stub --release
 cp target/release/nya-fm.exe target/release/nya-sfx-stub.exe dist/windows-amd64/
+upx --best --lzma dist/windows-amd64/nya.exe dist/windows-amd64/nya-get.exe
 
 # Inno Setup 6
 ISCC /DMyAppVersion=0.1.0 /DStagingDir=dist\windows-amd64 packaging\windows\nya.iss
