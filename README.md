@@ -33,30 +33,56 @@ again in parity symbols.
 
 ## Install
 
+### Linux / macOS
+
+Installs into `~/.local` by default (`nya` → `~/.local/bin`).
+
 ```bash
-# Linux / macOS → ~/.local/bin (latest release)
 curl -fsSL https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.sh | bash
 ```
 
+```bash
+# optional
+bash install.sh --prefix /usr/local          # custom prefix
+bash install.sh --version 0.1.6              # pin a release
+```
+
+### Windows
+
+Installs into `%LOCALAPPDATA%\Programs\NYA`, adds user PATH, associates `.nya` → `nya open`.
+
 ```powershell
-# Windows → %LOCALAPPDATA%\Programs\NYA (+ user PATH, .nya → nya open)
 irm https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.ps1 | iex
 ```
 
+```powershell
+# optional
+install.ps1 -Prefix "D:\Tools\NYA"
+install.ps1 -Version 0.1.6
+install.ps1 -NoAssociate   # skip .nya file association
+install.ps1 -NoPath        # skip PATH change
+```
+
+Open a new terminal after install, then run `nya help`.
+
+### Uninstall
+
 ```bash
-# Uninstall
+# Linux / macOS
 curl -fsSL https://raw.githubusercontent.com/nyarime/nya/main/scripts/uninstall.sh | bash
+# bash uninstall.sh --prefix ~/.local
 ```
 
 ```powershell
+# Windows
 irm https://raw.githubusercontent.com/nyarime/nya/main/scripts/uninstall.ps1 | iex
+# uninstall.ps1 -Prefix "$env:LOCALAPPDATA\Programs\NYA"
 ```
 
-Pin a version: `bash install.sh --version 0.1.6` / `install.ps1 -Version 0.1.6`.  
-Also: `install.sh --uninstall`, `install.ps1 -Uninstall`.  
-Releases: [GitHub Releases](https://github.com/nyarime/nya/releases). See [docs/RELEASE.md](docs/RELEASE.md).
+Same effect: `install.sh --uninstall` / `install.ps1 -Uninstall`.  
+Releases: [GitHub Releases](https://github.com/nyarime/nya/releases/latest). Packaging notes: [docs/RELEASE.md](docs/RELEASE.md).
 
-**From source / Go:**
+### From source
 
 ```bash
 go install github.com/nyarime/nya/cmd/nya@latest
