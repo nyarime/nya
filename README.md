@@ -2,36 +2,37 @@
 
 [English](README.md) | [简体中文](README_zh.md)
 
-NYA (Nyarime Archive) is an archive format that pairs ordinary compression
-with forward error correction, so a damaged archive can often still be read.
-This repository is the **canonical home** for the format specification,
-reference implementation, and the `nya` CLI (`get` / `send` / `gui` / `sfx`, …). The format is
-general-purpose (backups, game packs, CDN distribution); firmware or database
-profiles can embed the same container without changing the on-disk layout.
+**NYA is built for shipping files that still open after the link fails** —
+not for winning a pure ratio race against 7-Zip or WinRAR.
 
-Everything is pure Go with no cgo and only two dependencies. The compressors
-(**NYA-Zstd**, **NYA-LZMA2**), the BLAKE3 implementation and the container are
-all written from scratch; `github.com/nyarime/gofec` supplies the RaptorQ and
-LDPC codes and `golang.org/x/sys` the extended attribute syscalls.
+Pack once with compression **and** configurable forward error correction,
+publish a single URL (`nya send` / CDN / `.nyam`), and recover with
+`nya get` + `nya repair`. That story fits **game packs**, **firmware
+images**, **CDN large objects**, and **unreliable tunnels** better than
+“yet another archive format.” Product direction:
+**[ROADMAP.md](ROADMAP.md)**.
 
-**NYA-Zstd** is the house codec (RFC 8878, speed + embed). **NYA-LZMA2** is
-the `--best` lane (standard raw LZMA2 bitstream). Both iterate in software
-without changing on-disk IDs — see [SPEC-CODECS.md](SPEC-CODECS.md).
+This repository is the **canonical** format spec, reference implementation,
+and `nya` CLI (`get` / `send` / `gui` / `sfx`, …). Pure Go, no cgo, two
+dependencies: `github.com/nyarime/gofec` (RaptorQ / LDPC) and
+`golang.org/x/sys` (xattrs). **NYA-Zstd** is the house codec (RFC 8878);
+**NYA-LZMA2** is the `--best` lane — see [SPEC-CODECS.md](SPEC-CODECS.md).
 
 ## What is in an archive
 
 | Layer | What it does |
 | --- | --- |
-| Compression | LZMA2 at levels 5–9, Zstandard (RFC 8878) at 1-4, stored at 0 |
+| Compression | Zstandard (RFC 8878) at levels 1–4; LZMA2 at 5–9; stored at 0 |
 | Pre-filters | BCJ branch conversion for x86, ARM, AArch64 and MIPS binaries; delta filter |
 | Integrity | BLAKE3-256 over every chunk, with AVX2/AVX-512/SSE2/NEON assembly paths |
-| Recovery | RaptorQ parity symbols, sized as a percentage of the payload |
+| Recovery | RaptorQ / Leopard-RS parity, sized as a percentage of the payload |
+| Distribution | Embedded download index + `.nyam`; multi-chunk ranges for large files |
 | Encryption | Optional AES-256-GCM over the compressed payload |
 | Metadata | Unix mode, owner, timestamps, symlinks, hardlinks, device nodes, FIFOs, xattrs |
 
-Unlike the 10% ceiling that RAR recovery records impose, the amount of
-recovery data is a free parameter: `-fec 50` stores half the payload size
-again in parity symbols.
+Unlike the ~10% ceiling that RAR recovery records often impose, recovery
+size is a free parameter: `-fec 50` stores half the payload again in parity.
+See [docs/BENCHMARK-FEC.md](docs/BENCHMARK-FEC.md).
 
 ## Install
 
@@ -323,15 +324,23 @@ readable by any conformant zstd or xz implementation.
 ## Compatibility
 
 Archives record `VersionMajor.VersionMinor` in the global header. This
-implementation **writes 1.1** (or **1.2** when encrypted) and **reads 1.0 through 1.2**.
+implementation **reads 1.0–1.3**. It **writes**:
 
-See **[COMPATIBILITY.md](COMPATIBILITY.md)** for the long-term policy (one
-`.nya` container, `.nyam` sidecar only, no `.nyax`).
+| Condition | Minor written |
+| --- | ---: |
+| Default non-solid file ≤ 4 MiB (no encryption) | **1.1** |
+| Encrypted | **1.2** |
+| Any multi-chunk entry (`ChunkCount > 1`, default for non-solid &gt; 4 MiB) | **1.3** |
 
+See **[COMPATIBILITY.md](COMPATIBILITY.md)** and **[ROADMAP.md](ROADMAP.md)**.
+
+- **1.3** — multi-chunk non-solid + per-chunk FEC. **Readers ≤ v1.2 cannot open
+  these archives at all.** Use `-multi-chunk=false` when you must interop with
+  old tools.
 - **1.2** — Argon2id KDF + salt in header `Reserved`; `FlagEncrypted` +
   `FlagKDFArgon2id`. Legacy SHA-256(password) archives remain readable.
-- **1.1** — zstd frames follow RFC 8878 (current writer for non-encrypted).
-- **1.0** — legacy zstd sequence tables; still fully readable. Repack to upgrade.
+- **1.1** — zstd frames follow RFC 8878.
+- **1.0** — legacy zstd sequence tables; still fully readable.
 
 ### Upgrade notes
 
@@ -339,21 +348,24 @@ See **[COMPATIBILITY.md](COMPATIBILITY.md)** for the long-term policy (one
 | --- | --- | --- |
 | 1.0 zstd tables | 1.1 | Repack with current `nya create` (automatic RFC 8878) |
 | SHA-256 encryption | 1.2 Argon2id | Re-create with `-password` (old archives still extract with password) |
+| Need old (≤1.2) readers | stay ≤1.2 | `nya create -multi-chunk=false` (and avoid features that bump minor) |
 | Non-solid many-file | solid + sort | `nya create -solid -level 9` on directory trees |
+
+**Default level** is still **5 (LZMA2)**. Many distribute/get scenes are a
+better fit for **levels 1–4 (zstd, fast extract)** — decision tracked in
+[ROADMAP.md](ROADMAP.md); do not assume the default will stay at 5 forever.
 
 ## Known limitations
 
-- **Multi-chunk entries** (v1.3, `VersionMinor = 3`): non-solid files larger
-  than 4 MiB are split into independent chunks (default 4 MiB raw, 8 MiB above
-  64 MiB). Solid archives remain one chunk per entry. Disable with
-  `-multi-chunk=false`. Old readers (≤ v1.2) cannot read minor 3 archives.
+- **Multi-chunk (v1.3)** is **on by default** for non-solid files &gt; 4 MiB
+  (4 MiB raw chunks; 8 MiB above 64 MiB). Solid stays one chunk per entry.
   Design: [docs/SPEC-MULTICHUNK.md](docs/SPEC-MULTICHUNK.md).
 - **Custom FSE tables** for zstd sequence codes remain disabled (~1% ratio).
 - **Optimal parse** is not enabled by default; benchmarks show greedy + sort
   wins on mixed multi-file solid trees. Enable via library `OptimalParse` when
   tuning for repetitive corpora.
-- **7-Zip solid ratio** on very large mixed trees can still win on encode speed;
-  NYA closes most of the gap on ratio with sort + optimal parse (see benchmark doc).
+- Public **Silesia / enwik9 / game / firmware** corpus raw data is still
+  landing — see [docs/BENCHMARK-CORPUS.md](docs/BENCHMARK-CORPUS.md).
 
 ## License
 
@@ -366,12 +378,15 @@ closed-source product without GPL obligations, contact
 
 ## Format
 
+- [ROADMAP.md](ROADMAP.md) — **product priorities** (FEC + distribute first)
 - [COMPATIBILITY.md](COMPATIBILITY.md) — **v1 LTS policy** (read before adopting)
 - [SPEC.md](SPEC.md) — on-disk NYA archive layout
 - [SPEC-EXTENSIONS.md](SPEC-EXTENSIONS.md) — **v1 foundation** (tails, solid, dedup, NyaFS, sessions)
 - [docs/SPEC-MULTICHUNK.md](docs/SPEC-MULTICHUNK.md) — **multi-chunk entries** (v1.3)
 - [docs/BENCHMARK-MULTICHUNK.md](docs/BENCHMARK-MULTICHUNK.md) — **multi-chunk parallel** (compress workers, FEC repair)
 - [docs/BENCHMARK-COMPRESS.md](docs/BENCHMARK-COMPRESS.md) — compression A/B measurements
+- [docs/BENCHMARK-FEC.md](docs/BENCHMARK-FEC.md) — FEC recovery vs 7z/RAR
+- [docs/BENCHMARK-CORPUS.md](docs/BENCHMARK-CORPUS.md) — public corpus + raw data plan
 - [SPEC-CODECS.md](SPEC-CODECS.md) — **NYA-Zstd & NYA-LZMA2** roles and roadmap
 - [SPEC-SFX.md](SPEC-SFX.md) — **self-extracting** stub + footer (Go reference stub)
 - [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) — `.nyam` manifest and `nya get` transport blocks

@@ -25,7 +25,7 @@ CompressionID** (or bump `VersionMajor`).
 | ID | Name | Payload on disk | NYA levels | Role |
 | ---: | --- | --- | ---: | --- |
 | 0 | Store | raw bytes | 0 | No compression |
-| 1 | **NYA-Zstd** | [RFC 8878](https://www.rfc-editor.org/rfc/rfc8878) zstd frame(s) | 1–4 (planned default: 3–5) | **House codec** — speed, embed, distribution |
+| 1 | **NYA-Zstd** | [RFC 8878](https://www.rfc-editor.org/rfc/rfc8878) zstd frame(s) | 1–4 (candidate `LevelDefault`: 3 or 4) | **House codec** — speed, embed, distribution |
 | 5 | NYA-Zstd + dictionary | RFC 8878 with dictionary prefix | reserved | Solid / rootfs shared dict (future) |
 | 6 | **NYA-LZMA2** | Raw LZMA2 stream (no XZ container) | 5–9 | **Best ratio** — `--best` / archival |
 | 2–4 | S2, Brotli, LZ4 | — | — | Reserved IDs; not implemented |
