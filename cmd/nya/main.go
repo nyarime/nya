@@ -19,6 +19,7 @@ Usage:
   nya create  [flags] <archive.nya> <path>   create an archive from a file or directory
   nya list    <archive.nya>                  list archive contents
   nya extract [flags] <archive.nya> [dir]    extract an archive (default: current directory)
+  nya open    [flags] <archive.nya>          extract beside archive into .<basename>/ (shell / double-click)
   nya verify  <archive.nya>                  check stored BLAKE3 digests
   nya info    <archive.nya>                  show header details
   nya repair  <archive> [out]                 repair NYA / ZIP / RAR (format detected by magic)
@@ -26,6 +27,7 @@ Usage:
   nya convert [flags] <in.zip|7z|rar> <out.nya>  unpack legacy archive and repack as NYA (zip/7z/rar)
   nya manifest <archive.nya> -o <manifest.nyam>  build download manifest for nya-get
   nya sfx     [flags] <archive.nya> -o <out.exe> wrap archive as self-extractor (Rust stub)
+  nya associate [-uninstall]                 Windows: register .nya double-click → nya open
 
 Levels run 0 to 9, the way 7-Zip and WinRAR present them: 0 stores, 1 is
 fastest, 5 is the default, 9 is smallest. Levels up to 4 use Zstandard for
@@ -49,6 +51,8 @@ func main() {
 		err = cmdList(os.Args[2:])
 	case "extract", "x":
 		err = cmdExtract(os.Args[2:])
+	case "open":
+		err = cmdOpen(os.Args[2:])
 	case "verify", "t":
 		err = cmdVerify(os.Args[2:])
 	case "info":
@@ -63,6 +67,8 @@ func main() {
 		err = cmdManifest(os.Args[2:])
 	case "sfx":
 		err = cmdSfx(os.Args[2:])
+	case "associate":
+		err = cmdAssociate(os.Args[2:])
 	case "-h", "--help", "help":
 		fmt.Print(usage)
 		return
