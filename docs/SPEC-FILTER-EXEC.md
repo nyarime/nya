@@ -26,6 +26,10 @@ Default archive path (`chooseBCJForFile`):
 
 Decode mirrors encode via `ApplyBCJFilterArchSmart` in `finishFilePayload`.
 
+**Signed executables:** BCJ is never applied when `HasEmbeddedSignature` detects
+Authenticode (PE) or `LC_CODE_SIGNATURE` (Mach-O). See
+[SIGNATURE-PRESERVE.md](SPEC-SIGNATURE-PRESERVE.md).
+
 Whole-file BCJ is **not** used when section ranges are available — avoids
 touching `.data` / resources that can false-match branch opcodes.
 

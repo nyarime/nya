@@ -197,7 +197,7 @@ also strengthens the distribute/recover story.
 | [SPEC-CODECS.md](SPEC-CODECS.md) | Zstd vs LZMA2 roles |
 | [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) | `.nyam` / get transport |
 | [docs/NOTE-UPX.md](docs/NOTE-UPX.md) | UPX license + what we can learn for ELF |
-| [docs/SPEC-FILTER-EXEC.md](docs/SPEC-FILTER-EXEC.md) | ELF / PE / Mach-O section-aware BCJ |
+| [docs/SPEC-SIGNATURE-PRESERVE.md](docs/SPEC-SIGNATURE-PRESERVE.md) | Bit-identical extract + BCJ skip on signed PE/Mach-O |
 
 Update this file when priorities change; keep commits conventional
 (`docs: …` / `feat: …`).
