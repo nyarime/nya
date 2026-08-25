@@ -99,9 +99,11 @@ func (enc *lzmaEncoder) bt4Insert(pos int) {
 			}
 			matchLen = 0
 		} else {
-			for matchLen < lzmaMaxMatch && cpos+matchLen < len(src) && pos+matchLen < len(src) && src[cpos+matchLen] == src[pos+matchLen] {
-				matchLen++
+			ml := zstdMatchLen(src, pos, cpos)
+			if ml > lzmaMaxMatch {
+				ml = lzmaMaxMatch
 			}
+			matchLen = ml
 			if matchLen >= lzmaMaxMatch || cpos+matchLen >= len(src) || pos+matchLen >= len(src) {
 				*sonLeft = curMatch
 				*sonRight = curMatch
@@ -130,12 +132,12 @@ func (enc *lzmaEncoder) bt4ProbeHash2(pos, maxLen, matchMin int) {
 		return
 	}
 	cpos := int(cur)
-	ml := 0
-	for ml < maxLen && cpos+ml < len(enc.src) && pos+ml < len(enc.src) && enc.src[cpos+ml] == enc.src[pos+ml] {
-		ml++
+	ml := zstdMatchLen(enc.src, pos, cpos)
+	if ml > maxLen {
+		ml = maxLen
 	}
 	if ml >= lzmaMinMatch {
-		enc.appendMatchFrontier(uint32(pos-cpos-1), ml)
+		enc.recordMatchFrontier(uint32(pos-cpos-1), ml)
 	}
 }
 
@@ -148,12 +150,12 @@ func (enc *lzmaEncoder) bt4ProbeHash3(pos, maxLen, matchMin int) {
 		return
 	}
 	cpos := int(cur)
-	ml := 0
-	for ml < maxLen && cpos+ml < len(enc.src) && pos+ml < len(enc.src) && enc.src[cpos+ml] == enc.src[pos+ml] {
-		ml++
+	ml := zstdMatchLen(enc.src, pos, cpos)
+	if ml > maxLen {
+		ml = maxLen
 	}
 	if ml >= lzmaMinMatch {
-		enc.appendMatchFrontier(uint32(pos-cpos-1), ml)
+		enc.recordMatchFrontier(uint32(pos-cpos-1), ml)
 	}
 }
 
@@ -173,6 +175,16 @@ func (enc *lzmaEncoder) appendMatchFrontier(dist uint32, length int) {
 		}
 	}
 	enc.matches = append(enc.matches, lzmaMatch{dist: dist, length: length})
+}
+
+// recordMatchFrontier adds several priced lengths for one distance.
+func (enc *lzmaEncoder) recordMatchFrontier(dist uint32, length int) {
+	if length < lzmaMinMatch {
+		return
+	}
+	for _, l := range candidateLengths(length) {
+		enc.appendMatchFrontier(dist, l)
+	}
 }
 
 // bt4FindMatches collects match candidates at pos. Pos must not be indexed
@@ -211,14 +223,14 @@ func (enc *lzmaEncoder) bt4FindMatches(pos int) []lzmaMatch {
 			continue
 		}
 
-		ml := 0
-		for ml < maxLen && cpos+ml < len(src) && pos+ml < len(src) && src[cpos+ml] == src[pos+ml] {
-			ml++
+		ml := zstdMatchLen(src, pos, cpos)
+		if ml > maxLen {
+			ml = maxLen
 		}
 		if ml > bestLen {
 			bestLen = ml
 			if ml >= lzmaMinMatch {
-				enc.appendMatchFrontier(uint32(delta-1), ml)
+				enc.recordMatchFrontier(uint32(delta-1), ml)
 			}
 			if ml >= maxLen || ml >= enc.niceLen {
 				break

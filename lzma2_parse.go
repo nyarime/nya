@@ -38,25 +38,10 @@ func (enc *lzmaEncoder) step() {
 		return
 	}
 
-	// One position of lookahead. Emitting a literal here can pay for itself
-	// if it unlocks a much better match at pos+1, so compare the two plans
-	// over the bytes each of them covers.
-	if best.length < enc.niceLen && pos+1 < enc.limit {
-		litPrice := enc.priceLiteral(pos)
-
-		savedState := enc.state
-		enc.state = lzmaNextState[savedState][0] // state after a literal
-		enc.advanceHash(pos + 1)                 // pos is now behind the search
-		next := enc.bestMoveAt(pos + 1)
-		enc.state = savedState
-
-		if next.kind != moveLiteral {
-			// Cheaper per byte: (lit + next) over 1+next.length bytes
-			// versus best over best.length bytes. Cross-multiplied to keep
-			// it in integers.
-			lhs := (uint64(litPrice) + uint64(next.price)) * uint64(best.length)
-			rhs := uint64(best.price) * uint64(1+next.length)
-			if lhs < rhs {
+	// Lazy match: skip up to two literals when a better match follows soon.
+	if best.length < enc.niceLen {
+		for skip := 1; skip <= 2 && pos+skip < enc.limit; skip++ {
+			if enc.shouldLazyLiteral(pos, best, skip) {
 				enc.encodeLiteral(enc.src[pos])
 				return
 			}
@@ -127,6 +112,33 @@ func (enc *lzmaEncoder) bestMoveAt(pos int) lzmaMove {
 	return best
 }
 
+// shouldLazyLiteral reports whether emitting one literal at pos beats taking
+// best now, assuming skip literals then a match at pos+skip.
+func (enc *lzmaEncoder) shouldLazyLiteral(pos int, best lzmaMove, skip int) bool {
+	if best.length >= enc.niceLen || pos+skip >= enc.limit {
+		return false
+	}
+	savedState := enc.state
+	var litPrice uint32
+	state := enc.state
+	for i := 0; i < skip; i++ {
+		litPrice += enc.priceLiteral(pos + i)
+		state = lzmaNextState[state][0]
+	}
+	enc.state = state
+	for i := 1; i <= skip; i++ {
+		enc.advanceHash(pos + i)
+	}
+	next := enc.bestMoveAt(pos + skip)
+	enc.state = savedState
+	if next.kind == moveLiteral {
+		return false
+	}
+	lhs := (uint64(litPrice) + uint64(next.price)) * uint64(best.length)
+	rhs := uint64(best.price) * uint64(skip+next.length)
+	return lhs < rhs
+}
+
 // candidateLengths returns the lengths worth pricing for a match that can run
 // up to maxLen bytes: the full length, plus a couple of shorter cut-offs that
 // occasionally encode better.
@@ -134,10 +146,26 @@ func candidateLengths(maxLen int) []int {
 	if maxLen <= lzmaMinMatch {
 		return []int{maxLen}
 	}
-	if maxLen <= 4 {
-		return []int{lzmaMinMatch, maxLen}
+	out := []int{lzmaMinMatch}
+	add := func(l int) {
+		if l < lzmaMinMatch {
+			l = lzmaMinMatch
+		}
+		if l > maxLen {
+			l = maxLen
+		}
+		for _, x := range out {
+			if x == l {
+				return
+			}
+		}
+		out = append(out, l)
 	}
-	return []int{lzmaMinMatch, maxLen / 2, maxLen}
+	add(maxLen / 2)
+	add((maxLen * 3) / 4)
+	add(maxLen - 1)
+	add(maxLen)
+	return out
 }
 
 // repMatchesAt reports whether the n bytes at pos repeat the ones at the

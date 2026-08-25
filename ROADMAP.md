@@ -109,11 +109,20 @@ Multi-chunk is **on by default** for non-solid files > 4 MiB
 
 **Status:** external + **embedded** (tail `0x0006`) landed; auto-train from solid groups still TODO.
 
-### 6. Keep grinding NYA-LZMA2 (not “done”)
+### 6. **Priority:** push NYA-LZMA2 to house-codec maturity (like NYA-Zstd)
 
-BT4 + optional optimal parse exist, but the encoder is **not thoroughly
-finished** vs xz/7-Zip. Tracked in [SPEC-CODECS.md](SPEC-CODECS.md). This is
-ongoing craft, not a one-sprint checkbox.
+BT4 + greedy parse exist; optimal parse stays opt-in. **Current sprint** (branch
+`cursor/lzma2-push-d053`):
+
+| Done / in flight | Next |
+| --- | --- |
+| SIMD match extend via shared `zstdMatchLen` in BT4 + rep match | Solid+dedup archive profile |
+| 2-step lazy literal lookahead | Content-class parser policy |
+| Richer match frontier + candidate lengths | Silesia/enwik9 CSV refresh |
+| Optimum window 1024 at depth≥128 | Close solid-tree gap vs xz/zstd on corpus |
+
+Do **not** claim “LZMA2 is done” until benches and `nyalzma2` split gates in
+ROADMAP pass. Tracked in [SPEC-CODECS.md](SPEC-CODECS.md).
 
 ---
 
@@ -167,6 +176,14 @@ before vendoring). Expectation management:
    a niche enhancer for firmware/game *binaries inside* a pack, not the wedge.
 
 Detail: [docs/NOTE-UPX.md](docs/NOTE-UPX.md).
+
+---
+
+## Standalone codec libraries (像 GoFEC 一样拆出来)
+
+FEC 已通过 [GoFEC](https://github.com/nyarime/GoFEC) 独立成库。编解码器同样应可
+`go get` 单独用 — 见 GoFEC README「Nyarime 库生态」。**LZMA2 达标后再拆
+`nyalzma2`**；`nyazstd` 中期拆库。
 
 ---
 
