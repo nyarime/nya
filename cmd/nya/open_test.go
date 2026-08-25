@@ -17,7 +17,7 @@ func TestDefaultOpenDest(t *testing.T) {
 	}
 }
 
-func TestUniqueOpenDest(t *testing.T) {
+func TestUniqueOpenDestFinderStyle(t *testing.T) {
 	dir := t.TempDir()
 	base := filepath.Join(dir, "game")
 	if uniqueOpenDest(base) != base {
@@ -27,7 +27,7 @@ func TestUniqueOpenDest(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := uniqueOpenDest(base)
-	want := filepath.Join(dir, "game(2)")
+	want := filepath.Join(dir, "game 2")
 	if got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
@@ -35,7 +35,7 @@ func TestUniqueOpenDest(t *testing.T) {
 		t.Fatal(err)
 	}
 	got = uniqueOpenDest(base)
-	want = filepath.Join(dir, "game(3)")
+	want = filepath.Join(dir, "game 3")
 	if got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
@@ -73,9 +73,8 @@ func TestOpenExtractBeside(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 
-	// Second open → game(2)
 	dest2 := uniqueOpenDest(defaultOpenDest(archive))
-	want2 := filepath.Join(dir, "game(2)")
+	want2 := filepath.Join(dir, "game 2")
 	if dest2 != want2 {
 		t.Fatalf("second dest %q want %q", dest2, want2)
 	}

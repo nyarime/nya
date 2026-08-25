@@ -28,17 +28,24 @@ nya associate -uninstall
 | Action | Result |
 | --- | --- |
 | Double-click `D:\Downloads\game.nya` | Creates `D:\Downloads\game\` and extracts into it |
-| Folder already exists | Creates `game(2)\`, then `game(3)\`, … (WinRAR-style; 7-Zip file auto-rename is `name_1.txt`) |
+| Folder already exists | Creates `game 2\`, then `game 3\`, … (**macOS Finder / Archive Utility** style) |
+| Want to replace into existing folder | `nya open -overwrite game.nya` |
 | Console window | Closes when extract finishes (use `nya open -pause` to wait for Enter) |
-| Scripts | `nya extract …` or `nya open …` |
 
 Override output directory:
 
 ```bat
 nya open -o D:\out\mygame game.nya
+nya open -overwrite -o D:\out\mygame game.nya
 ```
 
-If `-o` / default dest already exists, `nya open` still picks `name(2)` etc. so a second double-click does not merge into the first folder.
+### vs 7-Zip / Finder
+
+| Tool | Conflict default |
+| --- | --- |
+| macOS Finder | New folder `name 2` (does not merge) |
+| 7-Zip `-aou` | Rename **files** to `name_1.txt` |
+| `nya open` | Finder-style folder rename; `-overwrite` merges into existing dest |
 
 ## Manual `.reg` (optional)
 
