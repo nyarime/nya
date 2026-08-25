@@ -84,25 +84,42 @@ const (
 // detectContentKind reads the first bytes of path and returns a coarse label
 // used to refine ordering within the same extension group.
 func detectContentKind(path string) string {
+	switch ClassifyFile(path) {
+	case PayloadTextLike:
+		if looksLikeJSONFile(path) {
+			return contentKindJSON
+		}
+		return contentKindText
+	case PayloadDense:
+		return denseKindLabel(path)
+	case PayloadBinary:
+		return binaryKindLabel(path)
+	default:
+		return contentKindUnknown
+	}
+}
+
+func looksLikeJSONFile(path string) bool {
 	f, err := os.Open(path)
 	if err != nil {
-		return contentKindUnknown
+		return false
 	}
 	defer f.Close()
 	var head [32]byte
 	n, _ := f.Read(head[:])
-	if n == 0 {
-		return contentKindUnknown
-	}
-	h := head[:n]
+	return looksLikeJSON(head[:n])
+}
 
-	if len(h) >= 4 && h[0] == 0x7f && h[1] == 'E' && h[2] == 'L' && h[3] == 'F' {
-		return contentKindELF
+func denseKindLabel(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return contentKindBinary
 	}
-	if len(h) >= 2 && h[0] == 'M' && h[1] == 'Z' {
-		return contentKindPE
-	}
-	if len(h) >= 8 && h[0] == 0x89 && h[1] == 'P' && h[2] == 'N' && h[3] == 'G' {
+	defer f.Close()
+	var head [32]byte
+	n, _ := f.Read(head[:])
+	h := head[:n]
+	if len(h) >= 8 && h[0] == 0x89 && h[1] == 'P' {
 		return contentKindPNG
 	}
 	if len(h) >= 2 && h[0] == 0x50 && h[1] == 0x4b {
@@ -111,19 +128,28 @@ func detectContentKind(path string) string {
 	if len(h) >= 2 && h[0] == 0x1f && h[1] == 0x8b {
 		return contentKindGzip
 	}
-	if len(h) >= 4 && h[0] == 0x00 && h[1] == 'a' && h[2] == 's' && h[3] == 'm' {
-		return contentKindWasm
-	}
-	if looksLikeJSON(h) {
-		return contentKindJSON
-	}
-	if looksLikeText(h) {
-		return contentKindText
-	}
-	if bytes.IndexByte(h, 0) >= 0 {
+	return contentKindBinary
+}
+
+func binaryKindLabel(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
 		return contentKindBinary
 	}
-	return contentKindUnknown
+	defer f.Close()
+	var head [8]byte
+	n, _ := f.Read(head[:])
+	h := head[:n]
+	if len(h) >= 4 && h[0] == 0x7f && h[1] == 'E' {
+		return contentKindELF
+	}
+	if len(h) >= 2 && h[0] == 'M' && h[1] == 'Z' {
+		return contentKindPE
+	}
+	if len(h) >= 4 && h[0] == 0x00 && h[1] == 'a' {
+		return contentKindWasm
+	}
+	return contentKindBinary
 }
 
 func looksLikeJSON(h []byte) bool {

@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -64,5 +65,24 @@ func TestParseBlockSize(t *testing.T) {
 	n, err := ParseBlockSize("4m")
 	if err != nil || n != 4*1024*1024 {
 		t.Fatalf("4m = %d err=%v", n, err)
+	}
+}
+
+func TestResolveManifestSourcesRelative(t *testing.T) {
+	m := &Manifest{
+		Format:  ManifestFormat,
+		Version: ManifestVersion,
+		Archive: ArchiveMeta{Name: "pack.nya", Size: 1, Blake3: strings.Repeat("a", 64)},
+		Download: DownloadIndex{BlockSize: 1, Blocks: []DownloadBlock{
+			{ID: 0, Offset: 0, Size: 1, Blake3: strings.Repeat("b", 64)},
+		}},
+		Sources: []ManifestSource{{URL: "pack.nya", Priority: 10}},
+	}
+	if err := ResolveManifestSources(m, "https://ex.trycloudflare.com/index.nyam"); err != nil {
+		t.Fatal(err)
+	}
+	want := "https://ex.trycloudflare.com/pack.nya"
+	if m.Sources[0].URL != want {
+		t.Fatalf("got %q want %q", m.Sources[0].URL, want)
 	}
 }

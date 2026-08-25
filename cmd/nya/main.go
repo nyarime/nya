@@ -31,8 +31,8 @@ Usage:
   nya manifest del  <archive.nya>            remove embedded download index
   nya manifest export [flags] <archive.nya>  write .nyam sidecar only
   nya sfx     [flags] <archive.nya> -o <out.exe> wrap archive as self-extractor
-  nya get     [flags] --url <URL>            download via embedded index / .nyam (Range)
-  nya send    [flags] <archive.nya>          serve locally + Cloudflare Quick Tunnel (trycloudflare)
+  nya get     [flags] --url <URL>            download (nyam restore / plain file) + progress
+  nya send    [flags] <file|dir|archive.nya> share: browser link + index.nyam
   nya gui     [archive.nya]                  open nyaFM GUI
   nya associate [-uninstall]                 Windows: register .nya double-click → nya open
 
