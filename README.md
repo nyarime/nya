@@ -319,23 +319,24 @@ closed-source product without GPL obligations, contact
 - [docs/BENCHMARK-MULTICHUNK.md](docs/BENCHMARK-MULTICHUNK.md) — **multi-chunk parallel** (compress workers, FEC repair)
 - [docs/BENCHMARK-COMPRESS.md](docs/BENCHMARK-COMPRESS.md) — compression A/B measurements
 - [SPEC-CODECS.md](SPEC-CODECS.md) — **NYA-Zstd & NYA-LZMA2** roles and roadmap
-- [SPEC-SFX.md](SPEC-SFX.md) — **self-extracting** stub + footer (Rust)
+- [SPEC-SFX.md](SPEC-SFX.md) — **self-extracting** stub + footer (Go reference stub)
 - [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) — `.nyam` manifest and `nya-get` transport blocks
 - [fm/README.md](fm/README.md) — **nyaFM** Rust GUI (open / list / extract)
 
 ### Self-extracting archives (7-Zip-style)
 
 ```bash
-cargo build -p nya-sfx-stub --release   # once; stub in target/release/
-cp target/release/nya-sfx-stub sfx/stubs/nya-sfx-stub_linux_amd64
+go build -o sfx/stubs/nya-sfx-stub_$(go env GOOS)_$(go env GOARCH) ./cmd/nya-sfx-stub
 
-nya create -sfx game.bin -level 3 ./GameData/
-nya sfx pack.nya -o pack.bin
-./pack.bin                        # extracts to current directory
+nya create -sfx game.exe -level 3 ./GameData/
+nya sfx pack.nya -o pack.exe
+./pack.exe                        # extracts beside the executable
 ```
 
-The stub is **Rust** (small); the main `nya` tool only concatenates stub + archive + footer.
-The same `nya_archive` library powers **nyaFM**:
+Double-click / bare run unpacks into the folder that contains the SFX file
+(like macOS Archive Utility). Use `-o DIR` to override. The reference stub is
+**Go** (`cmd/nya-sfx-stub`) so NYA-Zstd / solid / multi-chunk all work; `nya`
+only concatenates stub + archive + footer.
 
 ```bash
 cargo build -p nya-fm --release
