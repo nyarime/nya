@@ -326,7 +326,7 @@ func packSendSource(src, out string, level int, embed bool) (archive string, cle
 	}
 
 	fmt.Fprintf(os.Stderr, "nya send: packing %s\n", dest)
-	textLike, dense, other, scanErr := nya.ScanPayloadKinds(src)
+	textLike, dense, _, scanErr := nya.ScanPayloadKinds(src)
 	if scanErr != nil {
 		cleanup()
 		return "", func() {}, scanErr
