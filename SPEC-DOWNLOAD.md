@@ -195,7 +195,9 @@ Binary layout and tail chain placement: [SPEC-EXTENSIONS.md](SPEC-EXTENSIONS.md)
 § Download index tail. Global header flag bit 4 (`HasDownloadIndex`) SHOULD be
 set when the tail is present.
 
-**Phase 2 (implemented):** `nya manifest --embed` / `--embed-only` appends:
+**Phase 2 (implemented):** `nya create` / `nya convert` **embed the download
+index by default** (opt out with `-no-embed`). Existing archives can still use
+`nya manifest --embed` / `--embed-only`. Embedding appends:
 
 1. Tail record `typeId = 0x0001` (same fields as this document’s `download` object).
 2. A fixed **40-byte EOF footer** (`NYADIDX1`) with `TailChainOffset` /

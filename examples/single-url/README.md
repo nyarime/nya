@@ -6,9 +6,9 @@ the embedded index — no sidecar `.nyam` required.
 ## Sender
 
 ```bash
-nya create -level 9 -solid -fec 15 pack.nya ./GameData/
-nya manifest --embed-only -block-size 1m pack.nya
+nya create -level 9 -solid -fec 15 pack.nya ./GameData/   # embeds download index by default
 # upload pack.nya to CDN / Cloudflare Tunnel / object storage
+# opt out: nya create -no-embed …
 ```
 
 ## Receiver

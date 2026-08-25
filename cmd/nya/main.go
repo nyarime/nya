@@ -17,6 +17,7 @@ const usage = `nya — Nyarime Archive
 
 Usage:
   nya create  [flags] <archive.nya> <path>   create an archive from a file or directory
+                                             (embeds download index by default; -no-embed to skip)
   nya list    <archive.nya>                  list archive contents
   nya extract [flags] <archive.nya> [dir]    extract an archive (default: current directory)
   nya open    [flags] <archive.nya>          extract beside archive into .<basename>/ (shell / double-click)
@@ -25,8 +26,9 @@ Usage:
   nya repair  <archive> [out]                 repair NYA / ZIP / RAR (format detected by magic)
   nya augment <archive.nya> [out.nya]        increase FEC repair data (Leopard-RS / Hybrid / RaptorQ)
   nya convert [flags] <in.zip|7z|rar> <out.nya>  unpack legacy archive and repack as NYA (zip/7z/rar)
+                                             (embeds download index by default; -no-embed to skip)
   nya manifest <archive.nya> -o <manifest.nyam>  build download manifest for nya-get
-  nya manifest --embed [--embed-only] <archive.nya>  embed download index (single-URL fetch)
+  nya manifest --embed [--embed-only] <archive.nya>  (re)embed download index into an existing .nya
   nya sfx     [flags] <archive.nya> -o <out.exe> wrap archive as self-extractor (Rust stub)
   nya associate [-uninstall]                 Windows: register .nya double-click → nya open
 
@@ -100,6 +102,8 @@ func cmdCreate(args []string) error {
 	workers := fs.Int("workers", 0, "number of compression workers (0 = automatic)")
 	multiChunk := fs.Bool("multi-chunk", true, "split non-solid files > 4 MiB into multiple chunks (format 1.3)")
 	chunkSize := fs.Int("chunk-size", 0, "raw chunk size for multi-chunk entries (0 = automatic)")
+	noEmbed := fs.Bool("no-embed", false, "do not embed download index (default: embed for single-URL nya-get)")
+	embedBlock := fs.String("embed-block-size", "4m", "transport block size when embedding download index")
 	fs.Parse(args)
 
 	if *level < 0 || *level > 9 {
@@ -165,6 +169,12 @@ func cmdCreate(args []string) error {
 	}
 	f.Close()
 
+	if !*noEmbed {
+		if err := embedDownloadIndexCLI(archivePath, *embedBlock); err != nil {
+			return err
+		}
+	}
+
 	if *sfx {
 		stubPath := *sfxStub
 		if stubPath == "" {
@@ -188,6 +198,9 @@ func cmdCreate(args []string) error {
 	fmt.Printf("%s  %s  [%s]", archive, nya.HumanSize(int(fi.Size())), nya.LevelName(*level))
 	if orig > 0 {
 		fmt.Printf("  (%.1f%% of %s)", 100*float64(fi.Size())/float64(orig), nya.HumanSize(int(orig)))
+	}
+	if !*noEmbed && !*sfx {
+		fmt.Printf("  +download-index")
 	}
 	fmt.Printf("  in %s\n", time.Since(start).Round(time.Millisecond))
 	return nil
@@ -366,6 +379,8 @@ func cmdConvert(args []string) error {
 	password := fs.String("password", "", "encrypt the output .nya with this password")
 	sourcePassword := fs.String("source-password", "", "password for encrypted zip/7z/rar input")
 	workers := fs.Int("workers", 0, "number of compression workers (0 = automatic)")
+	noEmbed := fs.Bool("no-embed", false, "do not embed download index (default: embed for single-URL nya-get)")
+	embedBlock := fs.String("embed-block-size", "4m", "transport block size when embedding download index")
 	fs.Parse(args)
 
 	if fs.NArg() != 2 {
@@ -411,12 +426,32 @@ func cmdConvert(args []string) error {
 	if err != nil {
 		return err
 	}
+	if !*noEmbed {
+		if err := embedDownloadIndexCLI(dst, *embedBlock); err != nil {
+			return err
+		}
+		if fi, err := os.Stat(dst); err == nil {
+			res.OutputSize = fi.Size()
+		}
+	}
 	fmt.Printf("%s → %s  %s  [%s]", filepath.Base(src), dst, nya.HumanSize(int(res.OutputSize)), nya.LevelName(*level))
 	if *fec > 0 {
 		fmt.Printf("  +%d%% FEC", *fec)
 	}
+	if !*noEmbed {
+		fmt.Printf("  +download-index")
+	}
 	fmt.Printf("  (%s)  in %s\n", res.SourceFormat, time.Since(start).Round(time.Millisecond))
 	return nil
+}
+
+func embedDownloadIndexCLI(archive, blockSize string) error {
+	bs, err := nya.ParseBlockSize(blockSize)
+	if err != nil {
+		return err
+	}
+	_, err = nya.EmbedDownloadIndex(archive, nya.EmbedOptions{BlockSize: bs, InPlace: true})
+	return err
 }
 
 func cmdManifest(args []string) error {
