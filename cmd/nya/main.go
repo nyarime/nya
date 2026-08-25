@@ -114,6 +114,7 @@ func cmdCreate(args []string) error {
 	chunkSize := fs.Int("chunk-size", 0, "raw chunk size for multi-chunk entries (0 = automatic)")
 	noEmbed := fs.Bool("no-embed", false, "do not embed download index (default: embed for single-URL nya-get)")
 	embedBlock := fs.String("embed-block-size", "4m", "transport block size when embedding download index")
+	dictPath := fs.String("dict", "", "external zstd dictionary file (CompressionID 5; same file required at extract)")
 	fs.Parse(args)
 
 	if *level < 0 || *level > 9 {
@@ -156,6 +157,16 @@ func cmdCreate(args []string) error {
 	w.SetMultiChunk(*multiChunk)
 	if *chunkSize > 0 {
 		w.SetChunkSize(*chunkSize)
+	}
+	if *dictPath != "" {
+		dict, err := os.ReadFile(*dictPath)
+		if err != nil {
+			return fmt.Errorf("read -dict: %w", err)
+		}
+		if len(dict) == 0 {
+			return fmt.Errorf("-dict file is empty")
+		}
+		w.SetDict(dict)
 	}
 	if *fec > 0 {
 		switch *fecType {
@@ -250,6 +261,7 @@ func cmdExtract(args []string) error {
 	fs := flag.NewFlagSet("extract", flag.ExitOnError)
 	password := fs.String("password", "", "archive password")
 	workers := fs.Int("workers", 0, "parallel chunk decompression workers (0 = automatic)")
+	dictPath := fs.String("dict", "", "external zstd dictionary (required for CompressionID 5 archives)")
 	fs.Parse(args)
 	if fs.NArg() < 1 || fs.NArg() > 2 {
 		return fmt.Errorf("extract needs an archive path and an optional destination")
@@ -262,6 +274,13 @@ func cmdExtract(args []string) error {
 	r, err := openOrPasswordHint(fs.Arg(0), *password)
 	if err != nil {
 		return err
+	}
+	if *dictPath != "" {
+		dict, err := os.ReadFile(*dictPath)
+		if err != nil {
+			return fmt.Errorf("read -dict: %w", err)
+		}
+		r.SetDict(dict)
 	}
 	if *workers > 0 {
 		r.SetWorkers(*workers)

@@ -53,7 +53,7 @@ const (
 	CompressS2       uint16 = 2
 	CompressBrotli   uint16 = 3
 	CompressLZ4      uint16 = 4
-	CompressZstdDict uint16 = 5 // v2
+	CompressZstdDict uint16 = 5 // external zstd dictionary (Writer/Reader.SetDict / -dict)
 	CompressLzma2    uint16 = 6 // --best mode
 )
 

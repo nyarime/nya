@@ -160,7 +160,7 @@ func (r *Reader) decompressChunkAt(e *DirEntry, off uint64) ([]byte, error) {
 			block, err = decompressLzma2Block(blockData)
 		default:
 			var dec io.ReadCloser
-			dec, err = r.zstdReaderFor(blockData)
+			dec, err = r.zstdReaderFor(blockData, e.CompressionID)
 			if err == nil {
 				block, err = io.ReadAll(dec)
 				dec.Close()

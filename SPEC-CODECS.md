@@ -77,11 +77,13 @@ match finder, predefined FSE tables for sequences, limited custom entropy modes.
 Improvements ship in **software versions**, not format bumps:
 
 1. Stronger match finder (lazy matching, wider window at high levels)
-2. Dictionary mode wired to solid groups and CompressionID 5
+2. **Dictionary mode** — CompressionID 5 + `Writer`/`Reader`/`-dict` wired
+   (external dict; **embed-in-archive** still TODO)
 3. SIMD literal/copy paths (already partially present in decompress)
 4. Custom FSE tables re-enabled once cross-decoder conformance tests pass
 5. **Default level migration:** move `LevelDefault` from LZMA2 (5) to NYA-Zstd
-   (e.g. level 3–5) — product change, not a format change
+   (e.g. level 3–4) after Silesia/enwik9 decode benches — product change, not a
+   format change
 
 **NYA-Zstd is the long-term default face of NYA.** LZMA2 remains the optional
 deep compression lane.
@@ -106,31 +108,37 @@ cross-checking against `xz -9`; NYA archives store **raw LZMA2** only.
 
 ### Reference encoder strategy (current)
 
-NYA-LZMA2 is a **from-scratch** encoder:
+NYA-LZMA2 is a **from-scratch** encoder that is **usable but not finished**:
 
 - Range coder + LZMA state machine
-- Hash-chain match finder with price-based parsing (not length-greedy)
-- One-step lookahead (not full optimal parse)
+- **BT4** match finder (hash 2/3/4 + binary tree) — landed; replaces the old
+  hash-chain walker
+- **Price-based greedy** parse with one-step literal lookahead (default)
+- **Optional DP optimal parse** (`Lzma2Options.OptimalParse`) — helps some
+  repetitive single streams; often loses on mixed solid trees (see benches)
 - Parallel **segments** with dictionary continuity across LZMA2 chunks inside
-  a segment
+  a segment (segment boundaries still reset the dict)
 
 Decompression uses the in-tree pure Go decoder (`xz_decompress.go` / LZMA2
 layer).
+
+Honest gap vs `xz` / 7-Zip: match extension / SIMD, optimal-window policy at
+high depth, solid+dedup archive profile, and general encoder maturity — tracked
+in [ROADMAP.md](ROADMAP.md). Do not claim “LZMA2 is done” because BT4 landed.
 
 ### Roadmap (same LZMA2 bitstream)
 
 Improvements do **not** change the payload format:
 
-1. **BT4 match finder** (largest single-file ratio gain vs hash chain)
-2. **Full optimal parser** (DP over lookahead window)
-3. SIMD match extension (allows deeper search at same CPU cost)
-4. Solid-group integration ([SPEC-EXTENSIONS.md](SPEC-EXTENSIONS.md)) —
-   grouping by extension/similarity before compressing
-5. Content dedup before compression (identical files → one chunk)
+1. ~~BT4 match finder~~ **done** (keep tuning)
+2. ~~Full optimal parser~~ **landed opt-in** — improve window policy at depth≥128;
+   do not enable by default until benches win
+3. SIMD match extension (deeper search at same CPU cost)
+4. Solid-group + content-dedup archive profile ([SPEC-EXTENSIONS.md](SPEC-EXTENSIONS.md))
+5. Continue closing gap to `xz -9` / `7z -mx9` on level 9 **without** a new
+   CompressionID
 
-Goal: narrow the gap to `xz -9` / `7z -mx9` on level 9 **without** inventing
-"NYA-LZMA3". Beating 7-Zip solid+dedup is an **archive-profile** problem as
-much as a codec problem.
+Goal: treat NYA-LZMA2 as a long-running craft project, not a checkbox.
 
 ## Level table (normative defaults)
 
