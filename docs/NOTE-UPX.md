@@ -39,7 +39,7 @@ whole file. It does **not** do (1) deeply or (4) as part of compression
 
 | Idea | Fit for NYA | Notes |
 | --- | --- | --- |
-| Section-aware filter on `.text` only | High | Improves *typical* code inside game/firmware packs |
+| Section-aware filter on `.text` only | High | ELF, **PE (.exe)**, **Mach-O** — see [SPEC-FILTER-EXEC.md](SPEC-FILTER-EXEC.md) |
 | Skip / store dense segments | High | Aligns with `PayloadDense`; avoids >100% bloat |
 | Stronger matchers on code windows | Medium | Same CompressionID; software-only |
 | Ship a UPX-like pack+stub for single ELF | Low / separate product | Conflicts with “bit-identical extract”; AV/policy issues |

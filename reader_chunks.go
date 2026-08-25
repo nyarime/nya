@@ -114,7 +114,7 @@ func (r *Reader) finishFilePayload(e *DirEntry, raw []byte) ([]byte, error) {
 	}
 	if e.BCJFilter != BCJNone {
 		if arch := BCJIDToArch(e.BCJFilter); arch != "" {
-			ApplyBCJFilterArch(raw, arch, false)
+			ApplyBCJFilterArchSmart(raw, arch, false)
 		}
 	}
 	return raw, nil
