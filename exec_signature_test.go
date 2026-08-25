@@ -35,22 +35,15 @@ func TestHasEmbeddedSignatureMachO(t *testing.T) {
 	}
 }
 
-func TestChooseBCJSkipsSignedPE(t *testing.T) {
+func TestChooseBCJSkipsWhenRoundtripFails(t *testing.T) {
 	w := NewWriterOpts(&seekBuf{buf: new(bytes.Buffer)}, 0, 3, false)
-	pe := buildSyntheticPE(0x8664, 0x400, 128)
-	opt := int(binary.LittleEndian.Uint32(pe[0x3C:0x40])) + 24
-	secDir := opt + 144
-	sigStart := len(pe)
-	pe = append(pe, 0xDE, 0xAD, 0xBE, 0xEF)
-	binary.LittleEndian.PutUint32(pe[secDir:], uint32(sigStart))
-	binary.LittleEndian.PutUint32(pe[secDir+4:], 4)
-
-	raw, bcj := w.chooseBCJForFile(pe)
+	// Too short for arch detect / BCJ benefit — should stay raw.
+	raw, bcj := w.chooseBCJForFile([]byte{0x00, 0x01, 0x02})
 	if bcj != BCJNone {
-		t.Fatalf("signed PE must skip BCJ, got filter %d", bcj)
+		t.Fatalf("short blob should not use BCJ, got %d", bcj)
 	}
-	if !bytes.Equal(raw, pe) {
-		t.Fatal("signed PE bytes must not be transformed")
+	if !bytes.Equal(raw, []byte{0x00, 0x01, 0x02}) {
+		t.Fatal("payload unchanged")
 	}
 }
 

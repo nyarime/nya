@@ -13,24 +13,22 @@ on-disk executable.
 | Layer | Behavior |
 | --- | --- |
 | **Codecs** | Zstd / LZMA2 / store are lossless; no semantic re-encoding |
-| **BCJ filter** | **Skipped** when an embedded signature is detected |
+| **BCJ filter** | Applied only when encode→decode is **byte-identical** and payload shrinks |
 | **FEC / augment** | Parity shards only; does not alter payload bytes on extract |
 | **Extract** | Writes `OriginalSize` bytes; optional xattrs/mode do not change file body |
 
 ## Embedded signature detection (`HasEmbeddedSignature`)
 
-Before any BCJ transform:
+Before any BCJ transform, `bcjRoundtripOK` encodes then decodes in memory and
+compares to the source. **Signed PE/Mach-O use BCJ only when this passes** —
+signatures survive because extract still matches the original file bytes.
 
-| Format | Detection |
-| --- | --- |
-| **PE** (`.exe`, signed `.dll`) | `IMAGE_DIRECTORY_ENTRY_SECURITY` non-empty |
-| **Mach-O** (macOS app/binary) | `LC_CODE_SIGNATURE` with `datasize > 0` |
+| Format | Signature detection | BCJ policy |
+| --- | --- | --- |
+| **PE** (`.exe`, `.dll`) | `IMAGE_DIRECTORY_ENTRY_SECURITY` | Roundtrip verify, then optional BCJ |
+| **Mach-O** | `LC_CODE_SIGNATURE` | Same |
 
-Unsigned executables may still use section-aware BCJ when it shrinks the
-blocked payload (see [SPEC-FILTER-EXEC.md](SPEC-FILTER-EXEC.md)).
-
-**Solid archives:** if any member has an embedded signature, BCJ is disabled for
-the entire solid stream so signed files inside the group are never transformed.
+`HasEmbeddedSignature` is used for classification/docs; it does **not** hard-block BCJ.
 
 ## Formats without BCJ (whole-file lossless)
 

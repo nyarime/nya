@@ -52,7 +52,6 @@ type Writer struct {
 	solidBuf     bytes.Buffer
 	solidEntries []solidFileEntry
 	solidBCJArch string // detected BCJ arch for solid stream
-	solidSigned  bool   // any member has embedded signature → no BCJ on solid stream
 }
 
 // NewWriter creates a writer at the given compression level. See the Level
@@ -98,10 +97,6 @@ const (
 	// CompressionStore writes the payload uncompressed.
 	CompressionStore = "store"
 )
-
-// lzma2DictSize is the dictionary the writer asks LZMA2 for. It matches the
-// size the reader uses, so the two must be changed together.
-const lzma2DictSize = 4 * 1024 * 1024
 
 func (nw *Writer) SetDict(dict []byte) { nw.dict = dict }
 func (nw *Writer) SetWorkers(n int)    { nw.workers = n }
@@ -490,29 +485,9 @@ func (nw *Writer) buildChunkPayloadsParallel(raw []byte, sizes []int, out []chun
 // compressed payload; this avoids false-positive pattern detection corrupting
 // non-code data.
 func (nw *Writer) chooseBCJForFile(raw []byte) ([]byte, uint8) {
-	if HasEmbeddedSignature(raw) {
-		return raw, BCJNone
-	}
 	bcjArch := DetectBCJArch(raw)
-	if bcjArch == "" {
-		return raw, BCJNone
-	}
-	filtered := make([]byte, len(raw))
-	copy(filtered, raw)
-	ApplyBCJFilterArchSmart(filtered, bcjArch, true)
-
-	origLen, err := nw.blockedCompressedLen(raw)
-	if err != nil {
-		return raw, BCJNone
-	}
-	bcjLen, err := nw.blockedCompressedLen(filtered)
-	if err != nil {
-		return raw, BCJNone
-	}
-	if bcjLen < origLen {
-		return filtered, BCJArchToID(bcjArch)
-	}
-	return raw, BCJNone
+	filtered, id, _ := nw.tryBCJForArchive(raw, bcjArch, false)
+	return filtered, id
 }
 
 func (nw *Writer) blockedCompressedLen(raw []byte) (int, error) {
@@ -550,13 +525,9 @@ func (nw *Writer) addFileSolid(relPath string, raw []byte, info os.FileInfo) err
 	// Record offset within solid stream
 	solidOff := uint64(nw.solidBuf.Len())
 
-	if HasEmbeddedSignature(raw) {
-		nw.solidSigned = true
-	}
-
-	// Detect BCJ arch — skip when any signed executable is in the solid group
+	// Detect BCJ arch for solid stream (signed members may still use BCJ after roundtrip verify).
 	arch := DetectBCJArch(raw)
-	if arch != "" && nw.solidBCJArch == "" && !nw.solidSigned {
+	if arch != "" && nw.solidBCJArch == "" {
 		nw.solidBCJArch = arch
 	}
 
@@ -600,22 +571,9 @@ func (nw *Writer) closeSolid() error {
 	bcjID := BCJArchToID(bcjArch)
 	useBCJ := false
 
-	if bcjArch != "" && !nw.solidSigned {
-		// Try with and without BCJ, pick smaller
-		filtered := make([]byte, len(solidData))
-		copy(filtered, solidData)
-		ApplyBCJFilterArch(filtered, bcjArch, true)
-
-		compOrig, err := nw.compressRaw(solidData)
-		if err != nil {
-			return fmt.Errorf("nya: compress solid stream: %w", err)
-		}
-		compBCJ, err := nw.compressRaw(filtered)
-		if err != nil {
-			return fmt.Errorf("nya: compress solid stream: %w", err)
-		}
-
-		if len(compBCJ) < len(compOrig) {
+	if bcjArch != "" {
+		filtered, _, ok := nw.tryBCJForArchive(solidData, bcjArch, true)
+		if ok {
 			solidData = filtered
 			useBCJ = true
 		}
