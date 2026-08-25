@@ -6,9 +6,10 @@ An SFX file is **not** a different archive format. It is a **native executable
 stub** with a complete `.nya` archive appended and a fixed **footer** at the
 very end of the file so the stub can locate the archive without scanning.
 
-Reference stubs: Rust crate in [`sfx/`](sfx/) (`nya-sfx-stub`). The main
-[`nya`](cmd/nya) tool only concatenates stub + archive + footer; extraction
-logic lives in the stub.
+Reference stub: Go [`cmd/nya-sfx-stub`](cmd/nya-sfx-stub) (same NYA-Zstd /
+NYA-LZMA2 as `nya`). An experimental Rust stub remains under [`sfx/`](sfx/)
+but does **not** decode full NYA house-codec payloads — use the Go stub for
+releases.
 
 ## Goals
 
@@ -69,18 +70,18 @@ MAY be extracted by `nya extract` when copied out manually.
 ## Building SFX files
 
 ```bash
-# Build reference stubs (once per platform)
-cd sfx && cargo build --release
+# Build reference Go stub (once per platform)
+go build -o sfx/stubs/nya-sfx-stub_$(go env GOOS)_$(go env GOARCH) ./cmd/nya-sfx-stub
 
 # From an existing archive
-nya sfx pack.nya -o pack.exe -stub sfx/target/release/nya-sfx-stub
+nya sfx pack.nya -o pack.exe
 
 # Create and wrap in one step
 nya create -sfx game.exe -level 3 ./GameData/
 ```
 
-When `-stub` is omitted, `nya` uses embedded stubs from `sfx/stubs/` if
-present (see `sfx/README.md`).
+Double-click / bare run extracts **beside the SFX executable** (directory
+containing the `.exe`). Override with `-o DIR`.
 
 ## Config block (future)
 
@@ -100,8 +101,8 @@ RunProgram="bin\\start.bat"
 
 | Stub | Codecs | Target size (stripped) |
 | --- | --- | --- |
-| `nya-sfx-stub` | store, zstd, lzma2 | ~500 KB–1.5 MB (platform-dependent) |
-| Future `nya-sfx-lite` | store, zstd only | smaller |
+| `cmd/nya-sfx-stub` (Go, **reference**) | store, NYA-Zstd, NYA-LZMA2, solid, multi-chunk | ~1.5–5 MB (UPX the CLI, **not** the stub) |
+| `sfx/` Rust (experimental) | store; incomplete house-codec interop | ~500 KB–1.5 MB |
 
 Archives using unsupported codecs MUST fail with a clear error from the stub.
 
