@@ -7,7 +7,7 @@
 #   irm https://raw.githubusercontent.com/nyarime/nya/main/scripts/uninstall.ps1 | iex
 #   # or: install.ps1 -Uninstall
 #
-# Options: -Version 0.1.0  -Prefix DIR  -NoAssociate  -NoPath  -Uninstall
+# Options: -Version 0.1.5  -Prefix DIR  -NoAssociate  -NoPath  -Uninstall
 
 [CmdletBinding()]
 param(
