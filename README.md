@@ -100,22 +100,24 @@ See [examples/windows-open](examples/windows-open/README.md).
 ### Send + get (TryCloudflare)
 
 ```bash
-# File — browser 直链 + nyam（压缩传输后还原同名文件）
-nya send 小说.txt
-# → Browser:  https://….trycloudflare.com/小说.txt
+# File — browser direct link + nyam (compressed transfer → same filename)
+nya send novel.txt
+# → Browser:  https://….trycloudflare.com/novel.txt
 # → nya get:  nya get --url https://….trycloudflare.com/index.nyam
 
-# Folder — browser 下 .nya 压缩档 + nyam（还原为原目录树）
+# Folder — browser downloads .nya archive + nyam (restore original tree)
 nya send ./GameData
 # → Browser:  https://….trycloudflare.com/….nya
 # → nya get:  nya get --url https://….trycloudflare.com/index.nyam
 
 nya get --url https://xxxx.trycloudflare.com/index.nyam
-# → 进来什么样，出去什么样；传输中汇报进度
+# → in = out; progress while transferring
 ```
 
+CLI UI defaults to **English**. Set `NYA_LANG=zh` (or `LANG=zh_CN`) for Chinese prompts.
+
 Content is classified by **magic bytes** (not extension): text/code/logs compress;
-zip/jpeg/… stay dense. `nya get` also downloads plain HTTP files (professional downloader).
+zip/jpeg/… stay dense. `nya get` also downloads plain HTTP files.
 
 Options: `-no-tunnel` (LAN only), `-no-fetch-cloudflared` (require a system `cloudflared`).
 Quick Tunnels are ephemeral (Cloudflare ToS).
