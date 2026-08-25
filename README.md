@@ -247,9 +247,11 @@ See **[COMPATIBILITY.md](COMPATIBILITY.md)** for the long-term policy (one
 
 ## Known limitations
 
-- **Single chunk per entry** (`ChunkCount = 1`): large non-solid files are
-  compressed as one stream internally split into 512 KiB blocks, but FEC and
-  random access are still entry-granular. Multi-chunk design: [docs/SPEC-MULTICHUNK.md](docs/SPEC-MULTICHUNK.md).
+- **Multi-chunk entries** (v1.3, `VersionMinor = 3`): non-solid files larger
+  than 4 MiB are split into independent chunks (default 4 MiB raw, 8 MiB above
+  64 MiB). Solid archives remain one chunk per entry. Disable with
+  `-multi-chunk=false`. Old readers (≤ v1.2) cannot read minor 3 archives.
+  Design: [docs/SPEC-MULTICHUNK.md](docs/SPEC-MULTICHUNK.md).
 - **Custom FSE tables** for zstd sequence codes remain disabled (~1% ratio).
 - **Optimal parse** is not enabled by default; benchmarks show greedy + sort
   wins on mixed multi-file solid trees. Enable via library `OptimalParse` when
@@ -271,7 +273,7 @@ closed-source product without GPL obligations, contact
 - [COMPATIBILITY.md](COMPATIBILITY.md) — **v1 LTS policy** (read before adopting)
 - [SPEC.md](SPEC.md) — on-disk NYA archive layout
 - [SPEC-EXTENSIONS.md](SPEC-EXTENSIONS.md) — **v1 foundation** (tails, solid, dedup, NyaFS, sessions)
-- [docs/SPEC-MULTICHUNK.md](docs/SPEC-MULTICHUNK.md) — **multi-chunk entries** (planned v1.3)
+- [docs/SPEC-MULTICHUNK.md](docs/SPEC-MULTICHUNK.md) — **multi-chunk entries** (v1.3)
 - [docs/BENCHMARK-COMPRESS.md](docs/BENCHMARK-COMPRESS.md) — compression A/B measurements
 - [SPEC-CODECS.md](SPEC-CODECS.md) — **NYA-Zstd & NYA-LZMA2** roles and roadmap
 - [SPEC-SFX.md](SPEC-SFX.md) — **self-extracting** stub + footer (Rust)

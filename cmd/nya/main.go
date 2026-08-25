@@ -91,6 +91,8 @@ func cmdCreate(args []string) error {
 		"override the level's codec: lzma2, zstd or store")
 	password := fs.String("password", "", "encrypt the payload with this password")
 	workers := fs.Int("workers", 0, "number of compression workers (0 = automatic)")
+	multiChunk := fs.Bool("multi-chunk", true, "split non-solid files > 4 MiB into multiple chunks (format 1.3)")
+	chunkSize := fs.Int("chunk-size", 0, "raw chunk size for multi-chunk entries (0 = automatic)")
 	fs.Parse(args)
 
 	if *level < 0 || *level > 9 {
@@ -129,6 +131,10 @@ func cmdCreate(args []string) error {
 	}
 	if *workers > 0 {
 		w.SetWorkers(*workers)
+	}
+	w.SetMultiChunk(*multiChunk)
+	if *chunkSize > 0 {
+		w.SetChunkSize(*chunkSize)
 	}
 	if *fec > 0 {
 		switch *fecType {

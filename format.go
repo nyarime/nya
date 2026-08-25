@@ -127,6 +127,10 @@ func ReadGlobalHeader(r io.Reader) (*GlobalHeader, error) {
 	if h.VersionMajor > 1 {
 		return nil, ErrUnsupported
 	}
+	if h.VersionMinor > VersionMinorMultiChunk {
+		return nil, fmt.Errorf("%w: archive version 1.%d requires a newer nya reader (supports up to 1.%d)",
+			ErrUnsupported, h.VersionMinor, VersionMinorMultiChunk)
+	}
 	return h, nil
 }
 

@@ -1,8 +1,8 @@
-# Multi-chunk entries (planned v1.3)
+# Multi-chunk entries (v1.3)
 
-This document specifies how NYA will grow beyond **ChunkCount = 1** per file
-entry. It is a design target for the next minor format revision; readers and
-writers on v1.1/v1.2 continue to assume one chunk per entry.
+This document specifies how NYA grows beyond **ChunkCount = 1** per file
+entry. **Implemented** in format minor 3; readers on v1.0–1.2 continue to
+work when all entries still have `ChunkCount = 1`.
 
 Related: [SPEC.md](SPEC.md), [SPEC-EXTENSIONS.md](SPEC-EXTENSIONS.md),
 [COMPATIBILITY.md](COMPATIBILITY.md).
@@ -30,10 +30,11 @@ Related: [SPEC.md](SPEC.md), [SPEC-EXTENSIONS.md](SPEC-EXTENSIONS.md),
 | 4 MiB < size ≤ 64 MiB | 4 MiB raw | Matches LZMA2 dictionary growth at level 7–9 |
 | size > 64 MiB | 8 MiB raw | Amortizes chunk header + FEC symbol overhead |
 
-Writer may override with `-chunk-size N` (future CLI flag). Sizes are **raw
-(uncompressed) byte boundaries** before BCJ; the writer splits the file, runs
-BCJ per chunk when applicable, then compresses each chunk independently into
-the existing block wrapper:
+Writer may override with `-chunk-size N` (CLI flag on `nya create`). Sizes are **raw
+(uncompressed) byte boundaries** before BCJ. The writer detects BCJ on the
+whole file, applies it only when compression wins (same rule as solid mode),
+then splits into chunks and compresses each chunk independently into the
+existing block wrapper:
 
 ```
 uint32 blockLength
@@ -110,20 +111,20 @@ Reader with `-workers N`:
 
 ## Migration path
 
-| Step | Action |
-| --- | --- |
-| 1 | Land chunk splitter in writer behind `-multi-chunk` experimental flag |
-| 2 | Reader: loop `ChunkCount` in `Extract` (partially present today) |
-| 3 | FEC/repair per chunk |
-| 4 | `nya-get` manifest lists byte ranges per chunk |
-| 5 | Enable by default for files > 4 MiB non-solid |
+| Step | Action | Status |
+| --- | --- | --- |
+| 1 | Land chunk splitter in writer behind `-multi-chunk` flag | **Done** (default on) |
+| 2 | Reader: loop `ChunkCount` in `Extract` | **Done** |
+| 3 | FEC/repair per chunk | **Done** |
+| 4 | `nya-get` manifest lists byte ranges per chunk | Planned |
+| 5 | Enable by default for files > 4 MiB non-solid | **Done** |
 
 ## Open questions
 
 - Should chunk boundaries align to FEC symbol size to avoid padding waste?
 - Dedup (SPEC-EXTENSIONS) may reference chunk hashes — defer until dedup tail lands.
-- BCJ on x86: per-chunk filter vs whole-file filter — **whole-file arch**
-  detection, per-chunk apply (same as current 512 KiB internal blocks).
+- BCJ on x86: **whole-file arch detection**, apply before chunk split, reverse
+  after all chunks are concatenated on extract (not per 512 KiB block).
 
 ## Testing plan
 

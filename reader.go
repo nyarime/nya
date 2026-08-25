@@ -200,9 +200,6 @@ func (r *Reader) Extract(dir string) error {
 			compData := make([]byte, ch.CompressedSize)
 			chBuf.Read(compData)
 
-			// 跳过FEC数据 + per-symbol hash表
-			fecSize := uint64(ch.RepairCount) * uint64(ch.SymbolSize)
-
 			// 解密(可选)
 			if len(r.Password) > 0 {
 				dec2, err := DecryptPayload(compData, r.Password, r.Header)
@@ -242,23 +239,29 @@ func (r *Reader) Extract(dir string) error {
 				pos += blockLen
 			}
 
-			// Reverse BCJ filter if applied
-			if e.BCJFilter != BCJNone {
-				arch := BCJIDToArch(e.BCJFilter)
-				if arch != "" {
-					ApplyBCJFilterArch(raw, arch, false)
-				}
+			if ch.OriginalSize > 0 && uint64(len(raw)) > ch.OriginalSize {
+				return fmt.Errorf("bomb detected: chunk decompressed to %d bytes, exceeds declared %d", len(raw), ch.OriginalSize)
 			}
-
-			fullData.Write(raw)
-			// Bomb detection: check compression ratio per chunk
-			if ch.CompressedSize > 0 && len(raw) > 0 {
+			if ch.OriginalSize == 0 && ch.CompressedSize > 0 && len(raw) > 0 {
 				ratio := uint64(len(raw)) / uint64(ch.CompressedSize)
 				if ratio > BombRatioThreshold {
 					return fmt.Errorf("bomb detected: chunk ratio %d:1 exceeds threshold %d:1", ratio, BombRatioThreshold)
 				}
 			}
-			off += ChunkHeaderSize + uint64(ch.CompressedSize) + fecSize
+			fullData.Write(raw)
+			off += chunkDataStride(ch)
+		}
+
+		if e.OriginalSize > 0 && uint64(fullData.Len()) > e.OriginalSize {
+			return fmt.Errorf("bomb detected: file decompressed to %d bytes, exceeds declared %d", fullData.Len(), e.OriginalSize)
+		}
+
+		// BCJ is applied to the whole file before chunking; reverse once after
+		// all chunks are concatenated (same as solid stream handling).
+		if e.BCJFilter != BCJNone {
+			if arch := BCJIDToArch(e.BCJFilter); arch != "" {
+				ApplyBCJFilterArch(fullData.Bytes(), arch, false)
+			}
 		}
 
 		if err := checkSymlink(outPath); err != nil {
@@ -290,13 +293,11 @@ func (r *Reader) Verify() bool {
 			if !r.verifyChunkAt(off) {
 				return false
 			}
-			chBuf := bytes.NewReader(r.data[off:])
-			ch, err := ReadChunkHeader(chBuf)
+			ch, err := ReadChunkHeader(bytes.NewReader(r.data[off:]))
 			if err != nil {
 				return false
 			}
-			off += ChunkHeaderSize + uint64(ch.CompressedSize) +
-				uint64(ch.RepairCount)*uint64(ch.SymbolSize)
+			off += chunkDataStride(ch)
 		}
 	}
 	return true

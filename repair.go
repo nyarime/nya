@@ -65,66 +65,68 @@ func repairNYA(path string, outputPath string) (*RepairResult, error) {
 		return repairSolid(r, path, outputPath)
 	}
 
-	for _, e := range r.Entries {
-		if e.EntryType != EntryFile {
-			continue
-		}
-
-		off := e.FirstDataOff
-		if off+ChunkHeaderSize > uint64(len(r.data)) {
-			continue
-		}
-
-		chBuf := bytes.NewReader(r.data[off:])
-		ch, err := ReadChunkHeader(chBuf)
-		if err != nil {
-			continue
-		}
-
+	allHashes := r.allHashWords()
+	for _, ref := range r.buildFileChunkRefs() {
+		e := ref.entry
 		result.TotalChunks++
 
-		compStart := off + ChunkHeaderSize
-		compEnd := compStart + ch.CompressedSize
+		compStart := ref.dataOff + ChunkHeaderSize
+		compEnd := compStart + ref.header.CompressedSize
 		if compEnd > uint64(len(r.data)) {
 			continue
 		}
 		compData := r.data[compStart:compEnd]
-		fecData := r.fecData
 
 		h := Blake3Sum256(compData)
 		actualHash := binary.LittleEndian.Uint64(h[:8])
-		if actualHash != ch.Blake3Short {
-			result.CorruptedChunks++
-			logf("  chunk %s: CRC mismatch (expected %x, got %x)\n", e.Path, ch.Blake3Short, actualHash)
-			logf("  ⚠️ %s: CRC不匹配, 尝试修复...\n", e.Path)
-
-			var allH []uint32
-			if len(r.HashTables) > 0 {
-				allH = r.HashTables[0]
-			}
-			repaired, err := repairFEC(compData, fecData, e.FECParams, e.FECType, allH)
-			if err != nil {
-				result.FailedChunks++
-				logf("  ❌ %s: 修复失败\n", e.Path)
-				continue
-			}
-
-			copy(r.data[compStart:compEnd], repaired[:len(compData)])
-
-			nh := Blake3Sum256(repaired[:len(compData)])
-			newHash := binary.LittleEndian.Uint64(nh[:8])
-			r.data[off+24] = byte(newHash)
-			r.data[off+25] = byte(newHash >> 8)
-			r.data[off+26] = byte(newHash >> 16)
-			r.data[off+27] = byte(newHash >> 24)
-			r.data[off+28] = byte(newHash >> 32)
-			r.data[off+29] = byte(newHash >> 40)
-			r.data[off+30] = byte(newHash >> 48)
-			r.data[off+31] = byte(newHash >> 56)
-
-			result.RepairedChunks++
-			logf("  ✅ %s: 修复成功!\n", e.Path)
+		if actualHash == ref.header.Blake3Short {
+			continue
 		}
+
+		result.CorruptedChunks++
+		label := e.Path
+		if e.ChunkCount > 1 {
+			label = fmt.Sprintf("%s#chunk%d", e.Path, ref.chunkIdx)
+		}
+		logf("  chunk %s: CRC mismatch (expected %x, got %x)\n", label, ref.header.Blake3Short, actualHash)
+		logf("  ⚠️ %s: CRC不匹配, 尝试修复...\n", label)
+
+		var fecSlice []byte
+		if ref.fecLen > 0 && ref.fecOff+ref.fecLen <= len(r.fecData) {
+			fecSlice = r.fecData[ref.fecOff : ref.fecOff+ref.fecLen]
+		}
+		var hashSlice []uint32
+		if ref.hashLen > 0 && ref.hashOff+ref.hashLen <= len(allHashes) {
+			hashSlice = allHashes[ref.hashOff : ref.hashOff+ref.hashLen]
+		}
+
+		percent := int(e.FECParams.Param3)
+		if percent <= 0 {
+			percent = 10
+		}
+		plan := planFEC(len(compData), percent, e.FECType, false)
+		repaired, err := repairFEC(compData, fecSlice, plan.toParams(), e.FECType, hashSlice)
+		if err != nil {
+			result.FailedChunks++
+			logf("  ❌ %s: 修复失败 (%v)\n", label, err)
+			continue
+		}
+
+		copy(r.data[compStart:compEnd], repaired[:len(compData)])
+
+		nh := Blake3Sum256(repaired[:len(compData)])
+		newHash := binary.LittleEndian.Uint64(nh[:8])
+		r.data[ref.dataOff+24] = byte(newHash)
+		r.data[ref.dataOff+25] = byte(newHash >> 8)
+		r.data[ref.dataOff+26] = byte(newHash >> 16)
+		r.data[ref.dataOff+27] = byte(newHash >> 24)
+		r.data[ref.dataOff+28] = byte(newHash >> 32)
+		r.data[ref.dataOff+29] = byte(newHash >> 40)
+		r.data[ref.dataOff+30] = byte(newHash >> 48)
+		r.data[ref.dataOff+31] = byte(newHash >> 56)
+
+		result.RepairedChunks++
+		logf("  ✅ %s: 修复成功!\n", label)
 	}
 
 	if result.CorruptedChunks > 0 {
