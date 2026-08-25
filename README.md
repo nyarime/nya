@@ -53,7 +53,9 @@ nya info backup.nya                                # header details, including c
 nya repair damaged.nya fixed.nya                   # rebuild using the parity data
 nya convert legacy.zip repaired.nya                # unpack zip/7z/rar → NYA (+FEC, +download index)
 nya convert -fec 20 old.rar backup.nya             # WinRAR-style recovery, but configurable
-nya manifest GamePack.nya -o GamePack.nyam --url https://cdn/game.nya  # download index sidecar
+nya manifest add GamePack.nya                      # upsert embedded download index
+nya manifest del GamePack.nya                      # remove embedded download index
+nya manifest export -o GamePack.nyam --url https://cdn/game.nya GamePack.nya
 nya sfx pack.nya -o pack.bin                  # wrap as self-extractor (Rust stub)
 nya create -sfx game.bin -level 3 ./GameData/ # create + wrap in one step
 nya associate                                 # Windows: .nya double-click → nya open
@@ -73,7 +75,10 @@ See [examples/windows-open](examples/windows-open/README.md).
 ```bash
 nya create -level 9 -solid -fec 20 GamePack.nya ./GameData/   # download index embedded by default
 # optional sidecar:
-# nya manifest -o GamePack.nyam --url https://cdn.example.com/GamePack.nya GamePack.nya
+# nya manifest export -o GamePack.nyam --url https://cdn.example.com/GamePack.nya GamePack.nya
+# re-embed / clear:
+# nya manifest add GamePack.nya
+# nya manifest del GamePack.nya
 
 go install github.com/nyarime/nya/cmd/nya-get@latest
 nya-get --url https://cdn.example.com/GamePack.nya          # no .nyam needed
@@ -124,9 +129,10 @@ Levels run 0 to 9, the way 7-Zip and WinRAR present them:
 | 9 | best | LZMA2, maximum window and search |
 
 `create` also accepts `-solid` to compress every file as a single stream,
-`-codec` to override the level's choice, `-password` to encrypt the payload
-and `-workers` to cap concurrency on **create** and **extract** (parallel per-chunk
-decompress when `ChunkCount > 1`).
+`-codec` to override the level's choice, `-password` to encrypt the payload,
+`-workers` to cap concurrency on **create** and **extract** (parallel per-chunk
+decompress when `ChunkCount > 1`), and **`-no-embed`** to skip the default
+embedded download index (needed for single-URL `nya-get`).
 
 ## Library
 

@@ -195,9 +195,17 @@ Binary layout and tail chain placement: [SPEC-EXTENSIONS.md](SPEC-EXTENSIONS.md)
 § Download index tail. Global header flag bit 4 (`HasDownloadIndex`) SHOULD be
 set when the tail is present.
 
-**Phase 2 (implemented):** `nya create` / `nya convert` **embed the download
-index by default** (opt out with `-no-embed`). Existing archives can still use
-`nya manifest --embed` / `--embed-only`. Embedding appends:
+**Phase 2 (implemented):** download-index lifecycle
+
+| Operation | CLI | Semantics |
+| --- | --- | --- |
+| **Create with index** | `nya create` / `nya convert` (default) | Upsert embed after write |
+| **Opt out at create** | `-no-embed` | Body only; no footer |
+| **ADD (upsert)** | `nya manifest add archive.nya` | Strip any existing index, then write new tail `0x0001` + `NYADIDX1` footer. Optional `-o` writes a matching `.nyam` sidecar. |
+| **DEL (clear)** | `nya manifest del archive.nya` | Truncate to body; clear `FlagHasDownloadIndex`. Idempotent if absent. |
+| **EXPORT sidecar** | `nya manifest export archive.nya` | Write `.nyam` only; does not modify the archive. If embedded, sidecar mirrors the embedded body index. |
+
+Embedding appends:
 
 1. Tail record `typeId = 0x0001` (same fields as this document’s `download` object).
 2. A fixed **40-byte EOF footer** (`NYADIDX1`) with `TailChainOffset` /
@@ -216,7 +224,8 @@ Single-URL fetch (`nya-get --url https://cdn/pack.nya`):
 3. `Range` tail → decode blocks  
 4. Parallel `Range` of body blocks + verify body `archiveBlake3`
 
-Sidecar `.nyam` remains supported and may be emitted alongside `--embed`.
+Sidecar `.nyam` remains supported (`manifest export` / `manifest add -o`).
+Legacy flags `--embed` / `--embed-only` map to `manifest add` with a deprecation warning.
 
 ## Version history
 

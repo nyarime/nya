@@ -27,8 +27,9 @@ Usage:
   nya augment <archive.nya> [out.nya]        increase FEC repair data (Leopard-RS / Hybrid / RaptorQ)
   nya convert [flags] <in.zip|7z|rar> <out.nya>  unpack legacy archive and repack as NYA (zip/7z/rar)
                                              (embeds download index by default; -no-embed to skip)
-  nya manifest <archive.nya> -o <manifest.nyam>  build download manifest for nya-get
-  nya manifest --embed [--embed-only] <archive.nya>  (re)embed download index into an existing .nya
+  nya manifest add  [flags] <archive.nya>    upsert embedded download index (optional -o .nyam)
+  nya manifest del  <archive.nya>            remove embedded download index
+  nya manifest export [flags] <archive.nya>  write .nyam sidecar only
   nya sfx     [flags] <archive.nya> -o <out.exe> wrap archive as self-extractor (Rust stub)
   nya associate [-uninstall]                 Windows: register .nya double-click → nya open
 
@@ -452,68 +453,6 @@ func embedDownloadIndexCLI(archive, blockSize string) error {
 	}
 	_, err = nya.EmbedDownloadIndex(archive, nya.EmbedOptions{BlockSize: bs, InPlace: true})
 	return err
-}
-
-func cmdManifest(args []string) error {
-	fs := flag.NewFlagSet("manifest", flag.ExitOnError)
-	out := fs.String("o", "", "output .nyam path (default: archive.nyam; ignored with -embed-only)")
-	blockSize := fs.String("block-size", "4m", "transport block size (e.g. 4m, 8m, 4194304)")
-	url := fs.String("url", "", "download URL for the archive (repeatable via --url)")
-	embed := fs.Bool("embed", false, "embed download index into the .nya (single-URL nya-get)")
-	embedOnly := fs.Bool("embed-only", false, "only embed index; do not write a .nyam sidecar")
-	fs.Parse(args)
-
-	if fs.NArg() != 1 {
-		return fmt.Errorf("manifest needs an archive path")
-	}
-	archive := fs.Arg(0)
-
-	bs, err := nya.ParseBlockSize(*blockSize)
-	if err != nil {
-		return err
-	}
-
-	if *embed || *embedOnly {
-		res, err := nya.EmbedDownloadIndex(archive, nya.EmbedOptions{BlockSize: bs, InPlace: true})
-		if err != nil {
-			return err
-		}
-		fmt.Printf("%s: embedded download index (%d body blocks, tail @ %d, final %s)\n",
-			res.Path, res.BlockCount, res.TailChainOffset, nya.HumanSize(int(res.FinalSize)))
-		if *embedOnly {
-			return nil
-		}
-	}
-
-	var sources []nya.ManifestSource
-	for _, u := range strings.Split(*url, ",") {
-		u = strings.TrimSpace(u)
-		if u != "" {
-			sources = append(sources, nya.ManifestSource{URL: u, Priority: 1})
-		}
-	}
-
-	m, err := nya.BuildManifest(archive, bs, sources...)
-	if err != nil {
-		return err
-	}
-
-	outPath := *out
-	if outPath == "" {
-		outPath = strings.TrimSuffix(archive, filepath.Ext(archive)) + ".nyam"
-	}
-	if err := nya.WriteManifest(m, outPath); err != nil {
-		return err
-	}
-
-	fmt.Printf("%s: %d blocks x %s, archive %s (%s), %d file entries\n",
-		outPath,
-		len(m.Download.Blocks),
-		nya.HumanSize(int(m.Download.BlockSize)),
-		m.Archive.Name,
-		nya.HumanSize(int(m.Archive.Size)),
-		len(m.Entries))
-	return nil
 }
 
 // archiveCodec reports the codec used by the file entries.

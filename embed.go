@@ -158,45 +158,96 @@ func hashFileBytes(f *os.File, off, size int64) ([32]byte, error) {
 }
 
 func stripEmbeddedDownloadIndex(path string) (bodySize int64, err error) {
-	f, err := os.OpenFile(path, os.O_RDWR, 0)
+	res, err := StripDownloadIndex(path)
 	if err != nil {
 		return 0, err
+	}
+	return res.BodySize, nil
+}
+
+// StripResult describes the outcome of removing an embedded download index.
+type StripResult struct {
+	Path      string
+	BodySize  int64
+	HadIndex  bool // false when file had no NYADIDX1 footer (already clean)
+	FinalSize int64
+}
+
+// HasEmbeddedDownloadIndex reports whether path ends with a valid download-index footer.
+func HasEmbeddedDownloadIndex(path string) (bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return false, err
 	}
 	defer f.Close()
 	fi, err := f.Stat()
 	if err != nil {
-		return 0, err
+		return false, err
 	}
 	size := fi.Size()
 	if size < DownloadIndexFooterSize+GlobalHeaderSize {
-		return size, nil
+		return false, nil
 	}
 	footerBuf := make([]byte, DownloadIndexFooterSize)
 	if _, err := f.ReadAt(footerBuf, size-DownloadIndexFooterSize); err != nil {
-		return 0, err
+		return false, err
 	}
 	foot, err := ParseDownloadIndexFooter(footerBuf)
 	if err != nil {
-		return size, nil
+		return false, nil
+	}
+	return int64(foot.TailChainOffset+foot.TailChainSize+DownloadIndexFooterSize) == size, nil
+}
+
+// StripDownloadIndex removes an embedded download index (tail + EOF footer) and
+// clears FlagHasDownloadIndex. Idempotent: if no index is present, returns
+// HadIndex=false and leaves the file unchanged.
+func StripDownloadIndex(path string) (*StripResult, error) {
+	f, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, err
+	}
+	size := fi.Size()
+	out := &StripResult{Path: path, BodySize: size, FinalSize: size, HadIndex: false}
+	if size < DownloadIndexFooterSize+GlobalHeaderSize {
+		return out, nil
+	}
+	footerBuf := make([]byte, DownloadIndexFooterSize)
+	if _, err := f.ReadAt(footerBuf, size-DownloadIndexFooterSize); err != nil {
+		return nil, err
+	}
+	foot, err := ParseDownloadIndexFooter(footerBuf)
+	if err != nil {
+		return out, nil
 	}
 	if int64(foot.TailChainOffset+foot.TailChainSize+DownloadIndexFooterSize) != size {
-		return size, nil
+		return out, nil
 	}
 	body := int64(foot.TailChainOffset)
 	if err := f.Truncate(body); err != nil {
-		return 0, err
+		return nil, err
 	}
 	gh, err := readGlobalHeaderAt(f)
 	if err != nil {
-		return body, nil
+		return nil, fmt.Errorf("strip download index: read header: %w", err)
 	}
 	gh.Flags &^= FlagHasDownloadIndex
 	if gh.Flags&FlagKDFArgon2id == 0 {
 		binary.LittleEndian.PutUint64(gh.Reserved[0:8], 0)
 		binary.LittleEndian.PutUint64(gh.Reserved[8:16], 0)
 	}
-	_ = writeAt(f, 0, mustHeaderBytes(gh))
-	return body, nil
+	if err := writeAt(f, 0, mustHeaderBytes(gh)); err != nil {
+		return nil, err
+	}
+	out.HadIndex = true
+	out.BodySize = body
+	out.FinalSize = body
+	return out, nil
 }
 
 func mustHeaderBytes(h *GlobalHeader) []byte {

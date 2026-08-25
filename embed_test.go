@@ -70,6 +70,26 @@ func TestEmbedDownloadIndexRoundtrip(t *testing.T) {
 	if res2.BodySize != res.BodySize {
 		t.Fatalf("re-embed body %d want %d", res2.BodySize, res.BodySize)
 	}
+
+	had, err := HasEmbeddedDownloadIndex(archive)
+	if err != nil || !had {
+		t.Fatalf("HasEmbedded=%v %v", had, err)
+	}
+	st, err := StripDownloadIndex(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.HadIndex || st.BodySize != res.BodySize {
+		t.Fatalf("strip: %+v", st)
+	}
+	had, err = HasEmbeddedDownloadIndex(archive)
+	if err != nil || had {
+		t.Fatalf("after strip HasEmbedded=%v %v", had, err)
+	}
+	st2, err := StripDownloadIndex(archive)
+	if err != nil || st2.HadIndex {
+		t.Fatalf("idempotent strip: %+v %v", st2, err)
+	}
 }
 
 func TestBootstrapManifestFromURL(t *testing.T) {
