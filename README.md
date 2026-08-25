@@ -78,7 +78,7 @@ nya convert -fec 20 old.rar backup.nya             # WinRAR-style recovery, but 
 nya manifest add GamePack.nya                      # upsert embedded download index
 nya manifest del GamePack.nya                      # remove embedded download index
 nya manifest export -o GamePack.nyam --url https://cdn/game.nya GamePack.nya
-nya sfx pack.nya -o pack.exe                  # wrap as self-extractor (Rust stub; -o anywhere)
+nya sfx pack.nya -o pack.exe                  # wrap as self-extractor (Go stub; -o anywhere)
 nya create -sfx game.bin -level 3 ./GameData/ # create + wrap in one step
 nya associate                                 # Windows: .nya double-click → nya open
 ```

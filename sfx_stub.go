@@ -8,10 +8,10 @@ import (
 )
 
 // DefaultStubPath returns the on-disk stub for the current OS/arch.
-// Search order:
-//  1. <exeDir>/sfx/stubs/nya-sfx-stub_<os>_<arch>[.exe]  (dev / Inno layout)
-//  2. <exeDir>/nya-sfx-stub[.exe]                         (install.ps1 / zip layout)
-//  3. ./sfx/stubs/nya-sfx-stub_<os>_<arch>[.exe]          (repo cwd)
+// Prefer the Go reference stub (same codecs as `nya`). Search order:
+//  1. <exeDir>/sfx/stubs/nya-sfx-stub_<os>_<arch>[.exe]
+//  2. <exeDir>/nya-sfx-stub[.exe]
+//  3. ./sfx/stubs/… (repo cwd)
 func DefaultStubPath() (string, error) {
 	base := fmt.Sprintf("nya-sfx-stub_%s_%s", runtime.GOOS, runtime.GOARCH)
 	var candidates []string
@@ -37,5 +37,5 @@ func DefaultStubPath() (string, error) {
 			return abs, nil
 		}
 	}
-	return "", fmt.Errorf("sfx: stub not found (%s); place nya-sfx-stub next to nya.exe, or: nya sfx -stub path/to/nya-sfx-stub.exe -o out.exe pack.nya", base)
+	return "", fmt.Errorf("sfx: stub not found (%s); build: go build -o sfx/stubs/%s ./cmd/nya-sfx-stub", base, base)
 }

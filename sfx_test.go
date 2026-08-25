@@ -13,9 +13,12 @@ import (
 func TestBuildSFXRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	archive := filepath.Join(dir, "test.nya")
-	stubSrc := filepath.Join("sfx", "stubs", "nya-sfx-stub_linux_amd64")
-	if _, err := os.Stat(stubSrc); err != nil {
-		t.Skip("SFX stub not built; run: cd sfx && cargo build --release")
+	stubSrc := filepath.Join(dir, "nya-sfx-stub")
+	build := exec.Command("go", "build", "-o", stubSrc, "./cmd/nya-sfx-stub")
+	build.Dir = "."
+	if out, err := build.CombinedOutput(); err != nil {
+		// When tests run from module root this works; skip if not.
+		t.Skipf("build go stub: %v\n%s", err, out)
 	}
 
 	// Create tiny archive

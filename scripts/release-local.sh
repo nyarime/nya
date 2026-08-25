@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Local release packaging when GitHub Actions is unavailable.
 # Usage: ./scripts/release-local.sh [VERSION]
-# Example: ./scripts/release-local.sh 0.1.0
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -32,6 +31,9 @@ build_go() {
     go build -trimpath -ldflags="-s -w" -o "$out/nya$ext" ./cmd/nya
   CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
     go build -trimpath -ldflags="-s -w" -o "$out/nya-get$ext" ./cmd/nya-get
+  # Go SFX stub (same codecs as nya). Never UPX — stub is concatenated with archive.
+  CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
+    go build -trimpath -ldflags="-s -w" -o "$out/nya-sfx-stub$ext" ./cmd/nya-sfx-stub
 }
 
 build_go linux amd64 "$STAGING/linux-amd64"
@@ -41,53 +43,44 @@ build_go windows arm64 "$STAGING/windows-arm64"
 build_go darwin arm64 "$STAGING/darwin-arm64"
 build_go darwin amd64 "$STAGING/darwin-amd64"
 
-echo "==> UPX (Linux + Windows amd64 CLI; skip Darwin / win-arm64 / SFX / FM)"
+echo "==> UPX (CLI only; never SFX stub)"
 upx --best --lzma \
   "$STAGING/linux-amd64/nya" "$STAGING/linux-amd64/nya-get" \
   "$STAGING/linux-arm64/nya" "$STAGING/linux-arm64/nya-get" \
   "$STAGING/windows-amd64/nya.exe" "$STAGING/windows-amd64/nya-get.exe"
-# UPX 4.x: win64/arm64 not supported yet — leave unpacked.
 
-LINUX_AMD64_EXTRAS=()
+LINUX_AMD64_EXTRAS=(nya-sfx-stub)
 if command -v cargo >/dev/null; then
-  echo "==> Rust linux amd64 (nya-fm + sfx stub)"
-  cargo build --release -p nya-fm -p nya-sfx-stub
-  cp target/release/nya-fm target/release/nya-sfx-stub "$STAGING/linux-amd64/"
-  chmod +x "$STAGING/linux-amd64/nya-fm" "$STAGING/linux-amd64/nya-sfx-stub"
-  LINUX_AMD64_EXTRAS+=(nya-fm nya-sfx-stub)
-
-  if command -v x86_64-w64-mingw32-gcc >/dev/null; then
-    echo "==> Rust windows amd64 SFX stub (mingw)"
-    rustup target add x86_64-pc-windows-gnu >/dev/null
-    cargo build --release -p nya-sfx-stub --target x86_64-pc-windows-gnu
-    cp target/x86_64-pc-windows-gnu/release/nya-sfx-stub.exe "$STAGING/windows-amd64/"
-  else
-    echo "!! skip windows SFX stub (install gcc-mingw-w64-x86-64)"
-  fi
+  echo "==> Rust linux amd64 nya-fm"
+  cargo build --release -p nya-fm
+  cp target/release/nya-fm "$STAGING/linux-amd64/"
+  chmod +x "$STAGING/linux-amd64/nya-fm"
+  LINUX_AMD64_EXTRAS+=(nya-fm)
 else
-  echo "!! cargo not found — skipping nya-fm / SFX stub"
+  echo "!! cargo not found — skipping nya-fm"
 fi
 
 echo "==> pack"
 tar -C "$STAGING/linux-amd64" -czf "$DIST/nya-${VER}-linux-amd64.tar.gz" \
   nya nya-get "${LINUX_AMD64_EXTRAS[@]}"
-tar -C "$STAGING/linux-arm64" -czf "$DIST/nya-${VER}-linux-arm64.tar.gz" nya nya-get
-tar -C "$STAGING/darwin-arm64" -czf "$DIST/nya-${VER}-darwin-arm64.tar.gz" nya nya-get
-tar -C "$STAGING/darwin-amd64" -czf "$DIST/nya-${VER}-darwin-amd64.tar.gz" nya nya-get
+tar -C "$STAGING/linux-arm64" -czf "$DIST/nya-${VER}-linux-arm64.tar.gz" nya nya-get nya-sfx-stub
+tar -C "$STAGING/darwin-arm64" -czf "$DIST/nya-${VER}-darwin-arm64.tar.gz" nya nya-get nya-sfx-stub
+tar -C "$STAGING/darwin-amd64" -czf "$DIST/nya-${VER}-darwin-amd64.tar.gz" nya nya-get nya-sfx-stub
 
-WIN_FILES=(nya.exe nya-get.exe)
-[[ -f $STAGING/windows-amd64/nya-sfx-stub.exe ]] && WIN_FILES+=(nya-sfx-stub.exe)
-( cd "$STAGING/windows-amd64" && zip -q "$DIST/nya-${VER}-windows-amd64.zip" "${WIN_FILES[@]}" )
-( cd "$STAGING/windows-arm64" && zip -q "$DIST/nya-${VER}-windows-arm64.zip" nya.exe nya-get.exe )
+( cd "$STAGING/windows-amd64" && zip -q "$DIST/nya-${VER}-windows-amd64.zip" nya.exe nya-get.exe nya-sfx-stub.exe )
+( cd "$STAGING/windows-arm64" && zip -q "$DIST/nya-${VER}-windows-arm64.zip" nya.exe nya-get.exe nya-sfx-stub.exe )
+
+# Seed repo stubs layout for local nya sfx without -stub
+mkdir -p sfx/stubs
+cp "$STAGING/linux-amd64/nya-sfx-stub" "sfx/stubs/nya-sfx-stub_linux_amd64" 2>/dev/null || true
 
 cat > "$DIST/NOTES-v${VER}.txt" << EOF
 NYA ${VER} — local release (see scripts/release-local.sh)
 
-- windows-amd64 zip: CLI (+ SFX stub if mingw). No Inno setup.exe / nyaFM.exe from Linux hosts.
-- windows-arm64 zip: CLI only (no UPX — UPX does not support win64/arm64 yet)
-- linux-amd64: CLI + nyaFM + stub when cargo/GTK deps present
-- linux-arm64 / darwin: CLI only
-- UPX applied to Go CLI on Linux + Windows amd64 only
+- Go SFX stub (cmd/nya-sfx-stub) on all platforms — same NYA-Zstd/LZMA2 as nya
+- Do not UPX the SFX stub (concatenated with archive payload)
+- windows/linux/darwin archives include nya-sfx-stub
+- linux-amd64 also includes nya-fm when cargo is available
 EOF
 
 echo
