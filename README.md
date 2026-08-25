@@ -40,7 +40,8 @@ go install github.com/nyarime/nya/cmd/nya@latest
 ## Command line
 
 ```bash
-nya create backup.nya ./project                    # create at the default level
+nya create backup.nya ./project                    # create at the default level (+ embedded download index)
+nya create -no-embed backup.nya ./project          # skip download index
 nya create -level 9 -solid backup.nya ./project    # smallest
 nya create -level 1 backup.nya ./project           # fastest
 nya create -fec 30 backup.nya ./data               # add 30% recovery data
@@ -50,9 +51,11 @@ nya open game.nya                                  # extract beside archive → 
 nya verify backup.nya                              # check stored digests
 nya info backup.nya                                # header details, including codec
 nya repair damaged.nya fixed.nya                   # rebuild using the parity data
-nya convert legacy.zip repaired.nya                # unpack zip/7z/rar → NYA (+FEC)
+nya convert legacy.zip repaired.nya                # unpack zip/7z/rar → NYA (+FEC, +download index)
 nya convert -fec 20 old.rar backup.nya             # WinRAR-style recovery, but configurable
-nya manifest GamePack.nya -o GamePack.nyam --url https://cdn/game.nya  # download index
+nya manifest add GamePack.nya                      # upsert embedded download index
+nya manifest del GamePack.nya                      # remove embedded download index
+nya manifest export -o GamePack.nyam --url https://cdn/game.nya GamePack.nya
 nya sfx pack.nya -o pack.bin                  # wrap as self-extractor (Rust stub)
 nya create -sfx game.bin -level 3 ./GameData/ # create + wrap in one step
 nya associate                                 # Windows: .nya double-click → nya open
@@ -70,10 +73,12 @@ See [examples/windows-open](examples/windows-open/README.md).
 ### Large package distribution (`nya-get`)
 
 ```bash
-nya create -level 9 -solid -fec 20 GamePack.nya ./GameData/
-nya manifest --embed-only GamePack.nya             # single-URL friendly
-# or also write a sidecar:
-# nya manifest --embed -o GamePack.nyam --url https://cdn.example.com/GamePack.nya GamePack.nya
+nya create -level 9 -solid -fec 20 GamePack.nya ./GameData/   # download index embedded by default
+# optional sidecar:
+# nya manifest export -o GamePack.nyam --url https://cdn.example.com/GamePack.nya GamePack.nya
+# re-embed / clear:
+# nya manifest add GamePack.nya
+# nya manifest del GamePack.nya
 
 go install github.com/nyarime/nya/cmd/nya-get@latest
 nya-get --url https://cdn.example.com/GamePack.nya          # no .nyam needed
@@ -124,9 +129,10 @@ Levels run 0 to 9, the way 7-Zip and WinRAR present them:
 | 9 | best | LZMA2, maximum window and search |
 
 `create` also accepts `-solid` to compress every file as a single stream,
-`-codec` to override the level's choice, `-password` to encrypt the payload
-and `-workers` to cap concurrency on **create** and **extract** (parallel per-chunk
-decompress when `ChunkCount > 1`).
+`-codec` to override the level's choice, `-password` to encrypt the payload,
+`-workers` to cap concurrency on **create** and **extract** (parallel per-chunk
+decompress when `ChunkCount > 1`), and **`-no-embed`** to skip the default
+embedded download index (needed for single-URL `nya-get`).
 
 ## Library
 
