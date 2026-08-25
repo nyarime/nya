@@ -46,6 +46,7 @@ nya create -level 1 backup.nya ./project           # fastest
 nya create -fec 30 backup.nya ./data               # add 30% recovery data
 nya list backup.nya                                # inspect
 nya extract backup.nya ./restored                  # extract
+nya open game.nya                                  # extract beside archive → .\game\
 nya verify backup.nya                              # check stored digests
 nya info backup.nya                                # header details, including codec
 nya repair damaged.nya fixed.nya                   # rebuild using the parity data
@@ -54,7 +55,17 @@ nya convert -fec 20 old.rar backup.nya             # WinRAR-style recovery, but 
 nya manifest GamePack.nya -o GamePack.nyam --url https://cdn/game.nya  # download index
 nya sfx pack.nya -o pack.bin                  # wrap as self-extractor (Rust stub)
 nya create -sfx game.bin -level 3 ./GameData/ # create + wrap in one step
+nya associate                                 # Windows: .nya double-click → nya open
 ```
+
+### Windows double-click
+
+```bat
+nya associate
+:: then double-click game.nya → extracts to .\game\
+```
+
+See [examples/windows-open](examples/windows-open/README.md).
 
 ### Large package distribution (`nya-get`)
 
