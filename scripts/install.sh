@@ -5,7 +5,8 @@
 #   curl -fsSL https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.sh | bash
 #
 # Uninstall:
-#   curl -fsSL https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.sh | bash -s -- --uninstall
+#   curl -fsSL https://raw.githubusercontent.com/nyarime/nya/main/scripts/uninstall.sh | bash
+#   # or: bash install.sh --uninstall
 #
 # Options:
 #   --prefix DIR     install root (default: ~/.local)
@@ -127,4 +128,5 @@ esac
 
 echo
 echo "Uninstall:"
-echo "  curl -fsSL https://raw.githubusercontent.com/${REPO}/main/scripts/install.sh | bash -s -- --uninstall --prefix \"$PREFIX\""
+echo "  curl -fsSL https://raw.githubusercontent.com/${REPO}/main/scripts/uninstall.sh | bash"
+# also: install.sh --uninstall --prefix "$PREFIX"
