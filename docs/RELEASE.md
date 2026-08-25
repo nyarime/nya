@@ -22,6 +22,24 @@ Workflow: [`.github/workflows/release.yml`](../.github/workflows/release.yml).
 | `nya-VERSION-darwin-amd64.tar.gz` | macOS Intel: CLI + nyaFM + stub |
 | `nya-VERSION-darwin-arm64.tar.gz` | macOS Apple Silicon: CLI + nyaFM + stub |
 
+## Linking model (vs 7-Zip)
+
+**7-Zip does not ship glibc / musl / uClibc package variants.**
+
+| Platform | What 7-Zip actually ships |
+| --- | --- |
+| Windows | Installer + “7-Zip Extra” console. Default MSVC build **statically links the CRT** into the `.exe` (not a separate msvcrt dance). |
+| Linux (official tarball / GitHub) | One console build per arch (`7zz`); historically often **dynamic glibc** → “GLIBC_2.xx not found” on older distros. Distros (`apt install 7zip`) are normal dynamic packages. Fully static musl builds (`7zzs`) are community/CI extras, not a three-libc matrix. |
+| uClibc | Not an official distribution target. |
+
+**NYA CLI** avoids that matrix: Go with `CGO_ENABLED=0` is already a **fully static** binary (no glibc/musl dependency). One Linux amd64/arm64 CLI artifact runs on glibc *and* musl hosts.
+
+| Artifact | Linkage | UPX |
+| --- | --- | --- |
+| `nya` / `nya-get` (all OS in CI) | Go static (`CGO_ENABLED=0`) | Yes on Windows + Linux; **no** on macOS |
+| `nya-sfx-stub` | Windows: pack; Linux: only if fully static | Same rule |
+| `nya-fm` | Dynamic (GUI / system libs) | **Never** |
+
 ## Windows install experience
 
 1. Download `*-windows-amd64-setup.exe` from the [GitHub Release](https://github.com/nyarime/nya/releases).

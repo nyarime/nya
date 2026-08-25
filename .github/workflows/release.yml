@@ -62,6 +62,14 @@ jobs:
           cp target/release/nya-fm.exe staging/
           cp target/release/nya-sfx-stub.exe staging/
 
+      - name: UPX static Go CLI (+ SFX stub)
+        shell: bash
+        run: |
+          choco install upx -y --no-progress
+          # Go CGO_ENABLED=0 is fully static; pack before Inno/zip.
+          # Skip nya-fm.exe (GUI / egui — UPX often breaks or trips AV harder).
+          upx --best --lzma staging/nya.exe staging/nya-get.exe staging/nya-sfx-stub.exe
+
       - name: Install Inno Setup
         shell: powershell
         run: choco install innosetup -y --no-progress
@@ -97,10 +105,10 @@ jobs:
         with:
           go-version: "1.25.x"
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install GUI deps
+      - name: Install GUI deps + UPX
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev
+          sudo apt-get install -y upx-ucl libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev
       - name: Build
         run: |
           VER="${{ needs.version.outputs.version }}"
@@ -111,6 +119,13 @@ jobs:
           cp target/release/nya-fm staging/
           cp target/release/nya-sfx-stub staging/
           chmod +x staging/*
+          # Go CLI is static (no glibc). Pack only static/self-contained bins.
+          # nya-fm is dynamically linked to GTK/X11 — do not UPX.
+          # nya-sfx-stub on glibc Linux is usually dynamic; UPX only if fully static.
+          upx --best --lzma staging/nya staging/nya-get
+          if ! ldd staging/nya-sfx-stub >/dev/null 2>&1; then
+            upx --best --lzma staging/nya-sfx-stub || true
+          fi
           tar -C staging -czf "dist/nya-${VER}-linux-amd64.tar.gz" nya nya-get nya-fm nya-sfx-stub
       - uses: actions/upload-artifact@v4
         with:
@@ -125,12 +140,16 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.25.x"
-      - name: Build Go CLI (cross)
+      - name: Build Go CLI (cross) + UPX
         run: |
           VER="${{ needs.version.outputs.version }}"
+          sudo apt-get update
+          sudo apt-get install -y upx-ucl
           mkdir -p staging dist
           GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o staging/nya ./cmd/nya
           GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o staging/nya-get ./cmd/nya-get
+          # upx-ucl on amd64 runners can pack arm64 ELF
+          upx --best --lzma staging/nya staging/nya-get
           tar -C staging -czf "dist/nya-${VER}-linux-arm64.tar.gz" nya nya-get
       - uses: actions/upload-artifact@v4
         with:
@@ -170,6 +189,7 @@ jobs:
           cp "target/${{ matrix.rust_target }}/release/nya-fm" staging/
           cp "target/${{ matrix.rust_target }}/release/nya-sfx-stub" staging/
           chmod +x staging/*
+          # No UPX on Darwin: modern Mach-O / notarization are a poor fit.
           tar -C staging -czf "dist/nya-${VER}-${{ matrix.suffix }}.tar.gz" nya nya-get nya-fm nya-sfx-stub
       - uses: actions/upload-artifact@v4
         with:
