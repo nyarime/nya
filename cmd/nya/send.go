@@ -38,6 +38,7 @@ func cmdSend(args []string) error {
 	noTunnel := fs.Bool("no-tunnel", false, "only serve locally (no TryCloudflare)")
 	noFetch := fs.Bool("no-fetch-cloudflared", false, "do not auto-install cloudflared when missing")
 	noEmbed := fs.Bool("no-embed", false, "do not upsert download index before send")
+	verboseTunnel := fs.Bool("verbose-tunnel", false, "print full cloudflared logs (noisy)")
 	out := fs.String("o", "", "when packing: write .nya here (default: temp, deleted on exit)")
 	level := fs.Int("level", nya.LevelFast, "when packing: 0–9 (default 3=fast)")
 	fs.Usage = func() {
@@ -142,7 +143,7 @@ func cmdSend(args []string) error {
 			http.NotFound(w, r)
 		}
 	})
-	srv := &http.Server{Handler: mux}
+	srv := &http.Server{Handler: sendAccessLogger(mux)}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
@@ -154,12 +155,17 @@ func cmdSend(args []string) error {
 
 	publicBase := baseLocal
 	var tunnelCmd *exec.Cmd
+	var tunnelSink tunnelLogSink
+	if *verboseTunnel {
+		tunnelSink.setVerbose(true)
+	}
 	if !*noTunnel {
 		bin, err := resolveCloudflared(*cloudflared, !*noFetch)
 		if err != nil {
 			_ = srv.Shutdown(context.Background())
 			return fmt.Errorf("%w\n  tip: install cloudflared, or nya send -no-tunnel for LAN only", err)
 		}
+		fmt.Fprintln(os.Stderr, T("send.tunnel.start"))
 		tunnelURL := fmt.Sprintf("http://%s", ln.Addr().String())
 		tunnelCmd = exec.CommandContext(ctx, bin, "tunnel", "--url", tunnelURL)
 		pr, pw, err := os.Pipe()
@@ -184,11 +190,9 @@ func cmdSend(args []string) error {
 			buf := make([]byte, 0, 64*1024)
 			sc.Buffer(buf, 1024*1024)
 			for sc.Scan() {
-				line := sc.Text()
-				fmt.Fprintln(os.Stderr, line)
-				if m := tryCloudflareURL.FindString(line); m != "" {
+				if u := tunnelSink.handleLine(sc.Text()); u != "" {
 					select {
-					case found <- m:
+					case found <- u:
 					default:
 					}
 				}
@@ -198,13 +202,17 @@ func cmdSend(args []string) error {
 		select {
 		case u := <-found:
 			publicBase = strings.TrimRight(u, "/")
+			tunnelSink.mute()
+			fmt.Fprintf(os.Stderr, T("send.tunnel.ready")+"\n", publicBase)
 		case <-time.After(45 * time.Second):
+			tunnelSink.mute()
 			_ = srv.Shutdown(context.Background())
 			if tunnelCmd.Process != nil {
 				_ = tunnelCmd.Process.Kill()
 			}
 			return fmt.Errorf("timed out waiting for trycloudflare URL from cloudflared")
 		case <-ctx.Done():
+			tunnelSink.mute()
 			_ = srv.Shutdown(context.Background())
 			return nil
 		}
@@ -222,13 +230,14 @@ func cmdSend(args []string) error {
 
 	select {
 	case <-ctx.Done():
+		tunnelSink.mute()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
 		if tunnelCmd != nil && tunnelCmd.Process != nil {
 			_ = tunnelCmd.Process.Kill()
 		}
-		fmt.Fprintln(os.Stderr, "nya send: stopped")
+		fmt.Fprintln(os.Stderr, T("send.stopped"))
 		return nil
 	case err := <-errCh:
 		if err == http.ErrServerClosed {
