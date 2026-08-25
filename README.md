@@ -33,8 +33,16 @@ again in parity symbols.
 
 ## Install
 
+**Windows (recommended):** download `nya-*-windows-amd64-setup.exe` from
+[GitHub Releases](https://github.com/nyarime/nya/releases) — installs `nya`,
+`nya-get`, **nyaFM**, optional PATH + `.nya` association (like 7-Zip).
+See [docs/RELEASE.md](docs/RELEASE.md).
+
+**From source / Go:**
+
 ```bash
 go install github.com/nyarime/nya/cmd/nya@latest
+go install github.com/nyarime/nya/cmd/nya-get@latest
 ```
 
 ## Command line
