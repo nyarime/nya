@@ -126,3 +126,6 @@ Write-Host "Installed: $nyaExe"
 Write-Host "Open a new terminal so PATH refreshes, then try: nya help"
 Write-Host "Uninstall:"
 Write-Host "  irm https://raw.githubusercontent.com/$Repo/main/scripts/uninstall.ps1 | iex"
+if ($Prefix -ne (Join-Path $env:LOCALAPPDATA "Programs\NYA")) {
+    Write-Host "  # or: uninstall.ps1 -Prefix `"$Prefix`""
+}

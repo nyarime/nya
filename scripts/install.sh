@@ -129,4 +129,6 @@ esac
 echo
 echo "Uninstall:"
 echo "  curl -fsSL https://raw.githubusercontent.com/${REPO}/main/scripts/uninstall.sh | bash"
-# also: install.sh --uninstall --prefix "$PREFIX"
+if [[ "$PREFIX" != "$HOME/.local" ]]; then
+  echo "  # or: bash uninstall.sh --prefix $PREFIX"
+fi
