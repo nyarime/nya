@@ -10,7 +10,7 @@ package nya
 
 const (
 	lzmaOptimumWindow    = 4096
-	lzmaOptimumWindowMax = 512 // cap at high depth to keep level-9 solid practical
+	lzmaOptimumWindowMax = 1024 // was 512; avoid L8 dip vs depth≥64 branch
 	lzmaOptimumInf       = ^uint32(0) >> 1
 )
 

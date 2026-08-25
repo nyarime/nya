@@ -781,7 +781,35 @@ func (nw *Writer) finalizeArchive(gh GlobalHeader, data, dirBytes []byte) error 
 		nw.w.Write(nw.globalMetaFec)
 	}
 
+	if len(nw.dict) > 0 {
+		if err := nw.appendEmbeddedDict(&gh); err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+// appendEmbeddedDict writes tail type 0x0006 and patches the global header.
+func (nw *Writer) appendEmbeddedDict(gh *GlobalHeader) error {
+	tailOff, err := nw.w.Seek(0, io.SeekCurrent)
+	if err != nil {
+		return err
+	}
+	rec := WrapTailRecord(TailTypeZstdDictionary, EncodeZstdDictPayload(nw.dict))
+	if _, err := nw.w.Write(rec); err != nil {
+		return err
+	}
+	gh.Flags |= FlagHasZstdDict
+	SetTailChainReserved(gh, uint64(tailOff), uint64(len(rec)))
+	if _, err := nw.w.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+	if err := gh.Write(nw.w); err != nil {
+		return err
+	}
+	_, err = nw.w.Seek(0, io.SeekEnd)
+	return err
 }
 
 func (nw *Writer) buildGlobalMetaPayload(dirBytes []byte) []byte {

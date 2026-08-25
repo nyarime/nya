@@ -1,3 +1,5 @@
 corpus,tool,level,mode,raw_bytes,out_bytes,ratio,encode_s,decode_s,notes
+silesia,nya,1,zstd,211938580,94065802,0.4438,12.860,1.341,partial-nightly
 silesia,nya,3,zstd,211938580,91782052,0.4331,13.163,1.436,partial-nightly
+silesia,nya,4,zstd,211938580,91780995,0.4331,12.586,1.316,partial-nightly
 silesia,nya,5,lzma2,211938580,62349639,0.2942,45.429,5.840,partial-nightly

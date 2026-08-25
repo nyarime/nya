@@ -121,6 +121,7 @@ Rules:
 | `0x0003` | SolidGroupTable | Reserved | [Solid group table](#solid-group-table-tail-0x0003) |
 | `0x0004` | SessionDescriptor | Reserved | [Multi-session](#multi-session-tail-0x0004) |
 | `0x0005` | ProfileMetadata | Reserved | [Profile metadata](#profile-metadata-tail-0x0005) |
+| `0x0006` | ZstdDictionary | **Supported** | Embedded NYA-Zstd dictionary for CompressionID 5 |
 | `0x0000`, `0xFFFF` | _Reserved_ | — | Must not appear |
 | other | Unknown | — | Skip |
 
@@ -285,6 +286,25 @@ that does not belong in per-entry xattrs:
 
 Readers MUST accept unknown keys. Writers SHOULD prefer xattrs for per-entry
 data and this tail for archive-wide profile options.
+
+## Zstd dictionary tail (`0x0006`)
+
+When `Writer.SetDict` is used (CompressionID **5**), writers SHOULD append
+this tail so extractors need no external `-dict` file.
+
+Payload:
+
+| Offset | Size | Field |
+| ---: | ---: | --- |
+| 0 | 1 | `schemaVersion` = 1 |
+| 1 | 4 | `dictLen` (uint32 LE) |
+| 5 | dictLen | raw dictionary bytes |
+
+Header flag bit 6 `FlagHasZstdDict` is informative. Location is via
+`TailChainOffset`/`Size` in Reserved (when not used by Argon2id) and/or the
+download-index EOF footer when type `0x0001` coexists in the same chain.
+Unknown tail types MUST be skipped. Old readers without ID-5 support still
+cannot decompress those entries.
 
 ## NyaFS profile (informative)
 

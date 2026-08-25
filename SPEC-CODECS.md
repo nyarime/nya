@@ -77,8 +77,8 @@ match finder, predefined FSE tables for sequences, limited custom entropy modes.
 Improvements ship in **software versions**, not format bumps:
 
 1. Stronger match finder (lazy matching, wider window at high levels)
-2. **Dictionary mode** — CompressionID 5 + `Writer`/`Reader`/`-dict` wired
-   (external dict; **embed-in-archive** still TODO)
+2. **Dictionary mode** — CompressionID 5 + external `-dict` + **embedded tail 0x0006**
+   (auto-load on Open); auto-train from solid groups still TODO
 3. SIMD literal/copy paths (already partially present in decompress)
 4. Custom FSE tables re-enabled once cross-decoder conformance tests pass
 5. **Default level migration:** move `LevelDefault` from LZMA2 (5) to NYA-Zstd
