@@ -4,7 +4,8 @@
 #   irm https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.ps1 | iex
 #
 # Uninstall:
-#   & ([scriptblock]::Create((irm https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.ps1))) -Uninstall
+#   irm https://raw.githubusercontent.com/nyarime/nya/main/scripts/uninstall.ps1 | iex
+#   # or: install.ps1 -Uninstall
 #
 # Options: -Version 0.1.0  -Prefix DIR  -NoAssociate  -NoPath  -Uninstall
 
@@ -116,4 +117,4 @@ Write-Host ""
 Write-Host "Installed: $nyaExe"
 Write-Host "Open a new terminal so PATH refreshes, then try: nya help"
 Write-Host "Uninstall:"
-Write-Host "  & ([scriptblock]::Create((irm https://raw.githubusercontent.com/$Repo/main/scripts/install.ps1))) -Uninstall"
+Write-Host "  irm https://raw.githubusercontent.com/$Repo/main/scripts/uninstall.ps1 | iex"

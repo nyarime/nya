@@ -45,7 +45,7 @@ curl -fsSL https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.sh
 irm https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.ps1 | iex
 ```
 
-Uninstall: `bash scripts/install.sh --uninstall` / `install.ps1 -Uninstall`.
+Uninstall: `scripts/uninstall.sh` / `uninstall.ps1` (or `install.* --uninstall` / `-Uninstall`).
 See [docs/RELEASE.md](docs/RELEASE.md).
 
 **Windows setup.exe** (when built): download from

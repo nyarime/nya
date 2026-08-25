@@ -60,13 +60,13 @@ When GitHub Actions is off, or you prefer curl/irm over setup.exe:
 ```bash
 # Linux / macOS
 curl -fsSL https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.sh | bash
-curl -fsSL https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.sh | bash -s -- --uninstall
+curl -fsSL https://raw.githubusercontent.com/nyarime/nya/main/scripts/uninstall.sh | bash
 ```
 
 ```powershell
 # Windows
 irm https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.ps1 | iex
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.ps1))) -Uninstall
+irm https://raw.githubusercontent.com/nyarime/nya/main/scripts/uninstall.ps1 | iex
 ```
 
 Scripts download the matching Release asset, install under `~/.local` or
