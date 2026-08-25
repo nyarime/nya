@@ -31,6 +31,7 @@ Usage:
   nya manifest del  <archive.nya>            remove embedded download index
   nya manifest export [flags] <archive.nya>  write .nyam sidecar only
   nya sfx     [flags] <archive.nya> -o <out.exe> wrap archive as self-extractor (Rust stub)
+                                             (-o may appear before or after the archive path)
   nya associate [-uninstall]                 Windows: register .nya double-click → nya open
 
 Levels run 0 to 9, the way 7-Zip and WinRAR present them: 0 stores, 1 is
@@ -514,10 +515,12 @@ func openOrPasswordHint(path, password string) (*nya.Reader, error) {
 func cmdSfx(args []string) error {
 	fs := flag.NewFlagSet("sfx", flag.ExitOnError)
 	out := fs.String("o", "", "output self-extracting file (required)")
-	stub := fs.String("stub", "", "path to nya-sfx-stub (default: sfx/stubs/<os>_<arch>)")
-	fs.Parse(args)
+	stub := fs.String("stub", "", "path to nya-sfx-stub (default: beside nya.exe or sfx/stubs/<os>_<arch>)")
+	if err := parseFlagSet(fs, args, map[string]bool{"o": true, "stub": true}); err != nil {
+		return err
+	}
 	if *out == "" {
-		return fmt.Errorf("sfx requires -o output path")
+		return fmt.Errorf("sfx requires -o output path (e.g. nya sfx -o out.exe pack.nya)")
 	}
 	if fs.NArg() != 1 {
 		return fmt.Errorf("sfx needs one archive path")

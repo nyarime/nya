@@ -101,6 +101,14 @@ try {
             Copy-Item $src -Destination (Join-Path $Prefix $name) -Force
         }
     }
+    # Layout expected by nya.DefaultStubPath / Inno
+    $stubSrc = Join-Path $Prefix "nya-sfx-stub.exe"
+    if (Test-Path $stubSrc) {
+        $archName = if ($env:PROCESSOR_ARCHITECTURE -match "ARM64") { "arm64" } else { "amd64" }
+        $stubDir = Join-Path $Prefix "sfx\stubs"
+        New-Item -ItemType Directory -Path $stubDir -Force | Out-Null
+        Copy-Item $stubSrc -Destination (Join-Path $stubDir "nya-sfx-stub_windows_$archName.exe") -Force
+    }
 } finally {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }
