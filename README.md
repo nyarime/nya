@@ -5,7 +5,7 @@
 NYA (Nyarime Archive) is an archive format that pairs ordinary compression
 with forward error correction, so a damaged archive can often still be read.
 This repository is the **canonical home** for the format specification,
-reference implementation, `nya` CLI, and `nya-get` downloader. The format is
+reference implementation, and the `nya` CLI (`get` / `send` / `gui` / `sfx`, …). The format is
 general-purpose (backups, game packs, CDN distribution); firmware or database
 profiles can embed the same container without changing the on-disk layout.
 
@@ -90,8 +90,8 @@ Releases: [GitHub Releases](https://github.com/nyarime/nya/releases/latest). Pac
 go install github.com/nyarime/nya/cmd/nya@latest
 ```
 
-Primary CLI is **`nya`** (`get` / `send` / `gui` / `sfx` are subcommands).
-`nya-get` remains a thin shim; `nya-sfx-stub` stays a separate binary for SFX wrapping.
+Primary CLI is **`nya`**. Download is **`nya get`** (the `nya-get` binary is only a
+compatibility shim). `nya-sfx-stub` stays a separate binary for SFX wrapping.
 
 ## Command line
 
@@ -208,7 +208,7 @@ Levels run 0 to 9, the way 7-Zip and WinRAR present them:
 `-codec` to override the level's choice, `-password` to encrypt the payload,
 `-workers` to cap concurrency on **create** and **extract** (parallel per-chunk
 decompress when `ChunkCount > 1`), and **`-no-embed`** to skip the default
-embedded download index (needed for single-URL `nya-get`).
+embedded download index (needed for single-URL `nya get`).
 
 ## Library
 
@@ -374,7 +374,7 @@ closed-source product without GPL obligations, contact
 - [docs/BENCHMARK-COMPRESS.md](docs/BENCHMARK-COMPRESS.md) — compression A/B measurements
 - [SPEC-CODECS.md](SPEC-CODECS.md) — **NYA-Zstd & NYA-LZMA2** roles and roadmap
 - [SPEC-SFX.md](SPEC-SFX.md) — **self-extracting** stub + footer (Go reference stub)
-- [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) — `.nyam` manifest and `nya-get` transport blocks
+- [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) — `.nyam` manifest and `nya get` transport blocks
 - [fm/README.md](fm/README.md) — **nyaFM** Rust GUI (open / list / extract)
 
 ### Self-extracting archives (7-Zip-style)
