@@ -32,7 +32,7 @@ Usage:
   nya manifest export [flags] <archive.nya>  write .nyam sidecar only
   nya sfx     [flags] <archive.nya> -o <out.exe> wrap archive as self-extractor
   nya get     [flags] --url <URL>            download via embedded index / .nyam (Range)
-  nya send    [flags] <archive.nya>          serve locally + Cloudflare Quick Tunnel (trycloudflare)
+  nya send    [flags] <archive.nya|dir|file> serve (+pack) via Cloudflare Quick Tunnel
   nya gui     [archive.nya]                  open nyaFM GUI
   nya associate [-uninstall]                 Windows: register .nya double-click → nya open
 

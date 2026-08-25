@@ -102,7 +102,10 @@ See [examples/windows-open](examples/windows-open/README.md).
 ```bash
 # Sender — silently installs + verifies cloudflared if missing
 nya send GamePack.nya
-# → prints: nya get --url https://xxxx.trycloudflare.com/GamePack.nya
+# or pack a directory / file on the fly, then send:
+nya send ./GameData
+nya send -o GamePack.nya ./GameData   # keep the .nya
+# → prints: nya get --url https://xxxx.trycloudflare.com/….nya
 
 # Receiver
 nya get --url https://xxxx.trycloudflare.com/GamePack.nya

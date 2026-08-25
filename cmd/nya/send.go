@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/nyarime/nya"
@@ -27,11 +28,17 @@ func cmdSend(args []string) error {
 	noTunnel := fs.Bool("no-tunnel", false, "only serve locally (no TryCloudflare)")
 	noFetch := fs.Bool("no-fetch-cloudflared", false, "do not auto-install cloudflared when missing")
 	noEmbed := fs.Bool("no-embed", false, "do not upsert download index before send")
+	out := fs.String("o", "", "when sending a directory/file: write .nya here (default: temp, deleted on exit)")
+	level := fs.Int("level", nya.LevelFast, "when packing a directory/file: 0–9 (default 3=fast)")
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, `nya send — serve a .nya over HTTP and publish via Cloudflare Quick Tunnel
+		fmt.Fprint(os.Stderr, `nya send — pack (optional) + serve over HTTP + Cloudflare Quick Tunnel
 
 Usage:
   nya send [flags] <archive.nya>
+  nya send [flags] <directory|file>     # packs to .nya first, then serves
+
+If the argument is a directory (or a non-.nya file), nya creates an archive
+(default: temp file; use -o to keep it), then serves that.
 
 If cloudflared is missing, nya silently installs the official binary into
 ~/.local/bin (or %LocalAppData%\nya\bin on Windows), then runs --version
@@ -44,7 +51,7 @@ Receiver:
 		fs.PrintDefaults()
 	}
 	if err := parseFlagSet(fs, args, map[string]bool{
-		"port": true, "bind": true, "cloudflared": true,
+		"port": true, "bind": true, "cloudflared": true, "o": true, "level": true,
 	}); err != nil {
 		return err
 	}
@@ -52,8 +59,8 @@ Receiver:
 		fs.Usage()
 		os.Exit(2)
 	}
-	archive := fs.Arg(0)
-	abs, err := filepath.Abs(archive)
+	src := fs.Arg(0)
+	abs, err := filepath.Abs(src)
 	if err != nil {
 		return err
 	}
@@ -61,12 +68,25 @@ Receiver:
 	if err != nil {
 		return err
 	}
-	if st.IsDir() {
-		return fmt.Errorf("send needs a .nya file, not a directory")
-	}
 
-	if !*noEmbed {
-		if err := ensureSendEmbed(abs); err != nil {
+	archive := abs
+	cleanup := func() {}
+	if st.IsDir() || !isNyaArchivePath(abs) {
+		archive, cleanup, err = packSendSource(abs, *out, *level, !*noEmbed)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+		st, err = os.Stat(archive)
+		if err != nil {
+			return err
+		}
+	} else if !*noEmbed {
+		if err := ensureSendEmbed(archive); err != nil {
+			return err
+		}
+		st, err = os.Stat(archive)
+		if err != nil {
 			return err
 		}
 	}
@@ -76,11 +96,11 @@ Receiver:
 		return err
 	}
 	defer ln.Close()
-	localURL := fmt.Sprintf("http://%s/%s", ln.Addr().String(), filepath.Base(abs))
+	localURL := fmt.Sprintf("http://%s/%s", ln.Addr().String(), filepath.Base(archive))
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		f, err := os.Open(abs)
+		f, err := os.Open(archive)
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
@@ -93,7 +113,7 @@ Receiver:
 		}
 		w.Header().Set("Accept-Ranges", "bytes")
 		w.Header().Set("Content-Type", "application/octet-stream")
-		http.ServeContent(w, r, filepath.Base(abs), fi.ModTime(), f)
+		http.ServeContent(w, r, filepath.Base(archive), fi.ModTime(), f)
 	})
 	srv := &http.Server{Handler: mux}
 
@@ -150,7 +170,7 @@ Receiver:
 
 		select {
 		case u := <-found:
-			public = u + "/" + filepath.Base(abs)
+			public = u + "/" + filepath.Base(archive)
 		case <-time.After(45 * time.Second):
 			_ = srv.Shutdown(context.Background())
 			if tunnelCmd.Process != nil {
@@ -163,7 +183,7 @@ Receiver:
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "\nnya send: serving %s (%s)\n", filepath.Base(abs), nya.HumanSize(int(st.Size())))
+	fmt.Fprintf(os.Stderr, "\nnya send: serving %s (%s)\n", filepath.Base(archive), nya.HumanSize(int(st.Size())))
 	fmt.Fprintf(os.Stderr, "nya send: local  %s\n", localURL)
 	if !*noTunnel {
 		fmt.Fprintf(os.Stderr, "nya send: public %s\n", public)
@@ -188,6 +208,71 @@ Receiver:
 		}
 		return err
 	}
+}
+
+func isNyaArchivePath(path string) bool {
+	return strings.EqualFold(filepath.Ext(path), ".nya")
+}
+
+// packSendSource archives a directory or file into a .nya for sending.
+// If out is empty, uses a temp file that cleanup removes.
+func packSendSource(src, out string, level int, embed bool) (archive string, cleanup func(), err error) {
+	cleanup = func() {}
+	if level < 0 || level > 9 {
+		return "", cleanup, fmt.Errorf("level %d is out of range, want 0 to 9", level)
+	}
+	dest := out
+	if dest == "" {
+		base := filepath.Base(src)
+		if base == "." || base == "/" || base == string(filepath.Separator) {
+			base = "send"
+		}
+		f, err := os.CreateTemp("", "nya-send-"+base+"-*.nya")
+		if err != nil {
+			return "", cleanup, err
+		}
+		dest = f.Name()
+		_ = f.Close()
+		cleanup = func() { _ = os.Remove(dest) }
+	} else {
+		absOut, err := filepath.Abs(dest)
+		if err != nil {
+			return "", cleanup, err
+		}
+		dest = absOut
+		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+			return "", cleanup, err
+		}
+	}
+
+	fmt.Fprintf(os.Stderr, "nya send: packing %s → %s\n", src, dest)
+	if err := writeNyaArchive(dest, src, level); err != nil {
+		cleanup()
+		return "", func() {}, err
+	}
+	if embed {
+		if err := ensureSendEmbed(dest); err != nil {
+			cleanup()
+			return "", func() {}, err
+		}
+	}
+	return dest, cleanup, nil
+}
+
+func writeNyaArchive(dest, src string, level int) error {
+	f, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	w := nya.NewWriterOpts(f, 0, level, false)
+	if err := w.AddFile(src); err != nil {
+		return err
+	}
+	if err := w.Close(); err != nil {
+		return err
+	}
+	return f.Close()
 }
 
 func ensureSendEmbed(path string) error {
