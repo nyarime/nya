@@ -60,6 +60,16 @@ var i18nCatalog = map[string]map[string]string{
 		"send.nya_fmt":  "  archive %s",
 		"send.get_fmt":  "  nya get --url %s",
 		"send.stop":     "Ctrl+C to stop",
+		"send.tunnel.start": "nya send: starting Cloudflare tunnel…",
+		"send.tunnel.ready": "nya send: public URL %s",
+		"send.tunnel.err":   "nya send: tunnel: ",
+		"send.stopped":      "nya send: stopped",
+		"send.log.fmt":      "  [recv] %s /%s %s from %s in %s — %s%s\n",
+		"send.log.ok":       "OK",
+		"send.log.fail":     "ERR",
+		"send.log.range":    "range",
+		"send.log.cf":       "(Cloudflare)",
+		"send.log.local":    "(local)",
 		"send.usage": `nya send — publish a file or folder
 
 Usage:
@@ -83,6 +93,16 @@ Example:
 		"send.nya_fmt":  "  压缩包  %s",
 		"send.get_fmt":  "  nya get --url %s",
 		"send.stop":     "Ctrl+C 结束",
+		"send.tunnel.start": "nya send: 正在启动 Cloudflare 隧道…",
+		"send.tunnel.ready": "nya send: 公网 URL %s",
+		"send.tunnel.err":   "nya send: 隧道: ",
+		"send.stopped":      "nya send: 已停止",
+		"send.log.fmt":      "  [接收] %s /%s %s 来自 %s 用时 %s — %s%s\n",
+		"send.log.ok":       "OK",
+		"send.log.fail":     "失败",
+		"send.log.range":    "范围",
+		"send.log.cf":       "(Cloudflare)",
+		"send.log.local":    "(本地)",
 		"send.usage": `nya send — 发布文件或目录
 
 用法：
