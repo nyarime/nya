@@ -2,7 +2,7 @@ use byteorder::{LittleEndian, ReadBytesExt};
 use std::io::{self, Cursor, Read};
 
 use crate::format::{
-    CHUNK_HDR, COMPRESS_LZMA2, COMPRESS_NONE, COMPRESS_ZSTD, DIR_ENTRY_V2, ENTRY_DIR,
+    CHUNK_HDR, COMPRESS_LZMA2, COMPRESS_NONE, COMPRESS_ZSTD, DIR_ENTRY_V2,
     ENTRY_FILE, FLAG_SOLID, GLOBAL_HEADER_SIZE, MAGIC,
 };
 

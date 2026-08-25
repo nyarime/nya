@@ -1,8 +1,6 @@
-mod extract;
-mod footer;
-mod format;
-mod nya;
+//! NYA self-extracting archive stub (extract-only). See SPEC-SFX.md.
 
+use nya_archive::extract;
 use std::path::PathBuf;
 
 fn main() {

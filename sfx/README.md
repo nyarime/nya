@@ -6,9 +6,12 @@ Small **extract-only** self-extracting stub for `.nya` archives. See
 ## Build
 
 ```bash
-cd sfx
-cargo build --release
-cp target/release/nya-sfx-stub stubs/nya-sfx-stub_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m)
+# from repo root (workspace)
+cargo build -p nya-sfx-stub --release
+cp target/release/nya-sfx-stub sfx/stubs/nya-sfx-stub_$(uname -s | tr '[:upper:]' '[:lower:]')_$(uname -m)
+
+# or from sfx/
+cd sfx && cargo build --release
 ```
 
 Release binary size is typically **~500–600 KB** (stripped, with zstd + lzma2).

@@ -299,12 +299,13 @@ closed-source product without GPL obligations, contact
 - [SPEC-CODECS.md](SPEC-CODECS.md) — **NYA-Zstd & NYA-LZMA2** roles and roadmap
 - [SPEC-SFX.md](SPEC-SFX.md) — **self-extracting** stub + footer (Rust)
 - [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) — `.nyam` manifest and `nya-get` transport blocks
+- [fm/README.md](fm/README.md) — **nyaFM** Rust GUI (open / list / extract)
 
 ### Self-extracting archives (7-Zip-style)
 
 ```bash
-cd sfx && cargo build --release   # once; ~580 KB stub
-cp target/release/nya-sfx-stub stubs/nya-sfx-stub_linux_amd64
+cargo build -p nya-sfx-stub --release   # once; stub in target/release/
+cp target/release/nya-sfx-stub sfx/stubs/nya-sfx-stub_linux_amd64
 
 nya create -sfx game.bin -level 3 ./GameData/
 nya sfx pack.nya -o pack.bin
@@ -312,3 +313,9 @@ nya sfx pack.nya -o pack.bin
 ```
 
 The stub is **Rust** (small); the main `nya` tool only concatenates stub + archive + footer.
+The same `nya_archive` library powers **nyaFM**:
+
+```bash
+cargo build -p nya-fm --release
+./target/release/nya-fm pack.nya   # GUI: list + extract
+```
