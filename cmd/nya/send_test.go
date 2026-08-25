@@ -22,14 +22,21 @@ func TestTryCloudflareURLRegex(t *testing.T) {
 	}
 }
 
-func TestIsNyaArchivePath(t *testing.T) {
-	if !isNyaArchivePath("a.nya") || !isNyaArchivePath(`C:\x\B.NYA`) {
-		t.Fatal("expected .nya")
+func TestSendPublicNames(t *testing.T) {
+	nyaN, nyamN := sendPublicNames(sendModeFile, "/tmp/novel.txt", "novel.txt")
+	if nyaN != "novel.txt.nya" || nyamN != "novel.txt.nyam" {
+		t.Fatalf("file: %s %s", nyaN, nyamN)
 	}
-	if isNyaArchivePath("a.zip") || isNyaArchivePath("dir") {
-		t.Fatal("unexpected .nya")
+	nyaN, nyamN = sendPublicNames(sendModeDir, "/data/GameData", "")
+	if nyaN != "GameData.nya" || nyamN != "GameData.nyam" {
+		t.Fatalf("dir: %s %s", nyaN, nyamN)
+	}
+	nyaN, nyamN = sendPublicNames(sendModeNya, "/out/pack.nya", "")
+	if nyaN != "pack.nya" || nyamN != "pack.nyam" {
+		t.Fatalf("nya: %s %s", nyaN, nyamN)
 	}
 }
+
 
 func TestPackSendSourceDir(t *testing.T) {
 	root := t.TempDir()

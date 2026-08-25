@@ -32,7 +32,7 @@ Usage:
   nya manifest export [flags] <archive.nya>  write .nyam sidecar only
   nya sfx     [flags] <archive.nya> -o <out.exe> wrap archive as self-extractor
   nya get     [flags] --url <URL>            download (nyam restore / plain file) + progress
-  nya send    [flags] <file|dir|archive.nya> share: browser link + index.nyam
+  nya send    [flags] <file|dir|archive.nya> share: direct/.nya + <name>.nyam
   nya gui     [archive.nya]                  open nyaFM GUI
   nya associate [-uninstall]                 Windows: register .nya double-click → nya open
 

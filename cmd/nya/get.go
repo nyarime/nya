@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
-	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -22,7 +21,7 @@ func cmdGet(args []string) error {
 	out := fs.String("o", "", "extract/output dir or file path")
 	concurrency := fs.Int("c", 8, "parallel download connections (nyam/.nya)")
 	resume := fs.Bool("resume", true, "resume incomplete download")
-	urlFlag := fs.String("url", "", "index.nyam / .nya / plain file URL")
+	urlFlag := fs.String("url", "", ".nyam / .nya / plain file URL")
 	paths := fs.String("paths", "", "comma-separated entry paths for partial fetch")
 	noExtract := fs.Bool("no-extract", false, "keep the .nya only; do not restore files/dirs")
 	keepNya := fs.Bool("keep-nya", false, "after extract, keep the downloaded .nya")
@@ -30,7 +29,7 @@ func cmdGet(args []string) error {
 		fmt.Fprint(os.Stderr, `nya get — download and restore
 
 Usage:
-  nya get --url <index.nyam|file.nya|https://…/file>
+  nya get --url <name.nyam|file.nya|https://…/file>
   nya get <manifest.nyam>
 
 `)
@@ -85,10 +84,12 @@ func classifyGetURL(client *http.Client, raw string) (getURLKind, error) {
 	}
 	low := strings.ToLower(u.Path)
 	switch {
-	case u.Path == "" || u.Path == "/" || strings.HasSuffix(low, ".nyam"):
+	case strings.HasSuffix(low, ".nyam"):
 		return getURLNyam, nil
 	case strings.HasSuffix(low, ".nya"):
 		return getURLNya, nil
+	case u.Path == "" || u.Path == "/":
+		return getURLPlain, nil
 	default:
 		// HEAD: if Content-Type looks like nyam JSON, treat as index; else plain.
 		req, err := http.NewRequest(http.MethodHead, raw, nil)
@@ -299,18 +300,18 @@ func loadTransferManifest(client *http.Client, raw string) (*nya.Manifest, error
 	if u.Scheme == "" {
 		return nil, fmt.Errorf("url must include scheme (https://…)")
 	}
-	if u.Path == "" || u.Path == "/" {
-		u.Path = "/index.nyam"
-	}
 	low := strings.ToLower(u.Path)
 	switch {
 	case strings.HasSuffix(low, ".nyam"):
 		return fetchManifestURL(client, u.String())
 	case strings.HasSuffix(low, ".nya"):
 		return nya.BootstrapManifestFromURL(client, u.String())
+	case u.Path == "" || u.Path == "/":
+		return nil, fmt.Errorf("pass a .nyam URL (e.g. …/name.nyam), not the site root")
 	default:
+		// Sibling "<path>.nyam" when given a direct file URL.
 		idx := *u
-		idx.Path = path.Join(path.Dir(u.Path), "index.nyam")
+		idx.Path = u.Path + ".nyam"
 		if m, err := fetchManifestURL(client, idx.String()); err == nil {
 			return m, nil
 		}
