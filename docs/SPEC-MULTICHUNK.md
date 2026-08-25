@@ -99,7 +99,7 @@ global header (v1.2 Argon2id).
 Reader with `-workers N`:
 
 1. Parse central directory
-2. For each file entry with `ChunkCount > 1`, schedule chunk decompress jobs
+2. For each file entry with `ChunkCount > 1`, schedule chunk decompress jobs in parallel
 3. Concatenate raw chunks in order, apply BCJ post-filter if entry-level BCJ set
 
 ## Version bump

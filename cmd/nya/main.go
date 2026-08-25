@@ -219,6 +219,7 @@ func cmdList(args []string) error {
 func cmdExtract(args []string) error {
 	fs := flag.NewFlagSet("extract", flag.ExitOnError)
 	password := fs.String("password", "", "archive password")
+	workers := fs.Int("workers", 0, "parallel chunk decompression workers (0 = automatic)")
 	fs.Parse(args)
 	if fs.NArg() < 1 || fs.NArg() > 2 {
 		return fmt.Errorf("extract needs an archive path and an optional destination")
@@ -231,6 +232,9 @@ func cmdExtract(args []string) error {
 	r, err := openOrPasswordHint(fs.Arg(0), *password)
 	if err != nil {
 		return err
+	}
+	if *workers > 0 {
+		r.SetWorkers(*workers)
 	}
 	return r.Extract(dest)
 }

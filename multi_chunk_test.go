@@ -2,6 +2,7 @@ package nya
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -235,6 +236,33 @@ func TestSmallFileStaysSingleChunk(t *testing.T) {
 	for _, e := range r.Entries {
 		if e.EntryType == EntryFile && e.ChunkCount != 1 {
 			t.Errorf("ChunkCount=%d want 1", e.ChunkCount)
+		}
+	}
+}
+
+func TestMultiChunkParallelExtract(t *testing.T) {
+	payload := make([]byte, 6*1024*1024)
+	for i := range payload {
+		payload[i] = byte(i * 3)
+	}
+	archive := createMultiChunkArchive(t, payload, 15)
+
+	for _, workers := range []int{1, 4, 8} {
+		r, err := Open(archive)
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.SetWorkers(workers)
+		out := filepath.Join(t.TempDir(), fmt.Sprintf("w%d", workers))
+		if err := r.Extract(out); err != nil {
+			t.Fatalf("workers=%d: %v", workers, err)
+		}
+		got, err := os.ReadFile(filepath.Join(out, "payload.bin"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, payload) {
+			t.Fatalf("workers=%d: content mismatch", workers)
 		}
 	}
 }
