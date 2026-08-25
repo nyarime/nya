@@ -45,6 +45,14 @@ Run "nya <command> -h" for the flags of a command.
 `
 
 func main() {
+	if nya.ShouldRunSFXMode(os.Args) {
+		if err := nya.RunSFXExtract(os.Args[1:]); err != nil {
+			fmt.Fprintf(os.Stderr, "nya-sfx: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if len(os.Args) < 2 {
 		fmt.Fprint(os.Stderr, usage)
 		os.Exit(2)
@@ -104,8 +112,8 @@ func cmdCreate(args []string) error {
 	fecType := fs.String("fec-type", "hybrid",
 		"FEC codec when -fec > 0: hybrid (default), raptorq or ldpc")
 	solid := fs.Bool("solid", false, "compress all files as one stream (better ratio, slower random access)")
-	sfx := fs.Bool("sfx", false, "write a self-extracting file (requires Rust stub; see sfx/README.md)")
-	sfxStub := fs.String("sfx-stub", "", "path to nya-sfx-stub binary (default: sfx/stubs/<os>_<arch>)")
+	sfx := fs.Bool("sfx", false, "write a self-extracting file (uses this nya binary as stub)")
+	sfxStub := fs.String("sfx-stub", "", "optional stub binary (default: running nya executable)")
 	codec := fs.String("codec", "",
 		"override the level's codec: lzma2, zstd or store")
 	password := fs.String("password", "", "encrypt the payload with this password")
@@ -198,14 +206,7 @@ func cmdCreate(args []string) error {
 
 	if *sfx {
 		stubPath := *sfxStub
-		if stubPath == "" {
-			var err error
-			stubPath, err = nya.DefaultStubPath()
-			if err != nil {
-				return err
-			}
-		}
-		if err := nya.BuildSFX(stubPath, archivePath, archive, nil, nya.SFXFlagConsole); err != nil {
+		if err := nya.BuildSFXAuto(stubPath, archivePath, archive, nil, nya.SFXFlagConsole); err != nil {
 			return err
 		}
 		os.Remove(archivePath)
@@ -542,7 +543,7 @@ func openOrPasswordHint(path, password string) (*nya.Reader, error) {
 func cmdSfx(args []string) error {
 	fs := flag.NewFlagSet("sfx", flag.ExitOnError)
 	out := fs.String("o", "", "output self-extracting file (required)")
-	stub := fs.String("stub", "", "path to nya-sfx-stub (default: beside nya.exe or sfx/stubs/<os>_<arch>)")
+	stub := fs.String("stub", "", "optional stub binary (default: running nya executable)")
 	if err := parseFlagSet(fs, args, map[string]bool{"o": true, "stub": true}); err != nil {
 		return err
 	}
@@ -553,21 +554,18 @@ func cmdSfx(args []string) error {
 		return fmt.Errorf("sfx needs one archive path")
 	}
 	stubPath := *stub
-	if stubPath == "" {
-		var err error
-		stubPath, err = nya.DefaultStubPath()
-		if err != nil {
-			return err
-		}
-	}
-	if err := nya.BuildSFX(stubPath, fs.Arg(0), *out, nil, nya.SFXFlagConsole); err != nil {
+	if err := nya.BuildSFXAuto(stubPath, fs.Arg(0), *out, nil, nya.SFXFlagConsole); err != nil {
 		return err
 	}
 	fi, err := os.Stat(*out)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%s  %s  (SFX, stub %s)\n", *out, nya.HumanSize(int(fi.Size())), stubPath)
+	stubLabel := stubPath
+	if stubLabel == "" {
+		stubLabel = "self"
+	}
+	fmt.Printf("%s  %s  (SFX, stub %s)\n", *out, nya.HumanSize(int(fi.Size())), stubLabel)
 	return nil
 }
 

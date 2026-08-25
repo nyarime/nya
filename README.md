@@ -92,7 +92,8 @@ go install github.com/nyarime/nya/cmd/nya@latest
 ```
 
 Primary CLI is **`nya`**. Download is **`nya get`** (the `nya-get` binary is only a
-compatibility shim). `nya-sfx-stub` stays a separate binary for SFX wrapping.
+compatibility shim). SFX uses the same **`nya`** binary as stub — no separate
+`nya-sfx-stub` in release packages.
 
 ## Command line
 
@@ -389,24 +390,22 @@ closed-source product without GPL obligations, contact
 - [docs/BENCHMARK-CORPUS.md](docs/BENCHMARK-CORPUS.md) — public corpus + raw data plan
 - [docs/NOTE-UPX.md](docs/NOTE-UPX.md) — UPX vs archive compression on ELF
 - [SPEC-CODECS.md](SPEC-CODECS.md) — **NYA-Zstd & NYA-LZMA2** roles and roadmap
-- [SPEC-SFX.md](SPEC-SFX.md) — **self-extracting** stub + footer (Go reference stub)
+- [SPEC-SFX.md](SPEC-SFX.md) — **self-extracting** archives (`nya` as unified stub)
 - [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) — `.nyam` manifest and `nya get` transport blocks
 - [fm/README.md](fm/README.md) — **nyaFM** Rust GUI (open / list / extract)
 
 ### Self-extracting archives (7-Zip-style)
 
 ```bash
-go build -o sfx/stubs/nya-sfx-stub_$(go env GOOS)_$(go env GOARCH) ./cmd/nya-sfx-stub
-
 nya create -sfx game.exe -level 3 ./GameData/
 nya sfx pack.nya -o pack.exe
 ./pack.exe                        # extracts beside the executable
 ```
 
 Double-click / bare run unpacks into the folder that contains the SFX file
-(like macOS Archive Utility). Use `-o DIR` to override. The reference stub is
-**Go** (`cmd/nya-sfx-stub`) so NYA-Zstd / solid / multi-chunk all work; `nya`
-only concatenates stub + archive + footer.
+(like macOS Archive Utility). Use `-o DIR` to override. **`nya`** is both CLI and
+SFX stub: `create -sfx` / `nya sfx` prepend the running `nya` binary, then
+append the archive and footer. Do not UPX SFX outputs.
 
 ```bash
 cargo build -p nya-fm --release

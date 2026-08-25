@@ -95,19 +95,11 @@ try {
     Invoke-WebRequest -Uri $url -OutFile $zip
     Expand-Archive -Path $zip -DestinationPath $tmp -Force
     New-Item -ItemType Directory -Path $Prefix -Force | Out-Null
-    foreach ($name in @("nya.exe", "nya-get.exe", "nya-fm.exe", "nya-sfx-stub.exe")) {
+    foreach ($name in @("nya.exe", "nya-get.exe", "nya-fm.exe")) {
         $src = Join-Path $tmp $name
         if (Test-Path $src) {
             Copy-Item $src -Destination (Join-Path $Prefix $name) -Force
         }
-    }
-    # Layout expected by nya.DefaultStubPath / Inno
-    $stubSrc = Join-Path $Prefix "nya-sfx-stub.exe"
-    if (Test-Path $stubSrc) {
-        $archName = if ($env:PROCESSOR_ARCHITECTURE -match "ARM64") { "arm64" } else { "amd64" }
-        $stubDir = Join-Path $Prefix "sfx\stubs"
-        New-Item -ItemType Directory -Path $stubDir -Force | Out-Null
-        Copy-Item $stubSrc -Destination (Join-Path $stubDir "nya-sfx-stub_windows_$archName.exe") -Force
     }
 } finally {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue

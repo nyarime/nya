@@ -13,15 +13,13 @@ import (
 func TestBuildSFXRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	archive := filepath.Join(dir, "test.nya")
-	stubSrc := filepath.Join(dir, "nya-sfx-stub")
-	build := exec.Command("go", "build", "-o", stubSrc, "./cmd/nya-sfx-stub")
+	nyaBin := filepath.Join(dir, "nya")
+	build := exec.Command("go", "build", "-o", nyaBin, "./cmd/nya")
 	build.Dir = "."
 	if out, err := build.CombinedOutput(); err != nil {
-		// When tests run from module root this works; skip if not.
-		t.Skipf("build go stub: %v\n%s", err, out)
+		t.Skipf("build nya: %v\n%s", err, out)
 	}
 
-	// Create tiny archive
 	src := filepath.Join(dir, "src")
 	os.MkdirAll(src, 0755)
 	os.WriteFile(filepath.Join(src, "hello.txt"), []byte("hello sfx"), 0644)
@@ -39,8 +37,12 @@ func TestBuildSFXRoundTrip(t *testing.T) {
 	}
 	f.Close()
 
+	stub, err := os.ReadFile(nyaBin)
+	if err != nil {
+		t.Fatal(err)
+	}
 	sfxOut := filepath.Join(dir, "test.sfx.bin")
-	if err := nya.BuildSFX(stubSrc, archive, sfxOut, nil, nya.SFXFlagConsole); err != nil {
+	if err := nya.BuildSFXFromBytes(stub, archive, sfxOut, nil, nya.SFXFlagConsole); err != nil {
 		t.Fatal(err)
 	}
 
@@ -69,18 +71,16 @@ func TestBuildSFXRoundTrip(t *testing.T) {
 		t.Fatalf("extract via OpenAny: %q", got)
 	}
 
-	// Run stub in dev mode (flags before archive path)
 	out2 := filepath.Join(dir, "out2")
-	cmd := exec.Command(stubSrc, "-o", out2, "-y", archive)
+	cmd := exec.Command(nyaBin, "-o", out2, "-y", archive)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("stub extract: %v\n%s", err, out)
+		t.Fatalf("nya dev extract: %v\n%s", err, out)
 	}
 	got2, _ := os.ReadFile(filepath.Join(out2, "src", "hello.txt"))
 	if string(got2) != "hello sfx" {
-		t.Fatalf("stub extract content: %q", got2)
+		t.Fatalf("nya dev extract content: %q", got2)
 	}
 
-	// Self-extract: run the SFX binary itself
 	out3 := filepath.Join(dir, "out3")
 	cmd2 := exec.Command(sfxOut, "-o", out3, "-y")
 	if out, err := cmd2.CombinedOutput(); err != nil {
@@ -95,7 +95,6 @@ func TestBuildSFXRoundTrip(t *testing.T) {
 func TestParseSfxFooter(t *testing.T) {
 	var buf bytes.Buffer
 	buf.WriteString(nya.SFXMagic)
-	// offset 100, size 50
 	off := make([]byte, 8)
 	size := make([]byte, 8)
 	for i := range off {
@@ -106,7 +105,7 @@ func TestParseSfxFooter(t *testing.T) {
 	}
 	buf.Write(off)
 	buf.Write(size)
-	buf.Write(make([]byte, 16)) // config + flags
+	buf.Write(make([]byte, 16))
 
 	foot, err := nya.ParseSfxFooter(buf.Bytes())
 	if err != nil {
@@ -114,5 +113,16 @@ func TestParseSfxFooter(t *testing.T) {
 	}
 	if foot.ArchiveOffset != 100 || foot.ArchiveSize != 50 {
 		t.Fatalf("got %+v", foot)
+	}
+}
+
+func TestShouldRunSFXMode(t *testing.T) {
+	dir := t.TempDir()
+	nyaBin := filepath.Join(dir, "nya")
+	if out, err := exec.Command("go", "build", "-o", nyaBin, "./cmd/nya").CombinedOutput(); err != nil {
+		t.Skipf("build nya: %v\n%s", err, out)
+	}
+	if nya.ShouldRunSFXMode([]string{nyaBin}) {
+		t.Fatal("plain nya should not run SFX mode")
 	}
 }

@@ -5,7 +5,7 @@
 #   bash uninstall.sh --prefix ~/.local
 #
 # Removes files installed by install.sh under the same prefix:
-#   $PREFIX/bin/nya  nya-get  nya-fm  nya-sfx-stub
+#   $PREFIX/bin/nya  nya-get  nya-fm
 #   $PREFIX/share/nya/
 set -euo pipefail
 
@@ -40,7 +40,7 @@ echo "Uninstalling NYA"
 echo "  prefix: $PREFIX"
 
 removed=0
-for f in nya nya-get nya-fm nya-sfx-stub; do
+for f in nya nya-get nya-fm; do
   if [[ -e "$BIN_DIR/$f" ]]; then
     rm -f "$BIN_DIR/$f"
     echo "  removed $BIN_DIR/$f"

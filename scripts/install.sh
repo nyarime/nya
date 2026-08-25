@@ -69,7 +69,7 @@ latest_tag() {
 
 uninstall() {
   echo "Removing NYA from $BIN_DIR and $SHARE_DIR"
-  rm -f "$BIN_DIR/nya" "$BIN_DIR/nya-get" "$BIN_DIR/nya-fm" "$BIN_DIR/nya-sfx-stub"
+  rm -f "$BIN_DIR/nya" "$BIN_DIR/nya-get" "$BIN_DIR/nya-fm"
   rm -rf "$SHARE_DIR"
   echo "Done."
 }
@@ -102,15 +102,11 @@ fi
 
 mkdir -p "$BIN_DIR" "$SHARE_DIR"
 tar -C "$tmpdir" -xzf "$tmpdir/$asset"
-for f in nya nya-get nya-fm nya-sfx-stub; do
+for f in nya nya-get nya-fm; do
   if [[ -f "$tmpdir/$f" ]]; then
     install -m 755 "$tmpdir/$f" "$BIN_DIR/$f"
   fi
 done
-if [[ -f "$BIN_DIR/nya-sfx-stub" ]]; then
-  mkdir -p "$SHARE_DIR/sfx/stubs"
-  cp "$BIN_DIR/nya-sfx-stub" "$SHARE_DIR/sfx/stubs/nya-sfx-stub_${os}_${arch}"
-fi
 
 echo
 echo "Installed:"
