@@ -23,16 +23,19 @@ func cmdSend(args []string) error {
 	fs := flag.NewFlagSet("send", flag.ExitOnError)
 	port := fs.Int("port", 0, "local HTTP port (0 = ephemeral)")
 	bind := fs.String("bind", "127.0.0.1", "local bind address")
-	cloudflared := fs.String("cloudflared", "cloudflared", "cloudflared binary (PATH or absolute)")
+	cloudflared := fs.String("cloudflared", "cloudflared", "cloudflared binary (PATH, absolute, or auto)")
 	noTunnel := fs.Bool("no-tunnel", false, "only serve locally (no TryCloudflare)")
+	noFetch := fs.Bool("no-fetch-cloudflared", false, "do not auto-download cloudflared when missing")
 	noEmbed := fs.Bool("no-embed", false, "do not upsert download index before send")
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, `nya send — serve a .nya over HTTP and optionally publish via Cloudflare Quick Tunnel
+		fmt.Fprint(os.Stderr, `nya send — serve a .nya over HTTP and publish via Cloudflare Quick Tunnel
 
 Usage:
   nya send [flags] <archive.nya>
 
-Requires cloudflared on PATH for the public URL (https://*.trycloudflare.com).
+If cloudflared is not on PATH, nya downloads the official binary into the
+user cache (unless -no-fetch-cloudflared). Use -no-tunnel for LAN-only.
+
 Receiver:
   nya get --url https://xxxx.trycloudflare.com/archive.nya
 
@@ -76,7 +79,6 @@ Receiver:
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// Always serve the one archive (Range-capable via ServeContent).
 		f, err := os.Open(abs)
 		if err != nil {
 			http.Error(w, err.Error(), 500)
@@ -105,10 +107,10 @@ Receiver:
 	public := localURL
 	var tunnelCmd *exec.Cmd
 	if !*noTunnel {
-		bin, err := exec.LookPath(*cloudflared)
+		bin, err := resolveCloudflared(*cloudflared, !*noFetch)
 		if err != nil {
 			_ = srv.Shutdown(context.Background())
-			return fmt.Errorf("cloudflared not found (%v); install from https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/installation/ or use -no-tunnel", err)
+			return fmt.Errorf("%w\n  tip: install cloudflared, or nya send -no-tunnel for LAN only", err)
 		}
 		tunnelURL := fmt.Sprintf("http://%s", ln.Addr().String())
 		tunnelCmd = exec.CommandContext(ctx, bin, "tunnel", "--url", tunnelURL)
@@ -131,7 +133,6 @@ Receiver:
 		found := make(chan string, 1)
 		go func() {
 			sc := bufio.NewScanner(pr)
-			// cloudflared lines can be long
 			buf := make([]byte, 0, 64*1024)
 			sc.Buffer(buf, 1024*1024)
 			for sc.Scan() {
