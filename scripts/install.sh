@@ -24,6 +24,8 @@ usage() {
   cat <<'EOF'
 NYA install script (Linux / macOS)
 
+Installs a single `nya` binary (download: `nya get`; no separate nya-get).
+
   curl -fsSL https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.sh | bash
   bash install.sh --uninstall
   bash install.sh --prefix /usr/local --version 0.1.6
@@ -69,7 +71,8 @@ latest_tag() {
 
 uninstall() {
   echo "Removing NYA from $BIN_DIR and $SHARE_DIR"
-  rm -f "$BIN_DIR/nya" "$BIN_DIR/nya-get" "$BIN_DIR/nya-fm"
+  # Also remove legacy binaries from older installers
+  rm -f "$BIN_DIR/nya" "$BIN_DIR/nya-get" "$BIN_DIR/nya-fm" "$BIN_DIR/nya-sfx-stub"
   rm -rf "$SHARE_DIR"
   echo "Done."
 }
@@ -100,18 +103,17 @@ if ! curl -fsSL "$url" -o "$tmpdir/$asset"; then
   exit 1
 fi
 
-mkdir -p "$BIN_DIR" "$SHARE_DIR"
+mkdir -p "$BIN_DIR"
 tar -C "$tmpdir" -xzf "$tmpdir/$asset"
-for f in nya nya-get nya-fm; do
-  if [[ -f "$tmpdir/$f" ]]; then
-    install -m 755 "$tmpdir/$f" "$BIN_DIR/$f"
-  fi
-done
+if [[ ! -f "$tmpdir/nya" ]]; then
+  echo "release asset missing nya binary: $asset" >&2
+  exit 1
+fi
+install -m 755 "$tmpdir/nya" "$BIN_DIR/nya"
 
 echo
 echo "Installed:"
-command -v ls >/dev/null && ls -la "$BIN_DIR"/nya "$BIN_DIR"/nya-get 2>/dev/null || true
-[[ -x "$BIN_DIR/nya-fm" ]] && ls -la "$BIN_DIR/nya-fm" || true
+command -v ls >/dev/null && ls -la "$BIN_DIR/nya" 2>/dev/null || true
 
 case ":$PATH:" in
   *":$BIN_DIR:"*) ;;
@@ -122,6 +124,8 @@ case ":$PATH:" in
     ;;
 esac
 
+echo
+echo "Download archives: nya get --url <URL>"
 echo
 echo "Uninstall:"
 echo "  curl -fsSL https://raw.githubusercontent.com/${REPO}/main/scripts/uninstall.sh | bash"

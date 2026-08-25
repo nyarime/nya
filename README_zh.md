@@ -26,7 +26,7 @@
 
 ### Linux / macOS
 
-默认装到 `~/.local`（`nya` → `~/.local/bin`）。
+默认装到 `~/.local`（`nya` → `~/.local/bin`）。**只装一个 `nya`** — 下载用 `nya get`，不再单独装 `nya-get`。
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.sh | bash
@@ -40,7 +40,7 @@ bash install.sh --version 0.1.6              # 固定版本
 
 ### Windows
 
-默认装到 `%LOCALAPPDATA%\Programs\NYA`，写入用户 PATH，关联 `.nya` → `nya open`。
+默认装到 `%LOCALAPPDATA%\Programs\NYA`，写入用户 PATH，关联 `.nya` → `nya open`。**仅 `nya.exe`**，下载用 `nya get`。
 
 ```powershell
 irm https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.ps1 | iex
@@ -79,8 +79,7 @@ irm https://raw.githubusercontent.com/nyarime/nya/main/scripts/uninstall.ps1 | i
 go install github.com/nyarime/nya/cmd/nya@latest
 ```
 
-主 CLI 是 **`nya`**。下载用 **`nya get`**（`nya-get` 二进制仅为兼容包装）。  
-SFX 与 CLI 合一：**`nya`** 既是命令行工具，也是自解压 stub（发布包不再单独附带 `nya-sfx-stub`）。
+发行包只有 **`nya`**：归档 CLI、`nya get` / `nya send`、SFX stub（`create -sfx` / `nya sfx`）。源码里保留 `cmd/nya-get` 兼容 shim，但 `install.sh` 不会安装它。
 
 ## 命令行
 

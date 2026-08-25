@@ -29,8 +29,6 @@ build_go() {
   echo "==> go $goos/$goarch"
   CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
     go build -trimpath -ldflags="-s -w" -o "$out/nya$ext" ./cmd/nya
-  CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
-    go build -trimpath -ldflags="-s -w" -o "$out/nya-get$ext" ./cmd/nya-get
 }
 
 build_go linux amd64 "$STAGING/linux-amd64"
@@ -40,40 +38,26 @@ build_go windows arm64 "$STAGING/windows-arm64"
 build_go darwin arm64 "$STAGING/darwin-arm64"
 build_go darwin amd64 "$STAGING/darwin-amd64"
 
-echo "==> UPX (CLI only)"
+echo "==> UPX (nya CLI only; never SFX outputs)"
 upx --best --lzma \
-  "$STAGING/linux-amd64/nya" "$STAGING/linux-amd64/nya-get" \
-  "$STAGING/linux-arm64/nya" "$STAGING/linux-arm64/nya-get" \
-  "$STAGING/windows-amd64/nya.exe" "$STAGING/windows-amd64/nya-get.exe"
+  "$STAGING/linux-amd64/nya" \
+  "$STAGING/linux-arm64/nya" \
+  "$STAGING/windows-amd64/nya.exe"
 
-LINUX_AMD64_EXTRAS=()
-if command -v cargo >/dev/null; then
-  echo "==> Rust linux amd64 nya-fm"
-  cargo build --release -p nya-fm
-  cp target/release/nya-fm "$STAGING/linux-amd64/"
-  chmod +x "$STAGING/linux-amd64/nya-fm"
-  LINUX_AMD64_EXTRAS+=(nya-fm)
-else
-  echo "!! cargo not found — skipping nya-fm"
-fi
+echo "==> pack (nya only — use nya get for downloads)"
+tar -C "$STAGING/linux-amd64" -czf "$DIST/nya-${VER}-linux-amd64.tar.gz" nya
+tar -C "$STAGING/linux-arm64" -czf "$DIST/nya-${VER}-linux-arm64.tar.gz" nya
+tar -C "$STAGING/darwin-arm64" -czf "$DIST/nya-${VER}-darwin-arm64.tar.gz" nya
+tar -C "$STAGING/darwin-amd64" -czf "$DIST/nya-${VER}-darwin-amd64.tar.gz" nya
 
-echo "==> pack"
-tar -C "$STAGING/linux-amd64" -czf "$DIST/nya-${VER}-linux-amd64.tar.gz" \
-  nya nya-get "${LINUX_AMD64_EXTRAS[@]}"
-tar -C "$STAGING/linux-arm64" -czf "$DIST/nya-${VER}-linux-arm64.tar.gz" nya nya-get
-tar -C "$STAGING/darwin-arm64" -czf "$DIST/nya-${VER}-darwin-arm64.tar.gz" nya nya-get
-tar -C "$STAGING/darwin-amd64" -czf "$DIST/nya-${VER}-darwin-amd64.tar.gz" nya nya-get
-
-( cd "$STAGING/windows-amd64" && zip -q "$DIST/nya-${VER}-windows-amd64.zip" nya.exe nya-get.exe )
-( cd "$STAGING/windows-arm64" && zip -q "$DIST/nya-${VER}-windows-arm64.zip" nya.exe nya-get.exe )
+( cd "$STAGING/windows-amd64" && zip -q "$DIST/nya-${VER}-windows-amd64.zip" nya.exe )
+( cd "$STAGING/windows-arm64" && zip -q "$DIST/nya-${VER}-windows-arm64.zip" nya.exe )
 
 cat > "$DIST/NOTES-v${VER}.txt" << EOF
 NYA ${VER} — local release (see scripts/release-local.sh)
 
-- Single nya binary: CLI + SFX stub (create -sfx / nya sfx use running nya as prefix)
-- nya-get shim for download progress
+- Single nya binary: CLI + SFX stub + nya get (no separate nya-get in release)
 - Do not UPX SFX outputs (concatenated with archive payload)
-- linux-amd64 also includes nya-fm when cargo is available
 EOF
 
 echo

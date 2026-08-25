@@ -38,7 +38,7 @@ See [docs/BENCHMARK-FEC.md](docs/BENCHMARK-FEC.md).
 
 ### Linux / macOS
 
-Installs into `~/.local` by default (`nya` → `~/.local/bin`).
+Installs into `~/.local` by default (`nya` → `~/.local/bin`). **One binary only** — download via `nya get` (no separate `nya-get`).
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.sh | bash
@@ -52,7 +52,7 @@ bash install.sh --version 0.1.6              # pin a release
 
 ### Windows
 
-Installs into `%LOCALAPPDATA%\Programs\NYA`, adds user PATH, associates `.nya` → `nya open`.
+Installs into `%LOCALAPPDATA%\Programs\NYA`, adds user PATH, associates `.nya` → `nya open`. **Only `nya.exe`** — use `nya get` for downloads.
 
 ```powershell
 irm https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.ps1 | iex
@@ -91,9 +91,7 @@ Releases: [GitHub Releases](https://github.com/nyarime/nya/releases/latest). Pac
 go install github.com/nyarime/nya/cmd/nya@latest
 ```
 
-Primary CLI is **`nya`**. Download is **`nya get`** (the `nya-get` binary is only a
-compatibility shim). SFX uses the same **`nya`** binary as stub — no separate
-`nya-sfx-stub` in release packages.
+**`nya`** is the only release binary: archive CLI, `nya get` / `nya send`, and SFX stub (`create -sfx` / `nya sfx`). The `cmd/nya-get` shim remains in source for compatibility but is not installed by `install.sh`.
 
 ## Command line
 

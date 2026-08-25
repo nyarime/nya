@@ -4,8 +4,8 @@
 #   curl -fsSL https://raw.githubusercontent.com/nyarime/nya/main/scripts/uninstall.sh | bash
 #   bash uninstall.sh --prefix ~/.local
 #
-# Removes files installed by install.sh under the same prefix:
-#   $PREFIX/bin/nya  nya-get  nya-fm
+# Removes files installed by install.sh (and legacy extras from older releases):
+#   $PREFIX/bin/nya  (+ legacy nya-get, nya-fm, nya-sfx-stub if present)
 #   $PREFIX/share/nya/
 set -euo pipefail
 
@@ -40,7 +40,7 @@ echo "Uninstalling NYA"
 echo "  prefix: $PREFIX"
 
 removed=0
-for f in nya nya-get nya-fm; do
+for f in nya nya-get nya-fm nya-sfx-stub; do
   if [[ -e "$BIN_DIR/$f" ]]; then
     rm -f "$BIN_DIR/$f"
     echo "  removed $BIN_DIR/$f"
