@@ -7,21 +7,35 @@ import (
 	"runtime"
 )
 
-// DefaultStubPath returns the embedded or on-disk stub for the current OS/arch.
+// DefaultStubPath returns the on-disk stub for the current OS/arch.
+// Search order:
+//  1. <exeDir>/sfx/stubs/nya-sfx-stub_<os>_<arch>[.exe]  (dev / Inno layout)
+//  2. <exeDir>/nya-sfx-stub[.exe]                         (install.ps1 / zip layout)
+//  3. ./sfx/stubs/nya-sfx-stub_<os>_<arch>[.exe]          (repo cwd)
 func DefaultStubPath() (string, error) {
-	name := fmt.Sprintf("nya-sfx-stub_%s_%s", runtime.GOOS, runtime.GOARCH)
-	// Prefer sfx/stubs next to the running binary (development layout).
+	base := fmt.Sprintf("nya-sfx-stub_%s_%s", runtime.GOOS, runtime.GOARCH)
+	var candidates []string
 	if exe, err := os.Executable(); err == nil {
-		candidate := filepath.Join(filepath.Dir(exe), "sfx", "stubs", name)
+		dir := filepath.Dir(exe)
+		candidates = append(candidates,
+			filepath.Join(dir, "sfx", "stubs", base),
+			filepath.Join(dir, "sfx", "stubs", base+".exe"),
+			filepath.Join(dir, "nya-sfx-stub"),
+			filepath.Join(dir, "nya-sfx-stub.exe"),
+		)
+	}
+	candidates = append(candidates,
+		filepath.Join("sfx", "stubs", base),
+		filepath.Join("sfx", "stubs", base+".exe"),
+	)
+	for _, candidate := range candidates {
 		if st, err := os.Stat(candidate); err == nil && !st.IsDir() {
-			return candidate, nil
+			abs, err := filepath.Abs(candidate)
+			if err != nil {
+				return candidate, nil
+			}
+			return abs, nil
 		}
 	}
-	// Repository layout when running from source tree.
-	candidate := filepath.Join("sfx", "stubs", name)
-	if st, err := os.Stat(candidate); err == nil && !st.IsDir() {
-		abs, _ := filepath.Abs(candidate)
-		return abs, nil
-	}
-	return "", fmt.Errorf("sfx: stub not found (%s); run: cd sfx && cargo build --release && cp target/release/nya-sfx-stub stubs/%s", name, name)
+	return "", fmt.Errorf("sfx: stub not found (%s); place nya-sfx-stub next to nya.exe, or: nya sfx -stub path/to/nya-sfx-stub.exe -o out.exe pack.nya", base)
 }
