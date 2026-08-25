@@ -6,21 +6,21 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 )
 
 // cmdOpen extracts an archive beside itself into <basename>/ — the behaviour
 // used by Windows file association (double-click game.nya → .\game\).
+// If that folder already exists, uses WinRAR-style names: game(2), game(3), …
+// (7-Zip’s -aou auto-rename uses name_1.txt for *files*; folder-open here
+// follows the Explorer/WinRAR “(N)” pattern the user expects.)
 func cmdOpen(args []string) error {
 	fs := flag.NewFlagSet("open", flag.ExitOnError)
 	password := fs.String("password", "", "archive password")
 	workers := fs.Int("workers", 0, "parallel chunk decompression workers (0 = automatic)")
-	pause := fs.Bool("pause", runtime.GOOS == "windows", "wait for Enter before exit (default on Windows)")
-	noPause := fs.Bool("no-pause", false, "never wait for Enter (useful in scripts)")
+	pause := fs.Bool("pause", false, "wait for Enter before exit (off by default)")
 	destFlag := fs.String("o", "", "override output directory (default: <archive-dir>/<basename>/)")
 	fs.Parse(args)
-	doPause := *pause && !*noPause
 	if fs.NArg() != 1 {
 		return fmt.Errorf("open needs one archive path (e.g. game.nya)")
 	}
@@ -34,17 +34,18 @@ func cmdOpen(args []string) error {
 	if dest == "" {
 		dest = defaultOpenDest(abs)
 	}
+	dest = uniqueOpenDest(dest)
 
 	err = extractTo(abs, dest, *password, *workers)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "nya: %v\n", err)
-		if doPause {
+		if *pause {
 			waitEnter()
 		}
 		os.Exit(1)
 	}
 	fmt.Printf("Extracted %s → %s\n", filepath.Base(abs), dest)
-	if doPause {
+	if *pause {
 		waitEnter()
 	}
 	return nil
@@ -59,6 +60,26 @@ func defaultOpenDest(archiveAbs string) string {
 		name = base
 	}
 	return filepath.Join(dir, name)
+}
+
+// uniqueOpenDest returns path if it does not exist, otherwise path(2), path(3), …
+func uniqueOpenDest(path string) string {
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return path
+		}
+		// Stat failed for other reasons — keep original and let MkdirAll report.
+		return path
+	}
+	dir := filepath.Dir(path)
+	base := filepath.Base(path)
+	for n := 2; n < 10000; n++ {
+		cand := filepath.Join(dir, fmt.Sprintf("%s(%d)", base, n))
+		if _, err := os.Stat(cand); os.IsNotExist(err) {
+			return cand
+		}
+	}
+	return filepath.Join(dir, fmt.Sprintf("%s(%d)", base, 10000))
 }
 
 func extractTo(archive, dest, password string, workers int) error {

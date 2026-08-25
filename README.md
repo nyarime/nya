@@ -55,7 +55,7 @@ nya create -level 1 backup.nya ./project           # fastest
 nya create -fec 30 backup.nya ./data               # add 30% recovery data
 nya list backup.nya                                # inspect
 nya extract backup.nya ./restored                  # extract
-nya open game.nya                                  # extract beside archive → .\game\
+nya open game.nya                                  # extract beside archive → .\game\ (or game(2)\ if exists)
 nya verify backup.nya                              # check stored digests
 nya info backup.nya                                # header details, including codec
 nya repair damaged.nya fixed.nya                   # rebuild using the parity data

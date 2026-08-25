@@ -28,14 +28,17 @@ nya associate -uninstall
 | Action | Result |
 | --- | --- |
 | Double-click `D:\Downloads\game.nya` | Creates `D:\Downloads\game\` and extracts into it |
-| Console window | Stays open until Enter (`-pause` default on Windows) |
-| Scripts | Prefer `nya extract …` or `nya open -no-pause …` |
+| Folder already exists | Creates `game(2)\`, then `game(3)\`, … (WinRAR-style; 7-Zip file auto-rename is `name_1.txt`) |
+| Console window | Closes when extract finishes (use `nya open -pause` to wait for Enter) |
+| Scripts | `nya extract …` or `nya open …` |
 
 Override output directory:
 
 ```bat
 nya open -o D:\out\mygame game.nya
 ```
+
+If `-o` / default dest already exists, `nya open` still picks `name(2)` etc. so a second double-click does not merge into the first folder.
 
 ## Manual `.reg` (optional)
 
