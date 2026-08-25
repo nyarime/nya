@@ -55,8 +55,10 @@ See [docs/RELEASE.md](docs/RELEASE.md).
 
 ```bash
 go install github.com/nyarime/nya/cmd/nya@latest
-go install github.com/nyarime/nya/cmd/nya-get@latest
 ```
+
+Primary CLI is **`nya`** (`get` / `send` / `gui` / `sfx` are subcommands).
+`nya-get` remains a thin shim; `nya-sfx-stub` stays a separate binary for SFX wrapping.
 
 ## Command line
 
@@ -80,6 +82,9 @@ nya manifest del GamePack.nya                      # remove embedded download in
 nya manifest export -o GamePack.nyam --url https://cdn/game.nya GamePack.nya
 nya sfx pack.nya -o pack.exe                  # wrap as self-extractor (Go stub; -o anywhere)
 nya create -sfx game.bin -level 3 ./GameData/ # create + wrap in one step
+nya get --url https://cdn.example.com/pack.nya
+nya send pack.nya                             # local HTTP + TryCloudflare → share URL
+nya gui pack.nya                              # nyaFM GUI (launches nya-fm if installed)
 nya associate                                 # Windows: .nya double-click → nya open
 ```
 
@@ -92,20 +97,30 @@ nya associate
 
 See [examples/windows-open](examples/windows-open/README.md).
 
-### Large package distribution (`nya-get`)
+### Send + get (TryCloudflare)
+
+```bash
+# Sender — installs official cloudflared to ~/.local/bin if missing
+nya send GamePack.nya
+# → prints: nya get --url https://xxxx.trycloudflare.com/GamePack.nya
+
+# Receiver
+nya get --url https://xxxx.trycloudflare.com/GamePack.nya
+```
+
+Options: `-no-tunnel` (LAN only), `-no-fetch-cloudflared` (require a system `cloudflared`).
+Quick Tunnels are ephemeral (Cloudflare ToS).
+
+### Large package distribution (`nya get`)
 
 ```bash
 nya create -level 9 -solid -fec 20 GamePack.nya ./GameData/   # download index embedded by default
 # optional sidecar:
 # nya manifest export -o GamePack.nyam --url https://cdn.example.com/GamePack.nya GamePack.nya
-# re-embed / clear:
-# nya manifest add GamePack.nya
-# nya manifest del GamePack.nya
 
-go install github.com/nyarime/nya/cmd/nya-get@latest
-nya-get --url https://cdn.example.com/GamePack.nya          # no .nyam needed
-nya-get -c 16 GamePack.nyam                                 # classic sidecar
-nya-get --paths "Game/Data/level1.bin" GamePack.nyam        # partial fetch
+nya get --url https://cdn.example.com/GamePack.nya          # no .nyam needed
+nya get -c 16 GamePack.nyam                                 # classic sidecar
+nya get --paths "Game/Data/level1.bin" GamePack.nyam        # partial fetch
 ```
 
 See [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) for the `.nyam` manifest schema.
