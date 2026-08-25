@@ -330,6 +330,7 @@ NYA 是自由软件：可在 [GNU GPL v3.0](LICENSE) 下使用、修改与再分
 - [docs/BENCHMARK-COMPRESS.md](docs/BENCHMARK-COMPRESS.md) — 压缩 A/B
 - [docs/BENCHMARK-FEC.md](docs/BENCHMARK-FEC.md) — FEC 恢复对比
 - [docs/BENCHMARK-CORPUS.md](docs/BENCHMARK-CORPUS.md) — 公开语料与 raw 数据计划
+- [docs/NOTE-UPX.md](docs/NOTE-UPX.md) — UPX 与归档压缩在 ELF 上的关系
 - [SPEC-CODECS.md](SPEC-CODECS.md) — **NYA-Zstd & NYA-LZMA2**
 - [SPEC-SFX.md](SPEC-SFX.md) — **自解压** stub + footer（Go 参考 stub）
 - [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) — `.nyam` 与 `nya get` 传输块

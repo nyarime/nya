@@ -194,6 +194,7 @@ also strengthens the distribute/recover story.
 | [docs/BENCHMARK-CORPUS.md](docs/BENCHMARK-CORPUS.md) | Public corpus + raw data plan |
 | [SPEC-CODECS.md](SPEC-CODECS.md) | Zstd vs LZMA2 roles |
 | [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) | `.nyam` / get transport |
+| [docs/NOTE-UPX.md](docs/NOTE-UPX.md) | UPX license + what we can learn for ELF |
 
 Update this file when priorities change; keep commits conventional
 (`docs: …` / `feat: …`).

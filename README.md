@@ -387,6 +387,7 @@ closed-source product without GPL obligations, contact
 - [docs/BENCHMARK-COMPRESS.md](docs/BENCHMARK-COMPRESS.md) — compression A/B measurements
 - [docs/BENCHMARK-FEC.md](docs/BENCHMARK-FEC.md) — FEC recovery vs 7z/RAR
 - [docs/BENCHMARK-CORPUS.md](docs/BENCHMARK-CORPUS.md) — public corpus + raw data plan
+- [docs/NOTE-UPX.md](docs/NOTE-UPX.md) — UPX vs archive compression on ELF
 - [SPEC-CODECS.md](SPEC-CODECS.md) — **NYA-Zstd & NYA-LZMA2** roles and roadmap
 - [SPEC-SFX.md](SPEC-SFX.md) — **self-extracting** stub + footer (Go reference stub)
 - [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) — `.nyam` manifest and `nya get` transport blocks
