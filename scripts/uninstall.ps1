@@ -1,8 +1,11 @@
-# NYA uninstall for Windows — thin wrapper around install.ps1 -Uninstall
+# NYA uninstall for Windows
 #
 #   irm https://raw.githubusercontent.com/nyarime/nya/main/scripts/uninstall.ps1 | iex
 #
-# Options (same as install.ps1): -Prefix DIR
+# Removes the user install created by install.ps1 (default:
+# %LOCALAPPDATA%\Programs\NYA), clears user PATH entry, and drops .nya association.
+#
+# Options: -Prefix DIR  (must match install prefix)
 
 [CmdletBinding()]
 param(
@@ -12,6 +15,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 $local = Join-Path $PSScriptRoot "install.ps1"
+
+Write-Host "NYA uninstall"
+Write-Host "  prefix: $Prefix"
 
 if (Test-Path $local) {
     & $local -Uninstall -Prefix $Prefix -Repo $Repo
