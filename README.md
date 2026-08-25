@@ -1,5 +1,7 @@
 # nya
 
+[English](README.md) | [简体中文](README_zh.md)
+
 NYA (Nyarime Archive) is an archive format that pairs ordinary compression
 with forward error correction, so a damaged archive can often still be read.
 This repository is the **canonical home** for the format specification,
