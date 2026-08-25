@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-NYA（Nyarime Archive）是一种把常规压缩与前向纠错（FEC）结合在一起的归档格式，损坏后往往仍可读。本仓库是格式规范、参考实现、`nya` 命令行以及 `nya-get` 下载器的**权威源**。用途包括备份、游戏分包、CDN 分发等；固件或数据库场景也可嵌入同一容器布局。
+NYA（Nyarime Archive）是一种把常规压缩与前向纠错（FEC）结合在一起的归档格式，损坏后往往仍可读。本仓库是格式规范、参考实现与 **`nya` CLI**（含 `get` / `send` / `gui` / `sfx` 等）的**权威源**。用途包括备份、游戏分包、CDN 分发等；固件或数据库场景也可嵌入同一容器布局。
 
 实现为纯 Go、无 cgo，仅两个依赖。压缩器（**NYA-Zstd**、**NYA-LZMA2**）、BLAKE3 与容器均自研；`github.com/nyarime/gofec` 提供 RaptorQ / LDPC，`golang.org/x/sys` 提供扩展属性系统调用。
 
@@ -78,8 +78,8 @@ irm https://raw.githubusercontent.com/nyarime/nya/main/scripts/uninstall.ps1 | i
 go install github.com/nyarime/nya/cmd/nya@latest
 ```
 
-主 CLI 是 **`nya`**（子命令：`get` / `send` / `gui` / `sfx`）。  
-`nya-get` 仍是薄封装；`nya-sfx-stub` 作为 SFX 拼接用的独立二进制保留。
+主 CLI 是 **`nya`**。下载用 **`nya get`**（`nya-get` 二进制仅为兼容包装）。  
+`nya-sfx-stub` 作为 SFX 拼接用的独立二进制保留。
 
 ## 命令行
 
@@ -318,7 +318,7 @@ NYA 是自由软件：可在 [GNU GPL v3.0](LICENSE) 下使用、修改与再分
 - [docs/BENCHMARK-COMPRESS.md](docs/BENCHMARK-COMPRESS.md) — 压缩 A/B
 - [SPEC-CODECS.md](SPEC-CODECS.md) — **NYA-Zstd & NYA-LZMA2**
 - [SPEC-SFX.md](SPEC-SFX.md) — **自解压** stub + footer（Go 参考 stub）
-- [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) — `.nyam` 与 `nya-get` 传输块
+- [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) — `.nyam` 与 `nya get` 传输块
 - [fm/README.md](fm/README.md) — **nyaFM** Rust GUI
 
 ### 自解压归档（类似 7-Zip）
