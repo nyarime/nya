@@ -65,12 +65,12 @@ var i18nCatalog = map[string]map[string]string{
 Usage:
   nya send [flags] <file|directory|archive.nya>
 
-  file         Direct URL for browsers; index.nyam for nya get
-  directory    .nya URL for browsers; index.nyam for nya get
-  archive.nya  Serve as-is with index.nyam
+  file         Direct URL; <name>.nyam for nya get
+  directory    <name>.nya for browsers; <name>.nyam for nya get
+  archive.nya  Serve as-is with <name>.nyam
 
 Example:
-  nya get --url https://xxxx.trycloudflare.com/index.nyam
+  nya get --url https://xxxx.trycloudflare.com/novel.txt.nyam
 
 `,
 	},
@@ -88,12 +88,12 @@ Example:
 用法：
   nya send [flags] <文件|目录|archive.nya>
 
-  文件         浏览器直链；index.nyam 供 nya get
-  目录         浏览器下载 .nya；index.nyam 供 nya get
-  archive.nya  直接托管并提供 index.nyam
+  文件         浏览器直链；<名>.nyam 供 nya get
+  目录         <名>.nya 供浏览器；<名>.nyam 供 nya get
+  archive.nya  直接托管并提供 <名>.nyam
 
 示例：
-  nya get --url https://xxxx.trycloudflare.com/index.nyam
+  nya get --url https://xxxx.trycloudflare.com/novel.txt.nyam
 
 `,
 	},

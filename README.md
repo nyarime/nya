@@ -102,15 +102,16 @@ See [examples/windows-open](examples/windows-open/README.md).
 ```bash
 nya send novel.txt
 # Direct:  https://….trycloudflare.com/novel.txt
-# Get:     nya get --url https://….trycloudflare.com/index.nyam
+# Get:     nya get --url https://….trycloudflare.com/novel.txt.nyam
 
 nya send ./GameData
-# Archive: https://….trycloudflare.com/….nya
-# Get:     nya get --url https://….trycloudflare.com/index.nyam
+# Archive: https://….trycloudflare.com/GameData.nya
+# Get:     nya get --url https://….trycloudflare.com/GameData.nyam
 
-nya get --url https://xxxx.trycloudflare.com/index.nyam
+nya get --url https://xxxx.trycloudflare.com/novel.txt.nyam
 ```
 
+Index URLs are named after the source (`name.nyam` / `name.nya`), not a fixed `/index.nyam`.
 CLI defaults to English (`NYA_LANG=zh` or `LANG=zh_CN` for Chinese).
 
 Options: `-no-tunnel`, `-no-fetch-cloudflared`. Quick Tunnels are ephemeral (Cloudflare ToS).

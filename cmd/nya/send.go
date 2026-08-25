@@ -112,16 +112,15 @@ func cmdSend(args []string) error {
 	}
 	defer ln.Close()
 
-	archiveName := filepath.Base(archive)
-	indexName := "index.nyam"
+	archiveName, indexName := sendPublicNames(mode, abs, directName)
 	nyamJSON, err := buildSendIndex(archive, archiveName)
 	if err != nil {
 		return err
 	}
 
 	baseLocal := fmt.Sprintf("http://%s", ln.Addr().String())
-	indexLocal := baseLocal + "/" + indexName
-	nyaLocal := baseLocal + "/" + archiveName
+	indexLocal := baseLocal + "/" + url.PathEscape(indexName)
+	nyaLocal := baseLocal + "/" + url.PathEscape(archiveName)
 	directLocal := ""
 	if mode == sendModeFile {
 		directLocal = baseLocal + "/" + url.PathEscape(directName)
@@ -131,7 +130,7 @@ func cmdSend(args []string) error {
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
 		switch {
-		case p == "/" || p == "/"+indexName:
+		case p == "/"+indexName:
 			w.Header().Set("Content-Type", "application/json; charset=utf-8")
 			w.Header().Set("Cache-Control", "no-store")
 			_, _ = w.Write(nyamJSON)
@@ -211,8 +210,8 @@ func cmdSend(args []string) error {
 		}
 	}
 
-	indexURL := publicBase + "/" + indexName
-	nyaURL := publicBase + "/" + archiveName
+	indexURL := publicBase + "/" + url.PathEscape(indexName)
+	nyaURL := publicBase + "/" + url.PathEscape(archiveName)
 	directURL := ""
 	if mode == sendModeFile {
 		directURL = publicBase + "/" + url.PathEscape(directName)
@@ -265,12 +264,41 @@ func printSendLinks(mode sendMode, indexURL, nyaURL, directURL, indexLocal, nyaL
 	fmt.Fprintln(os.Stderr, T("send.stop"))
 }
 
-func buildSendIndex(archive, archiveName string) ([]byte, error) {
-	m, err := nya.BuildManifest(archive, 0, nya.ManifestSource{URL: archiveName, Priority: 10})
+func buildSendIndex(archive, publicNyaName string) ([]byte, error) {
+	m, err := nya.BuildManifest(archive, 0, nya.ManifestSource{URL: publicNyaName, Priority: 10})
 	if err != nil {
 		return nil, err
 	}
+	m.Archive.Name = publicNyaName
 	return json.MarshalIndent(m, "", "  ")
+}
+
+// sendPublicNames picks URL basenames from the source, not temp paths.
+// file novel.txt → novel.txt.nya + novel.txt.nyam
+// dir  GameData  → GameData.nya + GameData.nyam
+// nya  pack.nya  → pack.nya + pack.nyam
+func sendPublicNames(mode sendMode, srcAbs, directName string) (nyaName, nyamName string) {
+	switch mode {
+	case sendModeFile:
+		base := directName
+		if base == "" {
+			base = filepath.Base(srcAbs)
+		}
+		return base + ".nya", base + ".nyam"
+	case sendModeDir:
+		base := filepath.Base(srcAbs)
+		if base == "" || base == "." || base == string(filepath.Separator) {
+			base = "send"
+		}
+		return base + ".nya", base + ".nyam"
+	default:
+		base := filepath.Base(srcAbs)
+		stem := strings.TrimSuffix(base, filepath.Ext(base))
+		if stem == "" {
+			stem = base
+		}
+		return base, stem + ".nyam"
+	}
 }
 
 func serveSendFile(w http.ResponseWriter, r *http.Request, path, name string) {

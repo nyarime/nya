@@ -31,6 +31,22 @@ func TestIsNyaArchivePath(t *testing.T) {
 	}
 }
 
+func TestSendPublicNames(t *testing.T) {
+	nyaN, nyamN := sendPublicNames(sendModeFile, "/tmp/novel.txt", "novel.txt")
+	if nyaN != "novel.txt.nya" || nyamN != "novel.txt.nyam" {
+		t.Fatalf("file: %s %s", nyaN, nyamN)
+	}
+	nyaN, nyamN = sendPublicNames(sendModeDir, "/data/GameData", "")
+	if nyaN != "GameData.nya" || nyamN != "GameData.nyam" {
+		t.Fatalf("dir: %s %s", nyaN, nyamN)
+	}
+	nyaN, nyamN = sendPublicNames(sendModeNya, "/out/pack.nya", "")
+	if nyaN != "pack.nya" || nyamN != "pack.nyam" {
+		t.Fatalf("nya: %s %s", nyaN, nyamN)
+	}
+}
+
+
 func TestPackSendSourceDir(t *testing.T) {
 	root := t.TempDir()
 	src := filepath.Join(root, "GameData")
