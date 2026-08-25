@@ -26,7 +26,7 @@
 
 ### Linux / macOS
 
-默认装到 `~/.local`（`nya` → `~/.local/bin`）。
+默认装到 `~/.local`（`nya` → `~/.local/bin`）。**只装一个 `nya`** — 下载用 `nya get`，不再单独装 `nya-get`。
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.sh | bash
@@ -40,7 +40,7 @@ bash install.sh --version 0.1.6              # 固定版本
 
 ### Windows
 
-默认装到 `%LOCALAPPDATA%\Programs\NYA`，写入用户 PATH，关联 `.nya` → `nya open`。
+默认装到 `%LOCALAPPDATA%\Programs\NYA`，写入用户 PATH，关联 `.nya` → `nya open`。**仅 `nya.exe`**，下载用 `nya get`。
 
 ```powershell
 irm https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.ps1 | iex
@@ -79,8 +79,7 @@ irm https://raw.githubusercontent.com/nyarime/nya/main/scripts/uninstall.ps1 | i
 go install github.com/nyarime/nya/cmd/nya@latest
 ```
 
-主 CLI 是 **`nya`**。下载用 **`nya get`**（`nya-get` 二进制仅为兼容包装）。  
-`nya-sfx-stub` 作为 SFX 拼接用的独立二进制保留。
+发行包只有 **`nya`**：归档 CLI、`nya get` / `nya send`、SFX stub（`create -sfx` / `nya sfx`）。源码里保留 `cmd/nya-get` 兼容 shim，但 `install.sh` 不会安装它。
 
 ## 命令行
 
@@ -332,21 +331,20 @@ NYA 是自由软件：可在 [GNU GPL v3.0](LICENSE) 下使用、修改与再分
 - [docs/BENCHMARK-CORPUS.md](docs/BENCHMARK-CORPUS.md) — 公开语料与 raw 数据计划
 - [docs/NOTE-UPX.md](docs/NOTE-UPX.md) — UPX 与归档压缩在 ELF 上的关系
 - [SPEC-CODECS.md](SPEC-CODECS.md) — **NYA-Zstd & NYA-LZMA2**
-- [SPEC-SFX.md](SPEC-SFX.md) — **自解压** stub + footer（Go 参考 stub）
+- [SPEC-SFX.md](SPEC-SFX.md) — **自解压**（`nya` 统一 stub）
 - [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) — `.nyam` 与 `nya get` 传输块
 - [fm/README.md](fm/README.md) — **nyaFM** Rust GUI
 
 ### 自解压归档（类似 7-Zip）
 
 ```bash
-go build -o sfx/stubs/nya-sfx-stub_$(go env GOOS)_$(go env GOARCH) ./cmd/nya-sfx-stub
-
 nya create -sfx game.exe -level 3 ./GameData/
 nya sfx pack.nya -o pack.exe
 ./pack.exe                        # 解到可执行文件旁边
 ```
 
-双击 / 直接运行会解到 SFX 所在目录（类似 macOS「归档实用工具」）。`-o DIR` 可改目标。参考 stub 为 **Go**（`cmd/nya-sfx-stub`），以支持 NYA-Zstd / solid / 多块；`nya` 只做 stub + 归档 + footer 拼接。
+双击 / 直接运行会解到 SFX 所在目录（类似 macOS「归档实用工具」）。`-o DIR` 可改目标。  
+**`nya`** 同时承担 CLI 与 SFX stub：`create -sfx` / `nya sfx` 用当前 `nya` 作前缀，再拼接归档与 footer。请勿对 SFX 输出做 UPX。
 
 ```bash
 cargo build -p nya-fm --release

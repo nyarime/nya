@@ -7,6 +7,7 @@
 #   irm https://raw.githubusercontent.com/nyarime/nya/main/scripts/uninstall.ps1 | iex
 #   # or: install.ps1 -Uninstall
 #
+# Installs only nya.exe (use `nya get` for downloads; no separate nya-get).
 # Options: -Version 0.1.6  -Prefix DIR  -NoAssociate  -NoPath  -Uninstall
 
 [CmdletBinding()]
@@ -95,27 +96,18 @@ try {
     Invoke-WebRequest -Uri $url -OutFile $zip
     Expand-Archive -Path $zip -DestinationPath $tmp -Force
     New-Item -ItemType Directory -Path $Prefix -Force | Out-Null
-    foreach ($name in @("nya.exe", "nya-get.exe", "nya-fm.exe", "nya-sfx-stub.exe")) {
-        $src = Join-Path $tmp $name
-        if (Test-Path $src) {
-            Copy-Item $src -Destination (Join-Path $Prefix $name) -Force
-        }
+    $src = Join-Path $tmp "nya.exe"
+    if (-not (Test-Path $src)) {
+        throw "release asset missing nya.exe in $asset"
     }
-    # Layout expected by nya.DefaultStubPath / Inno
-    $stubSrc = Join-Path $Prefix "nya-sfx-stub.exe"
-    if (Test-Path $stubSrc) {
-        $archName = if ($env:PROCESSOR_ARCHITECTURE -match "ARM64") { "arm64" } else { "amd64" }
-        $stubDir = Join-Path $Prefix "sfx\stubs"
-        New-Item -ItemType Directory -Path $stubDir -Force | Out-Null
-        Copy-Item $stubSrc -Destination (Join-Path $stubDir "nya-sfx-stub_windows_$archName.exe") -Force
-    }
+    Copy-Item $src -Destination (Join-Path $Prefix "nya.exe") -Force
 } finally {
     Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
 }
 
 $nyaExe = Join-Path $Prefix "nya.exe"
 if (-not (Test-Path $nyaExe)) {
-    throw "nya.exe missing after install — is $asset published on the release?"
+    throw "nya.exe missing after install"
 }
 
 if (-not $NoPath) { Add-UserPath $Prefix }
@@ -123,6 +115,7 @@ if (-not $NoAssociate) { Install-Associate $nyaExe }
 
 Write-Host ""
 Write-Host "Installed: $nyaExe"
+Write-Host "Download: nya get --url <URL>"
 Write-Host "Open a new terminal so PATH refreshes, then try: nya help"
 Write-Host "Uninstall:"
 Write-Host "  irm https://raw.githubusercontent.com/$Repo/main/scripts/uninstall.ps1 | iex"

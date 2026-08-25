@@ -7,8 +7,9 @@ import (
 	"runtime"
 )
 
-// DefaultStubPath returns the on-disk stub for the current OS/arch.
-// Prefer the Go reference stub (same codecs as `nya`). Search order:
+// DefaultStubPath returns an on-disk stub for the current OS/arch (legacy).
+// Prefer SelfStubBytes / BuildSFXAuto which use the running `nya` binary.
+// Search order:
 //  1. <exeDir>/sfx/stubs/nya-sfx-stub_<os>_<arch>[.exe]
 //  2. <exeDir>/nya-sfx-stub[.exe]
 //  3. ./sfx/stubs/… (repo cwd)

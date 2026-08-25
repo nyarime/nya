@@ -85,47 +85,9 @@ func SliceSFXArchive(path string) ([]byte, error) {
 }
 
 // BuildSFX writes stub + archive + optional config + footer to outPath.
+// Prefer BuildSFXAuto which defaults the stub to the running nya binary.
 func BuildSFX(stubPath, archivePath, outPath string, config []byte, flags uint32) error {
-	stub, err := os.ReadFile(stubPath)
-	if err != nil {
-		return fmt.Errorf("sfx: read stub: %w", err)
-	}
-	archive, err := os.ReadFile(archivePath)
-	if err != nil {
-		return fmt.Errorf("sfx: read archive: %w", err)
-	}
-	if len(archive) < GlobalHeaderSize || !bytes.Equal(archive[:8], MagicHeader[:]) {
-		return fmt.Errorf("sfx: not a NYA archive")
-	}
-
-	archiveOffset := uint64(len(stub))
-	configOffset := uint64(0)
-	configSize := uint32(0)
-	if len(config) > 0 {
-		configOffset = archiveOffset + uint64(len(archive))
-		configSize = uint32(len(config))
-	}
-
-	var buf bytes.Buffer
-	buf.Write(stub)
-	buf.Write(archive)
-	if len(config) > 0 {
-		buf.Write(config)
-	}
-
-	foot := make([]byte, SFXFooterSize)
-	copy(foot[:8], SFXMagic)
-	binary.LittleEndian.PutUint64(foot[8:16], archiveOffset)
-	binary.LittleEndian.PutUint64(foot[16:24], uint64(len(archive)))
-	binary.LittleEndian.PutUint64(foot[24:32], configOffset)
-	binary.LittleEndian.PutUint32(foot[32:36], configSize)
-	binary.LittleEndian.PutUint32(foot[36:40], flags)
-	buf.Write(foot)
-
-	if err := os.WriteFile(outPath, buf.Bytes(), 0755); err != nil {
-		return fmt.Errorf("sfx: write output: %w", err)
-	}
-	return nil
+	return BuildSFXAuto(stubPath, archivePath, outPath, config, flags)
 }
 
 // OpenAny opens a plain .nya or an SFX wrapper (extracts embedded archive to memory).
