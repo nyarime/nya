@@ -1,0 +1,228 @@
+# Build + publish GitHub Release assets (Windows installer, CLI, nyaFM, SFX stub).
+# Trigger: push tag v*  or  Actions → Release → Run workflow
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version without v (e.g. 0.1.0). Creates/updates release tag vVERSION."
+        required: true
+        default: "0.1.0"
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      tag: ${{ steps.v.outputs.tag }}
+    steps:
+      - id: v
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            TAG="${{ github.ref_name }}"
+            VER="${TAG#v}"
+          else
+            VER="${{ inputs.version }}"
+            TAG="v${VER}"
+          fi
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+  windows:
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Go CLI
+        shell: bash
+        run: |
+          mkdir -p staging dist
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
+            go build -trimpath -ldflags="-s -w" -o staging/nya.exe ./cmd/nya
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
+            go build -trimpath -ldflags="-s -w" -o staging/nya-get.exe ./cmd/nya-get
+
+      - name: Build Rust nyaFM + SFX stub
+        shell: bash
+        run: |
+          cargo build --release -p nya-fm -p nya-sfx-stub
+          cp target/release/nya-fm.exe staging/
+          cp target/release/nya-sfx-stub.exe staging/
+
+      - name: UPX static Go CLI (+ SFX stub)
+        shell: bash
+        run: |
+          choco install upx -y --no-progress
+          # Go CGO_ENABLED=0 is fully static; pack before Inno/zip.
+          # Skip nya-fm.exe (GUI / egui — UPX often breaks or trips AV harder).
+          upx --best --lzma staging/nya.exe staging/nya-get.exe staging/nya-sfx-stub.exe
+
+      - name: Install Inno Setup
+        shell: powershell
+        run: choco install innosetup -y --no-progress
+
+      - name: Compile installer
+        shell: cmd
+        run: |
+          "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=%VERSION% /DStagingDir=%CD%\staging packaging\windows\nya.iss
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+
+      - name: Zip portable + collect assets
+        shell: bash
+        run: |
+          VER="${{ needs.version.outputs.version }}"
+          mkdir -p dist
+          test -f "dist/nya-${VER}-windows-amd64-setup.exe"
+          powershell -Command "Compress-Archive -Path staging/nya.exe,staging/nya-get.exe,staging/nya-fm.exe,staging/nya-sfx-stub.exe -DestinationPath dist/nya-${VER}-windows-amd64.zip -Force"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            dist/nya-*-windows-amd64-setup.exe
+            dist/nya-*-windows-amd64.zip
+
+  linux-amd64:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install GUI deps + UPX
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y upx-ucl libgtk-3-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libxkbcommon-dev libssl-dev
+      - name: Build
+        run: |
+          VER="${{ needs.version.outputs.version }}"
+          mkdir -p staging dist
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o staging/nya ./cmd/nya
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o staging/nya-get ./cmd/nya-get
+          cargo build --release -p nya-fm -p nya-sfx-stub
+          cp target/release/nya-fm staging/
+          cp target/release/nya-sfx-stub staging/
+          chmod +x staging/*
+          # Go CLI is static (no glibc). Pack only static/self-contained bins.
+          # nya-fm is dynamically linked to GTK/X11 — do not UPX.
+          # nya-sfx-stub on glibc Linux is usually dynamic; UPX only if fully static.
+          upx --best --lzma staging/nya staging/nya-get
+          if ! ldd staging/nya-sfx-stub >/dev/null 2>&1; then
+            upx --best --lzma staging/nya-sfx-stub || true
+          fi
+          tar -C staging -czf "dist/nya-${VER}-linux-amd64.tar.gz" nya nya-get nya-fm nya-sfx-stub
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-amd64
+          path: dist/*
+
+  linux-arm64-cli:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+      - name: Build Go CLI (cross) + UPX
+        run: |
+          VER="${{ needs.version.outputs.version }}"
+          sudo apt-get update
+          sudo apt-get install -y upx-ucl
+          mkdir -p staging dist
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o staging/nya ./cmd/nya
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o staging/nya-get ./cmd/nya-get
+          # upx-ucl on amd64 runners can pack arm64 ELF
+          upx --best --lzma staging/nya staging/nya-get
+          tar -C staging -czf "dist/nya-${VER}-linux-arm64.tar.gz" nya nya-get
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-arm64-cli
+          path: dist/*
+
+  darwin:
+    needs: version
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - goarch: arm64
+            rust_target: aarch64-apple-darwin
+            suffix: darwin-arm64
+          - goarch: amd64
+            rust_target: x86_64-apple-darwin
+            suffix: darwin-amd64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+      - name: Build
+        run: |
+          VER="${{ needs.version.outputs.version }}"
+          mkdir -p staging dist
+          GOOS=darwin GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 \
+            go build -trimpath -ldflags="-s -w" -o staging/nya ./cmd/nya
+          GOOS=darwin GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 \
+            go build -trimpath -ldflags="-s -w" -o staging/nya-get ./cmd/nya-get
+          cargo build --release -p nya-fm -p nya-sfx-stub --target ${{ matrix.rust_target }}
+          cp "target/${{ matrix.rust_target }}/release/nya-fm" staging/
+          cp "target/${{ matrix.rust_target }}/release/nya-sfx-stub" staging/
+          chmod +x staging/*
+          # No UPX on Darwin: modern Mach-O / notarization are a poor fit.
+          tar -C staging -czf "dist/nya-${VER}-${{ matrix.suffix }}.tar.gz" nya nya-get nya-fm nya-sfx-stub
+      - uses: actions/upload-artifact@v4
+        with:
+          name: darwin-${{ matrix.goarch }}
+          path: dist/*
+
+  publish:
+    needs: [version, windows, linux-amd64, linux-arm64-cli, darwin]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: List assets
+        run: find artifacts -type f | sort
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: NYA ${{ needs.version.outputs.tag }}
+          draft: false
+          generate_release_notes: true
+          files: artifacts/*
+          body: |
+            ## Windows
+            - **`nya-${{ needs.version.outputs.version }}-windows-amd64-setup.exe`** — recommended installer (PATH + `.nya` → nyaFM)
+            - `nya-${{ needs.version.outputs.version }}-windows-amd64.zip` — portable zip
+
+            ## Other
+            - Linux amd64: CLI + nyaFM + SFX stub
+            - Linux arm64: CLI only
+            - macOS: arm64 / amd64 archives
+
+            Docs: [docs/RELEASE.md](https://github.com/nyarime/nya/blob/main/docs/RELEASE.md)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
