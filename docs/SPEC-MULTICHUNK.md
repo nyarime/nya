@@ -116,7 +116,7 @@ Reader with `-workers N`:
 | 1 | Land chunk splitter in writer behind `-multi-chunk` flag | **Done** (default on) |
 | 2 | Reader: loop `ChunkCount` in `Extract` | **Done** |
 | 3 | FEC/repair per chunk | **Done** |
-| 4 | `nya-get` manifest lists byte ranges per chunk | Planned |
+| 4 | `nya-get` manifest lists byte ranges per chunk | **Done** (`entries` in `.nyam`, `nya-get --paths`) |
 | 5 | Enable by default for files > 4 MiB non-solid | **Done** |
 
 ## Open questions

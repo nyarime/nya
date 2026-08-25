@@ -1,6 +1,7 @@
 package nya
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -21,21 +22,40 @@ const (
 
 // Manifest is the .nyam sidecar for resumable parallel downloads.
 type Manifest struct {
-	Format   string         `json:"format"`
-	Version  int            `json:"version"`
-	Archive  ArchiveMeta    `json:"archive"`
-	Download DownloadIndex  `json:"download"`
+	Format   string           `json:"format"`
+	Version  int              `json:"version"`
+	Archive  ArchiveMeta      `json:"archive"`
+	Download DownloadIndex    `json:"download"`
+	Entries  []ManifestEntry  `json:"entries,omitempty"`
 	Sources  []ManifestSource `json:"sources,omitempty"`
+}
+
+// ManifestEntry maps one file path to on-disk data-area chunk byte ranges.
+type ManifestEntry struct {
+	Path         string              `json:"path"`
+	OriginalSize int64               `json:"original_size"`
+	ChunkCount   int                 `json:"chunk_count"`
+	Chunks       []ManifestFileChunk `json:"chunks"`
+}
+
+// ManifestFileChunk is one on-disk chunk (ChunkHeader + compressed payload).
+type ManifestFileChunk struct {
+	Index        int    `json:"index"`
+	Offset       int64  `json:"offset"`
+	Size         int64  `json:"size"`
+	OriginalSize int64  `json:"original_size"`
+	Blake3       string `json:"blake3"`
 }
 
 // ArchiveMeta describes the target .nya file.
 type ArchiveMeta struct {
-	Name        string `json:"name"`
-	Size        int64  `json:"size"`
-	Blake3      string `json:"blake3"`
-	NYAVersion  string `json:"nya_version,omitempty"`
-	FECOffset   int64  `json:"fec_offset,omitempty"`
-	FECBytes    int64  `json:"fec_bytes,omitempty"`
+	Name             string `json:"name"`
+	Size             int64  `json:"size"`
+	Blake3           string `json:"blake3"`
+	NYAVersion       string `json:"nya_version,omitempty"`
+	CentralDirOffset int64  `json:"central_dir_offset,omitempty"`
+	FECOffset        int64  `json:"fec_offset,omitempty"`
+	FECBytes         int64  `json:"fec_bytes,omitempty"`
 }
 
 // DownloadIndex lists HTTP Range transport blocks.
@@ -89,21 +109,28 @@ func BuildManifest(path string, blockSize int64, sources ...ManifestSource) (*Ma
 		return nil, err
 	}
 
+	fileEntries, cdOff, err := buildManifestFileEntries(path)
+	if err != nil {
+		return nil, err
+	}
+
 	m := &Manifest{
 		Format:  ManifestFormat,
 		Version: ManifestVersion,
 		Archive: ArchiveMeta{
-			Name:       filepath.Base(path),
-			Size:       size,
-			Blake3:     hex.EncodeToString(wholeHash[:]),
-			NYAVersion: nyaVer,
-			FECOffset:  fecOff,
-			FECBytes:   fecLen,
+			Name:             filepath.Base(path),
+			Size:             size,
+			Blake3:           hex.EncodeToString(wholeHash[:]),
+			NYAVersion:       nyaVer,
+			CentralDirOffset: cdOff,
+			FECOffset:        fecOff,
+			FECBytes:         fecLen,
 		},
 		Download: DownloadIndex{
 			BlockSize: blockSize,
 			Blocks:    blocks,
 		},
+		Entries: fileEntries,
 	}
 	if len(sources) > 0 {
 		m.Sources = append([]ManifestSource(nil), sources...)
@@ -223,7 +250,222 @@ func (m *Manifest) Validate() error {
 	if total != m.Archive.Size {
 		return fmt.Errorf("manifest: blocks cover %d bytes, want %d", total, m.Archive.Size)
 	}
+	for i, ent := range m.Entries {
+		if ent.Path == "" {
+			return fmt.Errorf("manifest: entry %d missing path", i)
+		}
+		if len(ent.Chunks) == 0 {
+			return fmt.Errorf("manifest: entry %q has no chunks", ent.Path)
+		}
+		if ent.ChunkCount != len(ent.Chunks) {
+			return fmt.Errorf("manifest: entry %q chunk_count mismatch", ent.Path)
+		}
+		for _, ch := range ent.Chunks {
+			if ch.Size <= 0 || ch.Offset+ch.Size > m.Archive.Size {
+				return fmt.Errorf("manifest: entry %q chunk %d out of range", ent.Path, ch.Index)
+			}
+			if len(ch.Blake3) != 64 {
+				return fmt.Errorf("manifest: entry %q chunk %d blake3 invalid", ent.Path, ch.Index)
+			}
+		}
+	}
 	return nil
+}
+
+func buildManifestFileEntries(archivePath string) ([]ManifestEntry, int64, error) {
+	r, err := Open(archivePath)
+	if err != nil {
+		// Transport blocks still work for non-NYA or truncated files.
+		return nil, 0, nil
+	}
+	cdOff := int64(r.Header.CentralDirOffset)
+
+	f, err := os.Open(archivePath)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer f.Close()
+
+	var entries []ManifestEntry
+	for _, e := range r.Entries {
+		if e.EntryType != EntryFile {
+			continue
+		}
+		chunks, err := manifestChunksForEntry(r, f, &e)
+		if err != nil {
+			return nil, 0, fmt.Errorf("manifest: entry %s: %w", e.Path, err)
+		}
+		entries = append(entries, ManifestEntry{
+			Path:         e.Path,
+			OriginalSize: int64(e.OriginalSize),
+			ChunkCount:   len(chunks),
+			Chunks:       chunks,
+		})
+	}
+	return entries, cdOff, nil
+}
+
+func manifestChunksForEntry(r *Reader, f *os.File, e *DirEntry) ([]ManifestFileChunk, error) {
+	var chunks []ManifestFileChunk
+	if r.Header.Flags&FlagSolidCompress != 0 {
+		off := uint64(0)
+		if off+ChunkHeaderSize > uint64(len(r.data)) {
+			return nil, fmt.Errorf("solid data truncated")
+		}
+		ch, err := ReadChunkHeader(bytes.NewReader(r.data[off:]))
+		if err != nil {
+			return nil, err
+		}
+		stride := chunkDataStride(ch)
+		absOff := int64(GlobalHeaderSize)
+		h, err := hashFileRange(f, absOff, int64(stride))
+		if err != nil {
+			return nil, err
+		}
+		return []ManifestFileChunk{{
+			Index:        0,
+			Offset:       absOff,
+			Size:         int64(stride),
+			OriginalSize: int64(ch.OriginalSize),
+			Blake3:       h,
+		}}, nil
+	}
+
+	off := e.FirstDataOff
+	for c := uint32(0); c < e.ChunkCount; c++ {
+		if off+ChunkHeaderSize > uint64(len(r.data)) {
+			return nil, fmt.Errorf("chunk %d truncated", c)
+		}
+		ch, err := ReadChunkHeader(bytes.NewReader(r.data[off:]))
+		if err != nil {
+			return nil, err
+		}
+		stride := chunkDataStride(ch)
+		absOff := int64(GlobalHeaderSize) + int64(off)
+		h, err := hashFileRange(f, absOff, int64(stride))
+		if err != nil {
+			return nil, err
+		}
+		chunks = append(chunks, ManifestFileChunk{
+			Index:        int(c),
+			Offset:       absOff,
+			Size:         int64(stride),
+			OriginalSize: int64(ch.OriginalSize),
+			Blake3:       h,
+		})
+		off += stride
+	}
+	return chunks, nil
+}
+
+func hashFileRange(f *os.File, offset, size int64) (string, error) {
+	buf := make([]byte, size)
+	if _, err := f.Seek(offset, io.SeekStart); err != nil {
+		return "", err
+	}
+	if _, err := io.ReadFull(f, buf); err != nil {
+		return "", err
+	}
+	h := Blake3Sum256(buf)
+	return hex.EncodeToString(h[:]), nil
+}
+
+// FetchRangesForPaths returns byte ranges needed to fetch the listed paths
+// (global header, each on-disk chunk, and central directory tail).
+func (m *Manifest) FetchRangesForPaths(paths []string) ([]fetchByteRange, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	if len(m.Entries) == 0 {
+		return nil, fmt.Errorf("manifest: no file entries for partial fetch")
+	}
+	want := make(map[string]struct{}, len(paths))
+	for _, p := range paths {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		want[p] = struct{}{}
+	}
+	if len(want) == 0 {
+		return nil, fmt.Errorf("manifest: empty path list")
+	}
+
+	var ranges []fetchByteRange
+	ranges = append(ranges, fetchByteRange{0, int64(GlobalHeaderSize)})
+
+	found := 0
+	for _, ent := range m.Entries {
+		if _, ok := want[ent.Path]; !ok {
+			continue
+		}
+		found++
+		for _, ch := range ent.Chunks {
+			ranges = append(ranges, fetchByteRange{ch.Offset, ch.Offset + ch.Size})
+		}
+	}
+	if found != len(want) {
+		var missing []string
+		for p := range want {
+			var ok bool
+			for _, ent := range m.Entries {
+				if ent.Path == p {
+					ok = true
+					break
+				}
+			}
+			if !ok {
+				missing = append(missing, p)
+			}
+		}
+		return nil, fmt.Errorf("manifest: path not found: %s", strings.Join(missing, ", "))
+	}
+
+	if m.Archive.CentralDirOffset > 0 && m.Archive.CentralDirOffset < m.Archive.Size {
+		ranges = append(ranges, fetchByteRange{m.Archive.CentralDirOffset, m.Archive.Size})
+	}
+	return mergeFetchRanges(ranges), nil
+}
+
+type fetchByteRange struct {
+	start, end int64 // end exclusive
+}
+
+func mergeFetchRanges(in []fetchByteRange) []fetchByteRange {
+	if len(in) == 0 {
+		return nil
+	}
+	sort.Slice(in, func(i, j int) bool { return in[i].start < in[j].start })
+	out := []fetchByteRange{in[0]}
+	for i := 1; i < len(in); i++ {
+		last := &out[len(out)-1]
+		if in[i].start <= last.end {
+			if in[i].end > last.end {
+				last.end = in[i].end
+			}
+			continue
+		}
+		out = append(out, in[i])
+	}
+	return out
+}
+
+func rangesOverlap(aStart, aEnd, bStart, bEnd int64) bool {
+	return aStart < bEnd && bStart < aEnd
+}
+
+func filterBlocksByRanges(blocks []DownloadBlock, ranges []fetchByteRange) []DownloadBlock {
+	var out []DownloadBlock
+	for _, b := range blocks {
+		bEnd := b.Offset + b.Size
+		for _, r := range ranges {
+			if rangesOverlap(b.Offset, bEnd, r.start, r.end) {
+				out = append(out, b)
+				break
+			}
+		}
+	}
+	return out
 }
 
 // WriteManifest writes JSON manifest to path.

@@ -3,11 +3,9 @@
 NYA (Nyarime Archive) is an archive format that pairs ordinary compression
 with forward error correction, so a damaged archive can often still be read.
 This repository is the **canonical home** for the format specification,
-reference implementation, `nya` CLI, and `nya-get` downloader.
-
-[Nyarc](https://github.com/nyarime/Nyarc) is being rebuilt as a firmware
-analysis tool (BinWalk / IDA-like); it may use `.nya` as an internal analysis
-database format, but all format development happens here.
+reference implementation, `nya` CLI, and `nya-get` downloader. The format is
+general-purpose (backups, game packs, CDN distribution); firmware or database
+profiles can embed the same container without changing the on-disk layout.
 
 Everything is pure Go with no cgo and only two dependencies. The compressors
 (**NYA-Zstd**, **NYA-LZMA2**), the BLAKE3 implementation and the container are
@@ -66,6 +64,7 @@ nya manifest GamePack.nya -o GamePack.nyam --url https://cdn.example.com/GamePac
 
 go install github.com/nyarime/nya/cmd/nya-get@latest
 nya-get -c 16 GamePack.nyam    # parallel Range download + resume
+nya-get --paths "Game/Data/level1.bin" GamePack.nyam  # partial fetch (chunk ranges)
 ```
 
 See [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) for the `.nyam` manifest schema.
@@ -83,7 +82,7 @@ nya repair broken.rar fixed.rar     # RAR structure rebuild (RAR4/RAR5 store blo
 7z is not supported for repair (no recovery record). Use `nya convert` if 7z can still extract.
 
 ### Convert legacy archives (zip / 7z / rar → NYA)
- [Nyarc](https://github.com/nyarime/Nyarc) is for firmware.
+
 Use **`nya convert`** to unpack a damaged or legacy archive and repack it as `.nya` with
 optional FEC — something zip and 7z cannot do natively, and WinRAR only partially
 addresses with fixed-size recovery records.

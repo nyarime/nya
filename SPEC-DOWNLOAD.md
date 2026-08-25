@@ -68,6 +68,7 @@ Media type: `application/vnd.nyarime.nyam+json` (conventional).
 | `version` | int | yes | Manifest schema version; currently `1`. |
 | `archive` | object | yes | Describes the target `.nya` file. |
 | `download` | object | yes | Transport block index. |
+| `entries` | array | no | Per-file on-disk chunk byte ranges (multi-chunk v1.3). |
 | `sources` | array | no | Ordered download URLs (highest `priority` first). |
 
 ### `archive` object
@@ -78,8 +79,34 @@ Media type: `application/vnd.nyarime.nyam+json` (conventional).
 | `size` | int | yes | Total `.nya` size in bytes. |
 | `blake3` | string | yes | Lowercase hex BLAKE3-256 of the entire file. |
 | `nya_version` | string | no | `"major.minor"` from the NYA global header. |
+| `central_dir_offset` | int | no | Byte offset of central directory (for partial fetch tail). |
 | `fec_offset` | int | no | Byte offset of global recovery section (informative). |
 | `fec_bytes` | int | no | Length of recovery section (informative). |
+
+### `entries` array (optional)
+
+Each element describes one `EntryFile` path and its on-disk chunks in the
+data area (absolute byte offsets in the `.nya` file):
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `path` | string | yes | Archive entry path (as in central directory). |
+| `original_size` | int | yes | Decompressed file size. |
+| `chunk_count` | int | yes | Number of on-disk chunks. |
+| `chunks` | array | yes | One object per chunk, sorted by `index`. |
+
+Chunk object:
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `index` | int | yes | Zero-based chunk index within the entry. |
+| `offset` | int | yes | Start byte in `.nya` (includes `ChunkHeader`). |
+| `size` | int | yes | On-disk length (`ChunkHeader` + compressed payload). |
+| `original_size` | int | yes | Decompressed bytes for this chunk. |
+| `blake3` | string | yes | BLAKE3-256 of `offset..offset+size` on disk. |
+
+Populated by `nya manifest` when the archive parses successfully. Solid
+archives list one shared on-disk chunk per file entry.
 
 ### `download` object
 
@@ -118,7 +145,15 @@ Fetcher (`nya-get`) MUST:
 2. Issue `GET` with `Range: bytes=offset-offset+size-1` per block.
 3. Verify block `blake3` before marking the block complete.
 4. Retry failed blocks on the same or alternate source.
-5. After all blocks complete, verify `archive.blake3` over the assembled file.
+5. After all blocks complete, verify `archive.blake3` over the assembled file
+   (skip when `--paths` partial fetch is used).
+
+Partial fetch (`nya-get --paths "path/to/file"`):
+
+1. Union byte ranges: global header, each listed entry's `chunks[]`, and
+   `[central_dir_offset, archive.size)`.
+2. Download only transport blocks overlapping that union.
+3. Verify per-block `blake3`; do not require whole-file `archive.blake3`.
 
 Servers SHOULD support `Accept-Ranges: bytes`. When `Range` is unsupported,
 fetchers MAY fall back to a full-file download and verify `archive.blake3`.

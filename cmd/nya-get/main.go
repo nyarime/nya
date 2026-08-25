@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 
 	"github.com/nyarime/nya"
 )
@@ -24,9 +25,11 @@ Flags:
   --resume      resume from .state file (default: true)
   --no-resume   start fresh
   -url URL      override/add download URL
+  --paths list  partial fetch: comma-separated entry paths (uses manifest chunk ranges)
 
 Examples:
   nya-get -c 16 GamePack.nyam
+  nya-get --paths "data/big.bin" GamePack.nyam
   nya-get -o GamePack.nya --url https://cdn.example.com/GamePack.nya GamePack.nyam
 `
 
@@ -36,6 +39,7 @@ func main() {
 	concurrency := fs.Int("c", 8, "parallel download connections")
 	resume := fs.Bool("resume", true, "resume incomplete download")
 	url := fs.String("url", "", "download URL (overrides manifest sources)")
+	paths := fs.String("paths", "", "comma-separated entry paths for partial fetch")
 	fs.Usage = func() { fmt.Fprint(os.Stderr, usage) }
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
@@ -69,6 +73,14 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
+	var pathList []string
+	for _, p := range strings.Split(*paths, ",") {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			pathList = append(pathList, p)
+		}
+	}
+
 	statePath := nya.StatePath(manifestPath)
 	res, err := nya.Download(ctx, nya.DownloadOptions{
 		Manifest:    m,
@@ -76,6 +88,7 @@ func main() {
 		StatePath:   statePath,
 		Concurrency: *concurrency,
 		Resume:      *resume,
+		Paths:       pathList,
 		OnBlock: func(b nya.DownloadBlock, done, total int) {
 			fmt.Fprintf(os.Stderr, "\rnya-get: block %d/%d (%s)", done, total, nya.HumanSize(int(b.Size)))
 		},
@@ -90,6 +103,9 @@ func main() {
 		res.BlocksTotal,
 		nya.HumanSize(int(res.BytesWritten)),
 		res.Elapsed.Round(1))
+	if res.Partial {
+		fmt.Fprintf(os.Stderr, "nya-get: partial fetch (skipped whole-archive checksum)\n")
+	}
 }
 
 func fatal(err error) {
