@@ -15,14 +15,16 @@ nya create -level 9 -solid -fec 15 pack.nya ./GameData/   # embeds download inde
 ## Receiver
 
 ```bash
-nya-get --url https://cdn.example.com/pack.nya
+nya get --url https://cdn.example.com/pack.nya
 nya verify pack.nya
 nya open pack.nya          # or: nya extract pack.nya ./out
 ```
 
+(`nya-get` still works as a compatibility shim that runs `nya get`.)
+
 ## How it works
 
-1. `nya-get` reads remote size, then the last 40 bytes (`NYADIDX1` footer).
+1. `nya get` reads remote size, then the last 40 bytes (`NYADIDX1` footer).
 2. Fetches the download-index tail and builds an in-memory manifest.
 3. Parallel `Range` downloads of body blocks; verifies body BLAKE3.
 4. Trailing index is not required for `nya extract` / `Open`.
