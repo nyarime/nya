@@ -3,10 +3,12 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -20,6 +22,14 @@ import (
 
 var tryCloudflareURL = regexp.MustCompile(`https://[a-z0-9-]+\.trycloudflare\.com`)
 
+type sendMode int
+
+const (
+	sendModeNya sendMode = iota // already a .nya archive
+	sendModeFile                // single file: browser direct + nyam
+	sendModeDir                 // directory: browser .nya + nyam
+)
+
 func cmdSend(args []string) error {
 	fs := flag.NewFlagSet("send", flag.ExitOnError)
 	port := fs.Int("port", 0, "local HTTP port (0 = ephemeral)")
@@ -28,24 +38,23 @@ func cmdSend(args []string) error {
 	noTunnel := fs.Bool("no-tunnel", false, "only serve locally (no TryCloudflare)")
 	noFetch := fs.Bool("no-fetch-cloudflared", false, "do not auto-install cloudflared when missing")
 	noEmbed := fs.Bool("no-embed", false, "do not upsert download index before send")
-	out := fs.String("o", "", "when sending a directory/file: write .nya here (default: temp, deleted on exit)")
-	level := fs.Int("level", nya.LevelFast, "when packing a directory/file: 0–9 (default 3=fast)")
+	out := fs.String("o", "", "when packing: write .nya here (default: temp, deleted on exit)")
+	level := fs.Int("level", nya.LevelFast, "when packing: 0–9 (default 3=fast)")
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, `nya send — pack (optional) + serve over HTTP + Cloudflare Quick Tunnel
+		fmt.Fprint(os.Stderr, `nya send — share a file or folder over HTTP + Cloudflare Quick Tunnel
 
 Usage:
-  nya send [flags] <archive.nya>
-  nya send [flags] <directory|file>     # packs to .nya first, then serves
+  nya send [flags] <file>           # browser direct link + index.nyam for nya get
+  nya send [flags] <directory>      # browser .nya archive + index.nyam for nya get
+  nya send [flags] <archive.nya>    # serve existing archive + index.nyam
 
-If the argument is a directory (or a non-.nya file), nya creates an archive
-(default: temp file; use -o to keep it), then serves that.
-
-If cloudflared is missing, nya silently installs the official binary into
-~/.local/bin (or %LocalAppData%\nya\bin on Windows), then runs --version
-to verify it (unless -no-fetch-cloudflared). Use -no-tunnel for LAN-only.
+Links:
+  file      → 直链 (original) + index.nyam (compressed transfer, restore same file)
+  folder    → .nya (browser downloads archive) + index.nyam (restore same tree)
+  Packing uses content magic (not extension): text/code/logs compress well.
 
 Receiver:
-  nya get --url https://xxxx.trycloudflare.com/archive.nya
+  nya get --url https://xxxx.trycloudflare.com/index.nyam
 
 `)
 		fs.PrintDefaults()
@@ -69,9 +78,15 @@ Receiver:
 		return err
 	}
 
+	mode := sendModeNya
+	directPath := "" // original file for browser 直链
+	directName := ""
 	archive := abs
 	cleanup := func() {}
-	if st.IsDir() || !isNyaArchivePath(abs) {
+
+	switch {
+	case st.IsDir():
+		mode = sendModeDir
 		archive, cleanup, err = packSendSource(abs, *out, *level, !*noEmbed)
 		if err != nil {
 			return err
@@ -81,13 +96,28 @@ Receiver:
 		if err != nil {
 			return err
 		}
-	} else if !*noEmbed {
-		if err := ensureSendEmbed(archive); err != nil {
+	case !isNyaArchivePath(abs):
+		mode = sendModeFile
+		directPath = abs
+		directName = filepath.Base(abs)
+		archive, cleanup, err = packSendSource(abs, *out, *level, !*noEmbed)
+		if err != nil {
 			return err
 		}
+		defer cleanup()
 		st, err = os.Stat(archive)
 		if err != nil {
 			return err
+		}
+	default:
+		if !*noEmbed {
+			if err := ensureSendEmbed(archive); err != nil {
+				return err
+			}
+			st, err = os.Stat(archive)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -96,24 +126,37 @@ Receiver:
 		return err
 	}
 	defer ln.Close()
-	localURL := fmt.Sprintf("http://%s/%s", ln.Addr().String(), filepath.Base(archive))
+
+	archiveName := filepath.Base(archive)
+	indexName := "index.nyam"
+	nyamJSON, err := buildSendIndex(archive, archiveName)
+	if err != nil {
+		return err
+	}
+
+	baseLocal := fmt.Sprintf("http://%s", ln.Addr().String())
+	indexLocal := baseLocal + "/" + indexName
+	nyaLocal := baseLocal + "/" + archiveName
+	directLocal := ""
+	if mode == sendModeFile {
+		directLocal = baseLocal + "/" + url.PathEscape(directName)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		f, err := os.Open(archive)
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
+		p := r.URL.Path
+		switch {
+		case p == "/" || p == "/"+indexName:
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.Header().Set("Cache-Control", "no-store")
+			_, _ = w.Write(nyamJSON)
+		case p == "/"+archiveName:
+			serveSendFile(w, r, archive, archiveName)
+		case mode == sendModeFile && p == "/"+directName:
+			serveSendFile(w, r, directPath, directName)
+		default:
+			http.NotFound(w, r)
 		}
-		defer f.Close()
-		fi, err := f.Stat()
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-		w.Header().Set("Accept-Ranges", "bytes")
-		w.Header().Set("Content-Type", "application/octet-stream")
-		http.ServeContent(w, r, filepath.Base(archive), fi.ModTime(), f)
 	})
 	srv := &http.Server{Handler: mux}
 
@@ -125,7 +168,7 @@ Receiver:
 		errCh <- srv.Serve(ln)
 	}()
 
-	public := localURL
+	publicBase := baseLocal
 	var tunnelCmd *exec.Cmd
 	if !*noTunnel {
 		bin, err := resolveCloudflared(*cloudflared, !*noFetch)
@@ -170,7 +213,7 @@ Receiver:
 
 		select {
 		case u := <-found:
-			public = u + "/" + filepath.Base(archive)
+			publicBase = strings.TrimRight(u, "/")
 		case <-time.After(45 * time.Second):
 			_ = srv.Shutdown(context.Background())
 			if tunnelCmd.Process != nil {
@@ -183,14 +226,15 @@ Receiver:
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "\nnya send: serving %s (%s)\n", filepath.Base(archive), nya.HumanSize(int(st.Size())))
-	fmt.Fprintf(os.Stderr, "nya send: local  %s\n", localURL)
-	if !*noTunnel {
-		fmt.Fprintf(os.Stderr, "nya send: public %s\n", public)
-		fmt.Fprintf(os.Stderr, "\nReceiver:\n  nya get --url %s\n\nCtrl+C to stop.\n", public)
-	} else {
-		fmt.Fprintf(os.Stderr, "\nReceiver (LAN):\n  nya get --url %s\n\nCtrl+C to stop.\n", localURL)
+	indexURL := publicBase + "/" + indexName
+	nyaURL := publicBase + "/" + archiveName
+	directURL := ""
+	if mode == sendModeFile {
+		directURL = publicBase + "/" + url.PathEscape(directName)
 	}
+
+	fmt.Fprintf(os.Stderr, "\nnya send: packed %s (%s)\n", archiveName, nya.HumanSize(int(st.Size())))
+	printSendLinks(mode, indexURL, nyaURL, directURL, indexLocal, nyaLocal, directLocal, !*noTunnel)
 
 	select {
 	case <-ctx.Done():
@@ -210,12 +254,69 @@ Receiver:
 	}
 }
 
+func printSendLinks(mode sendMode, indexURL, nyaURL, directURL, indexLocal, nyaLocal, directLocal string, public bool) {
+	fmt.Fprintln(os.Stderr)
+	if public {
+		switch mode {
+		case sendModeFile:
+			fmt.Fprintln(os.Stderr, "Browser 直链 (原文件):")
+			fmt.Fprintf(os.Stderr, "  %s\n", directURL)
+			fmt.Fprintln(os.Stderr, "nya get (压缩传输 → 还原同名文件):")
+			fmt.Fprintf(os.Stderr, "  nya get --url %s\n", indexURL)
+			fmt.Fprintf(os.Stderr, "  (.nya payload: %s)\n", nyaURL)
+		case sendModeDir:
+			fmt.Fprintln(os.Stderr, "Browser (下载 .nya 压缩档):")
+			fmt.Fprintf(os.Stderr, "  %s\n", nyaURL)
+			fmt.Fprintln(os.Stderr, "nya get (还原为原文件夹):")
+			fmt.Fprintf(os.Stderr, "  nya get --url %s\n", indexURL)
+		default:
+			fmt.Fprintln(os.Stderr, "Browser (.nya):")
+			fmt.Fprintf(os.Stderr, "  %s\n", nyaURL)
+			fmt.Fprintln(os.Stderr, "nya get:")
+			fmt.Fprintf(os.Stderr, "  nya get --url %s\n", indexURL)
+		}
+	} else {
+		fmt.Fprintln(os.Stderr, "LAN:")
+		if directLocal != "" {
+			fmt.Fprintf(os.Stderr, "  browser file: %s\n", directLocal)
+		}
+		fmt.Fprintf(os.Stderr, "  browser .nya: %s\n", nyaLocal)
+		fmt.Fprintf(os.Stderr, "  nya get:      nya get --url %s\n", indexLocal)
+	}
+	fmt.Fprintln(os.Stderr, "\nCtrl+C to stop.")
+}
+
+func buildSendIndex(archive, archiveName string) ([]byte, error) {
+	m, err := nya.BuildManifest(archive, 0, nya.ManifestSource{URL: archiveName, Priority: 10})
+	if err != nil {
+		return nil, err
+	}
+	return json.MarshalIndent(m, "", "  ")
+}
+
+func serveSendFile(w http.ResponseWriter, r *http.Request, path, name string) {
+	f, err := os.Open(path)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	w.Header().Set("Accept-Ranges", "bytes")
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name))
+	http.ServeContent(w, r, name, fi.ModTime(), f)
+}
+
 func isNyaArchivePath(path string) bool {
 	return strings.EqualFold(filepath.Ext(path), ".nya")
 }
 
 // packSendSource archives a directory or file into a .nya for sending.
-// If out is empty, uses a temp file that cleanup removes.
 func packSendSource(src, out string, level int, embed bool) (archive string, cleanup func(), err error) {
 	cleanup = func() {}
 	if level < 0 || level > 9 {
@@ -246,7 +347,20 @@ func packSendSource(src, out string, level int, embed bool) (archive string, cle
 	}
 
 	fmt.Fprintf(os.Stderr, "nya send: packing %s → %s\n", src, dest)
-	if err := writeNyaArchive(dest, src, level); err != nil {
+	textLike, dense, other, scanErr := nya.ScanPayloadKinds(src)
+	if scanErr != nil {
+		cleanup()
+		return "", func() {}, scanErr
+	}
+	solid := textLike >= 2 && textLike >= dense
+	if textLike+dense+other > 0 {
+		fmt.Fprintf(os.Stderr, "nya send: content magic — text/code/log=%d dense=%d other=%d", textLike, dense, other)
+		if solid {
+			fmt.Fprint(os.Stderr, " (solid)")
+		}
+		fmt.Fprintln(os.Stderr)
+	}
+	if err := writeNyaArchive(dest, src, level, solid); err != nil {
 		cleanup()
 		return "", func() {}, err
 	}
@@ -259,13 +373,13 @@ func packSendSource(src, out string, level int, embed bool) (archive string, cle
 	return dest, cleanup, nil
 }
 
-func writeNyaArchive(dest, src string, level int) error {
+func writeNyaArchive(dest, src string, level int, solid bool) error {
 	f, err := os.Create(dest)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	w := nya.NewWriterOpts(f, 0, level, false)
+	w := nya.NewWriterOpts(f, 0, level, solid)
 	if err := w.AddFile(src); err != nil {
 		return err
 	}

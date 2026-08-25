@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -487,6 +488,11 @@ func ReadManifest(path string) (*Manifest, error) {
 	if err != nil {
 		return nil, err
 	}
+	return ParseManifest(data)
+}
+
+// ParseManifest decodes .nyam JSON bytes.
+func ParseManifest(data []byte) (*Manifest, error) {
 	var m Manifest
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, fmt.Errorf("manifest: parse: %w", err)
@@ -495,6 +501,32 @@ func ReadManifest(path string) (*Manifest, error) {
 		return nil, err
 	}
 	return &m, nil
+}
+
+// ResolveManifestSources turns relative source URLs into absolute ones using baseURL
+// (typically the URL of the .nyam itself). Absolute sources are left unchanged.
+func ResolveManifestSources(m *Manifest, baseURL string) error {
+	if m == nil {
+		return fmt.Errorf("manifest: nil")
+	}
+	base, err := url.Parse(baseURL)
+	if err != nil {
+		return fmt.Errorf("manifest: base url: %w", err)
+	}
+	if len(m.Sources) == 0 && m.Archive.Name != "" {
+		m.Sources = []ManifestSource{{URL: m.Archive.Name, Priority: 10}}
+	}
+	for i := range m.Sources {
+		su, err := url.Parse(m.Sources[i].URL)
+		if err != nil {
+			return fmt.Errorf("manifest: source url: %w", err)
+		}
+		if su.IsAbs() {
+			continue
+		}
+		m.Sources[i].URL = base.ResolveReference(su).String()
+	}
+	return nil
 }
 
 // ParseBlockSize accepts 4m, 8M, 4194304.

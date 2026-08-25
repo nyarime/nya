@@ -100,16 +100,22 @@ See [examples/windows-open](examples/windows-open/README.md).
 ### Send + get (TryCloudflare)
 
 ```bash
-# Sender — silently installs + verifies cloudflared if missing
-nya send GamePack.nya
-# or pack a directory / file on the fly, then send:
-nya send ./GameData
-nya send -o GamePack.nya ./GameData   # keep the .nya
-# → prints: nya get --url https://xxxx.trycloudflare.com/….nya
+# File — browser 直链 + nyam（压缩传输后还原同名文件）
+nya send 小说.txt
+# → Browser:  https://….trycloudflare.com/小说.txt
+# → nya get:  nya get --url https://….trycloudflare.com/index.nyam
 
-# Receiver
-nya get --url https://xxxx.trycloudflare.com/GamePack.nya
+# Folder — browser 下 .nya 压缩档 + nyam（还原为原目录树）
+nya send ./GameData
+# → Browser:  https://….trycloudflare.com/….nya
+# → nya get:  nya get --url https://….trycloudflare.com/index.nyam
+
+nya get --url https://xxxx.trycloudflare.com/index.nyam
+# → 进来什么样，出去什么样；传输中汇报进度
 ```
+
+Content is classified by **magic bytes** (not extension): text/code/logs compress;
+zip/jpeg/… stay dense. `nya get` also downloads plain HTTP files (professional downloader).
 
 Options: `-no-tunnel` (LAN only), `-no-fetch-cloudflared` (require a system `cloudflared`).
 Quick Tunnels are ephemeral (Cloudflare ToS).
@@ -121,9 +127,10 @@ nya create -level 9 -solid -fec 20 GamePack.nya ./GameData/   # download index e
 # optional sidecar:
 # nya manifest export -o GamePack.nyam --url https://cdn.example.com/GamePack.nya GamePack.nya
 
-nya get --url https://cdn.example.com/GamePack.nya          # no .nyam needed
+nya get --url https://cdn.example.com/GamePack.nya          # download + restore GameData/
+nya get -no-extract --url https://cdn.example.com/GamePack.nya  # keep .nya only
 nya get -c 16 GamePack.nyam                                 # classic sidecar
-nya get --paths "Game/Data/level1.bin" GamePack.nyam        # partial fetch
+nya get --paths "Game/Data/level1.bin" GamePack.nyam        # partial fetch (no auto-extract)
 ```
 
 See [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) for the `.nyam` manifest schema.
