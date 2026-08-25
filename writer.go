@@ -158,6 +158,8 @@ func (nw *Writer) compressionID() uint16 {
 	switch {
 	case nw.usesStore():
 		return CompressNone
+	case len(nw.dict) > 0:
+		return CompressZstdDict
 	case nw.usesZstd():
 		return CompressZstd
 	default:
@@ -176,6 +178,9 @@ func (nw *Writer) compressRaw(data []byte) ([]byte, error) {
 	case nw.usesStore():
 		return data, nil
 	case nw.usesZstd():
+		if len(nw.dict) > 0 {
+			return ZstdCompressWithDict(data, nw.compressLevel, nw.dict), nil
+		}
 		return ZstdCompressWithWindow(data, nw.compressLevel), nil
 	default:
 		opts := nw.lzmaOpts

@@ -74,7 +74,18 @@ func DecompressZstdLegacy(data []byte) ([]byte, error) {
 	return decompressZstd(data, true)
 }
 
+// DecompressZstdWithDict decompresses a frame that was encoded with
+// ZstdCompressWithDict using the same dictionary bytes. The dict is a
+// match-window prefix only — it is not part of the returned content.
+func DecompressZstdWithDict(data, dict []byte) ([]byte, error) {
+	return decompressZstdDict(data, dict, false)
+}
+
 func decompressZstd(data []byte, legacy bool) ([]byte, error) {
+	return decompressZstdDict(data, nil, legacy)
+}
+
+func decompressZstdDict(data, dict []byte, legacy bool) ([]byte, error) {
 	if len(data) < 4 {
 		return nil, fmt.Errorf("zstd: data too short")
 	}
@@ -84,7 +95,7 @@ func decompressZstd(data []byte, legacy bool) ([]byte, error) {
 	}
 
 	d := &zstdDecoder{data: data, pos: 4, legacy: legacy}
-	return d.decodeFrame()
+	return d.decodeFrameWithDict(dict)
 }
 
 type zstdDecoder struct {
@@ -99,6 +110,12 @@ type zstdDecoder struct {
 }
 
 func (d *zstdDecoder) decodeFrame() ([]byte, error) {
+	return d.decodeFrameWithDict(nil)
+}
+
+// decodeFrameWithDict seeds the match window with dict (external dictionary /
+// NYA CompressionID 5). Returned bytes exclude the dictionary prefix.
+func (d *zstdDecoder) decodeFrameWithDict(dict []byte) ([]byte, error) {
 	if d.pos >= len(d.data) {
 		return nil, fmt.Errorf("zstd: truncated frame header")
 	}
@@ -168,8 +185,10 @@ func (d *zstdDecoder) decodeFrame() ([]byte, error) {
 		d.pos += 8
 	}
 
-	// Decode blocks
-	var output []byte
+	// Decode blocks. Seed the match window with an optional external dictionary
+	// (NYA CompressionID 5 / ZstdCompressWithDict); strip it from the return.
+	prefixLen := len(dict)
+	output := append([]byte(nil), dict...)
 	for {
 		if d.pos+3 > len(d.data) {
 			return nil, fmt.Errorf("zstd: truncated block header")
@@ -222,7 +241,7 @@ func (d *zstdDecoder) decodeFrame() ([]byte, error) {
 		d.pos += 4
 	}
 
-	return output, nil
+	return output[prefixLen:], nil
 }
 
 // ---- Compressed Block Decoding ----

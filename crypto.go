@@ -22,10 +22,11 @@ import (
 // against offline brute force; still supported for read.
 
 var (
-	ErrKeySize          = errors.New("nya: key must be 32 bytes")
-	ErrCiphertextSize   = errors.New("nya: ciphertext shorter than nonce")
-	ErrPasswordRequired = errors.New("nya: archive is encrypted; provide a password (Open with password, or: nya extract -password …)")
-	ErrFECInsufficient  = errors.New("nya: FEC parity is insufficient to repair the damaged payload; try a higher -fec archive or nya augment")
+	ErrKeySize              = errors.New("nya: key must be 32 bytes")
+	ErrCiphertextSize       = errors.New("nya: ciphertext shorter than nonce")
+	ErrPasswordRequired     = errors.New("nya: archive is encrypted; provide a password (Open with password, or: nya extract -password …)")
+	ErrDictionaryRequired   = errors.New("nya: archive uses a zstd dictionary (CompressionID 5); provide the same dict (Reader.SetDict / nya extract -dict …)")
+	ErrFECInsufficient      = errors.New("nya: FEC parity is insufficient to repair the damaged payload; try a higher -fec archive or nya augment")
 )
 
 const (
@@ -74,9 +75,13 @@ func ParseKDFParams(h *GlobalHeader) KDFParams {
 }
 
 // WriteKDFParams stores Argon2id parameters in h.Reserved and sets flags.
+// It does not lower VersionMinor: multi-chunk archives stay at minor 3 while
+// still carrying Argon2id metadata (readers that accept minor 3 must read KDF).
 func WriteKDFParams(h *GlobalHeader, salt [argon2SaltLen]byte) {
 	h.Flags |= FlagEncrypted | FlagKDFArgon2id
-	h.VersionMinor = 2
+	if h.VersionMinor < 2 {
+		h.VersionMinor = 2
+	}
 	copy(h.Reserved[:argon2SaltLen], salt[:])
 	binary.LittleEndian.PutUint32(h.Reserved[16:20], argon2MemoryKiB)
 	binary.LittleEndian.PutUint32(h.Reserved[20:24], argon2Time)

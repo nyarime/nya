@@ -43,7 +43,7 @@ headline.
 - Keep `nya convert` / `nya repair` / `nya get` / `nya send` in the same
   narrative: **in = out**, with optional FEC on the wire format.
 
-**Status:** docs rewrite in progress (this roadmap + README lead).
+**Status:** README + ROADMAP landed (merged #28).
 
 ### 2. Real corpus benchmarks + public raw data
 
@@ -59,11 +59,12 @@ Expand beyond synthetic trees. Preferred corpora:
 Publish:
 
 - Summary tables in [docs/BENCHMARK-COMPRESS.md](docs/BENCHMARK-COMPRESS.md)
-  and a new corpus plan: [docs/BENCHMARK-CORPUS.md](docs/BENCHMARK-CORPUS.md)
-- **Raw CSV / JSON** under `docs/bench-data/` (or release artifacts) so
-  numbers are reproducible, not screenshot marketing
+  and [docs/BENCHMARK-CORPUS.md](docs/BENCHMARK-CORPUS.md)
+- **Raw CSV / JSON** under `docs/bench-data/` (or release artifacts)
 
-**Status:** plan documented; full Silesia/enwik9 runs still TODO.
+Harness: `scripts/bench-silesia.sh` (fetch + level sweep + CSV).
+
+**Status:** script landed; full public CSV still TODO (run when network/time allow).
 
 ### 3. Rethink the default compression strategy
 
@@ -75,22 +76,11 @@ Levels 1–4 → NYA-Zstd (fast decompress)
 Levels 7–9 → NYA-LZMA2 (best ratio)
 ```
 
-Many distribution scenes (CDN, game get, firmware tools) care more about
-**decompress latency and CPU on weak clients** than max ratio. For those,
-**level 1–4 (zstd)** is often the better default.
+**Direction (decided):** bias distribute/get toward **zstd 1–4**; keep LZMA2 for
+`-level 7–9` / `--best`. Do **not** flip `LevelDefault` until Silesia/enwik9
+decode numbers are in `docs/bench-data/`.
 
-Open decision (do **not** flip silently until measured):
-
-| Option | Pros | Cons |
-| --- | --- | --- |
-| Keep default **5** (LZMA2) | Familiar “normal” archival feel | Slow extract vs zstd; mismatches house-codec story |
-| Default **3** or **4** (zstd) | Aligns with FEC+distribute; fast get/extract | Slightly worse ratio on text-heavy trees |
-| Context default | `nya send` / get path → zstd; `create -best` → LZMA2 | More flags to explain |
-
-Track measurements in corpus benches before changing `LevelDefault` in
-`level.go`. See [SPEC-CODECS.md](SPEC-CODECS.md) (house codec = Zstd).
-
-**Status:** decision pending; documented here.
+**Status:** direction set; code default unchanged pending benches.
 
 ### 4. Stabilize multi-chunk and document v1.3 reader break
 
@@ -103,16 +93,27 @@ Multi-chunk is **on by default** for non-solid files > 4 MiB
 - **Readers built for ≤ v1.2 reject minor 3** — they cannot open those
   archives at all (not “extract without parallel”).
 - Escape hatch: `nya create -multi-chunk=false` → stays on minor 1 (or 2 if
-  encrypted) so old tools can still read.
+  encrypted-only) so old tools can still read.
+- Encrypted + multi-chunk stays **minor 3** (Argon2id flags still set; KDF
+  must not downgrade minor).
 - Current reference reader reads **1.0–1.3**.
 
-Stabilize:
+**Status:** docs + encrypted multi-chunk CI test landed.
 
-- CI coverage for encrypted + high-FEC + large multi-chunk
-- Clear upgrade notes in README / COMPATIBILITY
-- Spec polish: [docs/SPEC-MULTICHUNK.md](docs/SPEC-MULTICHUNK.md)
+### 5. Push dictionaries (moved up from mid-term)
 
-**Status:** implemented; compatibility messaging tightened with this roadmap.
+- CompressionID **5** + `Writer.SetDict` / `Reader.SetDict` / CLI `-dict`
+- Solid path uses dict via `compressRaw`
+- Dictionary is **external** for now (same file at create and extract)
+- **Next:** embed dict in archive / auto-train from solid groups
+
+**Status:** external-dict MVP landed; embed still TODO.
+
+### 6. Keep grinding NYA-LZMA2 (not “done”)
+
+BT4 + optional optimal parse exist, but the encoder is **not thoroughly
+finished** vs xz/7-Zip. Tracked in [SPEC-CODECS.md](SPEC-CODECS.md). This is
+ongoing craft, not a one-sprint checkbox.
 
 ---
 
@@ -120,11 +121,12 @@ Stabilize:
 
 | Item | Intent |
 | --- | --- |
-| **Dictionaries** | Shared dict for solid / repeated game/firmware trees (CompressionID 5 reserved) |
+| **Dictionaries** | Embed dict in archive; auto-train from solid groups (external `-dict` MVP done) |
 | **Better zstd matcher** | Close ratio gap vs libzstd without new on-disk ID |
 | **Optional “best effort” optimal path** | Switchable optimal parse / deeper search — not default |
 | **`nya get` resume / partial** | Harden `.nyam.state`, Range, multi-chunk partial fetch |
 | **Executable-aware filters (learn from UPX)** | See below — ideas only; not “beat UPX on ELF in the archive table” |
+| **NYA-LZMA2 depth** | SIMD match extend, optimal-window policy, solid+dedup profile |
 | **Real early users** | Firmware analysis / game distribution — even internal — before v1 freeze marketing |
 
 Codec iteration stays under [SPEC-CODECS.md](SPEC-CODECS.md): same

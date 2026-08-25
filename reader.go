@@ -27,6 +27,7 @@ type Reader struct {
 	Header     *GlobalHeader
 	Entries    []DirEntry
 	workers    int // parallel chunk decompress (0 = automatic)
+	dict       []byte
 
 	// OnEntry, when set, is called by Extract once per entry with the error
 	// from restoring it, so callers can report progress. Extract itself is
@@ -35,6 +36,11 @@ type Reader struct {
 
 	data []byte
 }
+
+// SetDict supplies the external zstd dictionary for CompressionID 5 entries.
+// The same bytes must have been passed to Writer.SetDict when creating the archive.
+// The dictionary is not embedded in the archive yet (see ROADMAP).
+func (r *Reader) SetDict(dict []byte) { r.dict = dict }
 
 func (r *Reader) notify(e DirEntry, err error) {
 	if r.OnEntry != nil {
@@ -121,9 +127,24 @@ func (r *Reader) List() []DirEntry {
 }
 
 // zstdReaderFor decompresses a zstd frame, using legacy tables for minor version 0.
-func (r *Reader) zstdReaderFor(data []byte) (io.ReadCloser, error) {
+// When dictID is CompressZstdDict, the reader dictionary must be set.
+func (r *Reader) zstdReaderFor(data []byte, compressionID uint16) (io.ReadCloser, error) {
+	needDict := compressionID == CompressZstdDict
+	if needDict && len(r.dict) == 0 {
+		return nil, ErrDictionaryRequired
+	}
 	if r.Header != nil && r.Header.VersionMinor < 1 {
+		if needDict {
+			return nil, fmt.Errorf("nya: dictionary compression requires format minor >= 1")
+		}
 		return ZstdNewReaderLegacy(bytes.NewReader(data))
+	}
+	if needDict {
+		dec, err := DecompressZstdWithDict(data, r.dict)
+		if err != nil {
+			return nil, err
+		}
+		return &zstdReader{buf: dec}, nil
 	}
 	return ZstdNewReader(bytes.NewReader(data))
 }
@@ -289,7 +310,7 @@ func (r *Reader) extractSolid(dir string) error {
 			return derr
 		}
 	default:
-		dec, derr := r.zstdReaderFor(compData)
+		dec, derr := r.zstdReaderFor(compData, codec)
 		if derr != nil {
 			return derr
 		}

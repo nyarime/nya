@@ -51,10 +51,10 @@ go test -run TestFECRecoveryMatrix -timeout 30m -v ./...
 go test -run TestMultiChunkParallelReport -timeout 30m -v ./...
 ```
 
-Corpus-specific harnesses (TODO):
+Corpus-specific harnesses:
 
-- `scripts/bench-silesia.sh` — fetch, checksum, run nya vs xz/7z/zstd, emit CSV
-- `scripts/bench-enwik9.sh` — same for enwik9 (long timeout)
+- `scripts/bench-silesia.sh` — fetch, run nya levels 1/3/4/5 (+ zstd CLI if present), emit CSV
+- `scripts/bench-enwik9.sh` — TODO (long timeout)
 - Level sweep **1–4 (zstd)** vs **5–9 (LZMA2)** decode latency (feeds default-level decision)
 
 ## Raw data layout (planned)

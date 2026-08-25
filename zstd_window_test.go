@@ -49,7 +49,7 @@ func TestZstdCompressWithDict(t *testing.T) {
 
 	fmt.Printf("Dict test - Original: %d, No dict: %d, With dict: %d\n", len(data), len(comp1), len(comp2))
 
-	dec2, err := ZstdDecompress(comp2)
+	dec2, err := DecompressZstdWithDict(comp2, dict)
 	if err != nil {
 		t.Fatalf("decompress with dict: %v", err)
 	}

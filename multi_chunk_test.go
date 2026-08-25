@@ -317,3 +317,60 @@ func createMultiChunkArchive(t *testing.T, payload []byte, fec int) string {
 	f.Close()
 	return archive
 }
+
+func TestMultiChunkEncryptedRoundtrip(t *testing.T) {
+	payload := make([]byte, 5*1024*1024)
+	for i := range payload {
+		payload[i] = byte(i*3 + 7)
+	}
+	src := filepath.Join(t.TempDir(), "enc.bin")
+	if err := os.WriteFile(src, payload, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	archive := filepath.Join(t.TempDir(), "enc.nya")
+	f, err := os.Create(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := NewWriterOpts(f, 15, 3, false, []byte("multi-chunk-secret"))
+	if err := w.AddFile(src); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	if _, err := Open(archive); err != ErrPasswordRequired {
+		t.Fatalf("Open without password: got %v", err)
+	}
+	r, err := Open(archive, []byte("multi-chunk-secret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Header.VersionMinor < VersionMinorMultiChunk {
+		t.Fatalf("VersionMinor=%d want >= %d", r.Header.VersionMinor, VersionMinorMultiChunk)
+	}
+	var fileEntry *DirEntry
+	for i := range r.Entries {
+		if r.Entries[i].EntryType == EntryFile {
+			e := r.Entries[i]
+			fileEntry = &e
+			break
+		}
+	}
+	if fileEntry == nil || fileEntry.ChunkCount < 2 {
+		t.Fatalf("want multi-chunk encrypted entry, got %#v", fileEntry)
+	}
+	out := t.TempDir()
+	if err := r.Extract(out); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(out, "enc.bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Fatal("encrypted multi-chunk content mismatch")
+	}
+}
