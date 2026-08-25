@@ -22,6 +22,15 @@ func TestTryCloudflareURLRegex(t *testing.T) {
 	}
 }
 
+func TestIsNyaArchivePath(t *testing.T) {
+	if !isNyaArchivePath("a.nya") || !isNyaArchivePath(`C:\x\B.NYA`) {
+		t.Fatal("expected .nya")
+	}
+	if isNyaArchivePath("a.zip") || isNyaArchivePath("dir") {
+		t.Fatal("unexpected .nya")
+	}
+}
+
 func TestSendPublicNames(t *testing.T) {
 	nyaN, nyamN := sendPublicNames(sendModeFile, "/tmp/novel.txt", "novel.txt")
 	if nyaN != "novel.txt.nya" || nyamN != "novel.txt.nyam" {
