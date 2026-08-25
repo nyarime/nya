@@ -6,7 +6,7 @@
 
 一次打包同时带上压缩与可配置的前向纠错（FEC），用 `nya send` / CDN / `.nyam` 发一个 URL，再用 `nya get` + `nya repair` 拉回并修复。这条故事更贴合 **游戏分包、固件镜像、CDN 大文件、不可靠隧道**，而不是「又一个压缩格式」。产品方向见 **[ROADMAP.md](ROADMAP.md)**。
 
-本仓库是格式规范、参考实现与 **`nya` CLI**（`get` / `send` / `gui` / `sfx` …）的权威源。纯 Go、无 cgo；`github.com/nyarime/gofec` 提供 RaptorQ / LDPC，`golang.org/x/sys` 提供 xattr。**NYA-Zstd** 是家用编解码（RFC 8878）；**NYA-LZMA2** 走 `--best` — 见 [SPEC-CODECS.md](SPEC-CODECS.md)。
+本仓库是格式规范、参考实现与 **`nya` CLI**（`get` / `send` / `gui` / `sfx` …）的权威源。纯 Go、无 cgo；`github.com/nyarime/gofec` 提供 RaptorQ / LDPC，`golang.org/x/sys` 提供 xattr。**NYA-Zstd** 是家用编解码（RFC 8878）；**NYA-LZMA2** 走 `--best` — 见 [SPEC-CODECS.md](SPEC-CODECS.md)。编解码器将像 GoFEC 一样拆成独立库（`nyazstd` 计划中；`nyalzma2` 待 LZMA2 成熟后再单独开源 — [ROADMAP.md](ROADMAP.md)）。编解码器将像 GoFEC 一样拆成独立库（`nyazstd` 计划中；`nyalzma2` 待 LZMA2 成熟后再单独开源 — [ROADMAP.md](ROADMAP.md)）。
 
 ## 归档里有什么
 
@@ -80,7 +80,7 @@ go install github.com/nyarime/nya/cmd/nya@latest
 ```
 
 主 CLI 是 **`nya`**。下载用 **`nya get`**（`nya-get` 二进制仅为兼容包装）。  
-`nya-sfx-stub` 作为 SFX 拼接用的独立二进制保留。
+SFX 与 CLI 合一：**`nya`** 既是命令行工具，也是自解压 stub（发布包不再单独附带 `nya-sfx-stub`）。
 
 ## 命令行
 
@@ -332,21 +332,20 @@ NYA 是自由软件：可在 [GNU GPL v3.0](LICENSE) 下使用、修改与再分
 - [docs/BENCHMARK-CORPUS.md](docs/BENCHMARK-CORPUS.md) — 公开语料与 raw 数据计划
 - [docs/NOTE-UPX.md](docs/NOTE-UPX.md) — UPX 与归档压缩在 ELF 上的关系
 - [SPEC-CODECS.md](SPEC-CODECS.md) — **NYA-Zstd & NYA-LZMA2**
-- [SPEC-SFX.md](SPEC-SFX.md) — **自解压** stub + footer（Go 参考 stub）
+- [SPEC-SFX.md](SPEC-SFX.md) — **自解压**（`nya` 统一 stub）
 - [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) — `.nyam` 与 `nya get` 传输块
 - [fm/README.md](fm/README.md) — **nyaFM** Rust GUI
 
 ### 自解压归档（类似 7-Zip）
 
 ```bash
-go build -o sfx/stubs/nya-sfx-stub_$(go env GOOS)_$(go env GOARCH) ./cmd/nya-sfx-stub
-
 nya create -sfx game.exe -level 3 ./GameData/
 nya sfx pack.nya -o pack.exe
 ./pack.exe                        # 解到可执行文件旁边
 ```
 
-双击 / 直接运行会解到 SFX 所在目录（类似 macOS「归档实用工具」）。`-o DIR` 可改目标。参考 stub 为 **Go**（`cmd/nya-sfx-stub`），以支持 NYA-Zstd / solid / 多块；`nya` 只做 stub + 归档 + footer 拼接。
+双击 / 直接运行会解到 SFX 所在目录（类似 macOS「归档实用工具」）。`-o DIR` 可改目标。  
+**`nya`** 同时承担 CLI 与 SFX stub：`create -sfx` / `nya sfx` 用当前 `nya` 作前缀，再拼接归档与 footer。请勿对 SFX 输出做 UPX。
 
 ```bash
 cargo build -p nya-fm --release

@@ -170,6 +170,28 @@ Detail: [docs/NOTE-UPX.md](docs/NOTE-UPX.md).
 
 ---
 
+## Standalone codec libraries (像 GoFEC 一样拆出来)
+
+FEC 已通过 [GoFEC](https://github.com/nyarime/GoFEC) 独立成库，NYA `go get` 引用。
+自研编解码器也应**可单独使用**，而不是永远锁在 `github.com/nyarime/nya` 根包里。
+
+| 计划仓库 | 今天在哪 | 何时单独开源 | 诚实标准 |
+| --- | --- | --- | --- |
+| **nyazstd** | `zstd_compress.go` / `zstd_decompress.go` 等 | 中期：RFC 8878 互操作与 conformance 已稳 | 第三方 `zstd -d` 能解 minor 1 载荷；独立 README + `go test` 不依赖归档 |
+| **nyalzma2** | `lzma2_*` + `xz_decompress` LZMA2 层 | **LZMA2 成熟后再说** | 不为了「有个仓库」而开源：比率/速度仍明显追 xz/7z 时，只留在 NYA 内继续磨 |
+| **nya** | 本仓库 | 已开源 | 容器 + FEC 编排 + 分发；依赖上述库 |
+
+拆库**不改变**盘上 `CompressionID` 的 payload 格式（见 [SPEC-CODECS.md](SPEC-CODECS.md)）。
+动机是：固件/工具链可以 `go get nyazstd` 压一块 buffer，不必拉上整个归档栈。
+
+**nyalzma2 对外门槛（草案，未达标就不拆）：**
+
+- Silesia / enwik9 上 level 9 与 `xz -9` / `7z -mx9` 差距可解释、可复现，不是「偶尔赢一局」
+- optimal parse / SIMD 等深度项有明确默认策略，不靠 hidden flag 凑比率
+- 独立库的文档不夸大：写明与 xz/7z 的差距，不宣称「LZMA2 已完成」
+
+---
+
 ## Long term
 
 Do **not** position NYA as a desktop WinRAR/7-Zip clone.
