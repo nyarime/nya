@@ -20,7 +20,7 @@ need zip
 rm -rf "$STAGING"
 mkdir -p "$DIST" \
   "$STAGING/linux-amd64" "$STAGING/linux-arm64" \
-  "$STAGING/windows-amd64" \
+  "$STAGING/windows-amd64" "$STAGING/windows-arm64" \
   "$STAGING/darwin-arm64" "$STAGING/darwin-amd64"
 
 build_go() {
@@ -37,14 +37,16 @@ build_go() {
 build_go linux amd64 "$STAGING/linux-amd64"
 build_go linux arm64 "$STAGING/linux-arm64"
 build_go windows amd64 "$STAGING/windows-amd64"
+build_go windows arm64 "$STAGING/windows-arm64"
 build_go darwin arm64 "$STAGING/darwin-arm64"
 build_go darwin amd64 "$STAGING/darwin-amd64"
 
-echo "==> UPX (Linux + Windows CLI; skip Darwin / SFX / FM)"
+echo "==> UPX (Linux + Windows amd64 CLI; skip Darwin / win-arm64 / SFX / FM)"
 upx --best --lzma \
   "$STAGING/linux-amd64/nya" "$STAGING/linux-amd64/nya-get" \
   "$STAGING/linux-arm64/nya" "$STAGING/linux-arm64/nya-get" \
   "$STAGING/windows-amd64/nya.exe" "$STAGING/windows-amd64/nya-get.exe"
+# UPX 4.x: win64/arm64 not supported yet — leave unpacked.
 
 LINUX_AMD64_EXTRAS=()
 if command -v cargo >/dev/null; then
@@ -76,14 +78,16 @@ tar -C "$STAGING/darwin-amd64" -czf "$DIST/nya-${VER}-darwin-amd64.tar.gz" nya n
 WIN_FILES=(nya.exe nya-get.exe)
 [[ -f $STAGING/windows-amd64/nya-sfx-stub.exe ]] && WIN_FILES+=(nya-sfx-stub.exe)
 ( cd "$STAGING/windows-amd64" && zip -q "$DIST/nya-${VER}-windows-amd64.zip" "${WIN_FILES[@]}" )
+( cd "$STAGING/windows-arm64" && zip -q "$DIST/nya-${VER}-windows-arm64.zip" nya.exe nya-get.exe )
 
 cat > "$DIST/NOTES-v${VER}.txt" << EOF
 NYA ${VER} — local release (see scripts/release-local.sh)
 
-- windows zip: CLI (+ SFX stub if mingw). No Inno setup.exe / nyaFM.exe from Linux hosts.
+- windows-amd64 zip: CLI (+ SFX stub if mingw). No Inno setup.exe / nyaFM.exe from Linux hosts.
+- windows-arm64 zip: CLI only (no UPX — UPX does not support win64/arm64 yet)
 - linux-amd64: CLI + nyaFM + stub when cargo/GTK deps present
 - linux-arm64 / darwin: CLI only
-- UPX applied to Go CLI on Linux + Windows only
+- UPX applied to Go CLI on Linux + Windows amd64 only
 EOF
 
 echo
