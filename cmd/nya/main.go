@@ -30,8 +30,10 @@ Usage:
   nya manifest add  [flags] <archive.nya>    upsert embedded download index (optional -o .nyam)
   nya manifest del  <archive.nya>            remove embedded download index
   nya manifest export [flags] <archive.nya>  write .nyam sidecar only
-  nya sfx     [flags] <archive.nya> -o <out.exe> wrap archive as self-extractor (Rust stub)
-                                             (-o may appear before or after the archive path)
+  nya sfx     [flags] <archive.nya> -o <out.exe> wrap archive as self-extractor
+  nya get     [flags] --url <URL>            download via embedded index / .nyam (Range)
+  nya send    [flags] <archive.nya>          serve locally + Cloudflare Quick Tunnel (trycloudflare)
+  nya gui     [archive.nya]                  open nyaFM GUI
   nya associate [-uninstall]                 Windows: register .nya double-click → nya open
 
 Levels run 0 to 9, the way 7-Zip and WinRAR present them: 0 stores, 1 is
@@ -72,6 +74,12 @@ func main() {
 		err = cmdManifest(os.Args[2:])
 	case "sfx":
 		err = cmdSfx(os.Args[2:])
+	case "get":
+		err = cmdGet(os.Args[2:])
+	case "send":
+		err = cmdSend(os.Args[2:])
+	case "gui", "fm":
+		err = cmdGUI(os.Args[2:])
 	case "associate":
 		err = cmdAssociate(os.Args[2:])
 	case "-h", "--help", "help":
