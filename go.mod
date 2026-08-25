@@ -9,4 +9,4 @@ require (
 
 require golang.org/x/crypto v0.55.0
 
-require github.com/nyarime/compress v0.2.1
+require github.com/nyarime/compress v0.2.3
