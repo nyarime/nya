@@ -107,7 +107,7 @@ Multi-chunk is **on by default** for non-solid files > 4 MiB
 - Dictionary is **external** for now (same file at create and extract)
 - **Next:** embed dict in archive / auto-train from solid groups
 
-**Status:** external-dict MVP landed; embed still TODO.
+**Status:** external + **embedded** (tail `0x0006`) landed; auto-train from solid groups still TODO.
 
 ### 6. Keep grinding NYA-LZMA2 (not “done”)
 

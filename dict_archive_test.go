@@ -2,7 +2,6 @@ package nya
 
 import (
 	"bytes"
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -58,6 +57,9 @@ func TestArchiveZstdDictRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if r.Header.Flags&FlagHasZstdDict == 0 {
+		t.Fatal("FlagHasZstdDict not set")
+	}
 	var fileEntry *DirEntry
 	for i := range r.Entries {
 		if r.Entries[i].EntryType == EntryFile {
@@ -73,21 +75,9 @@ func TestArchiveZstdDictRoundtrip(t *testing.T) {
 		t.Fatalf("CompressionID=%d want %d", fileEntry.CompressionID, CompressZstdDict)
 	}
 
-	if err := r.Extract(filepath.Join(dir, "bad")); err != nil {
-		if !errors.Is(err, ErrDictionaryRequired) {
-			t.Fatalf("extract without dict: got %v want ErrDictionaryRequired", err)
-		}
-	} else {
-		t.Fatal("extract without dict: want error")
-	}
-
-	r2, err := Open(archive)
-	if err != nil {
-		t.Fatal(err)
-	}
-	r2.SetDict(dict)
+	// Embedded dict: extract without SetDict.
 	out := filepath.Join(dir, "out")
-	if err := r2.Extract(out); err != nil {
+	if err := r.Extract(out); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(filepath.Join(out, "a.bin"))
@@ -96,6 +86,38 @@ func TestArchiveZstdDictRoundtrip(t *testing.T) {
 	}
 	if !bytes.Equal(got, payload) {
 		t.Fatal("extracted content mismatch")
+	}
+}
+
+func TestArchiveZstdDictSurvivesDownloadIndexEmbed(t *testing.T) {
+	dict := bytes.Repeat([]byte("embed_dict_seed_xx_"), 64)
+	payload := append([]byte("x:"), bytes.Repeat([]byte("embed_dict_seed_xx_"), 30)...)
+	dir := t.TempDir()
+	src := filepath.Join(dir, "b.bin")
+	os.WriteFile(src, payload, 0o644)
+	archive := filepath.Join(dir, "e.nya")
+	f, _ := os.Create(archive)
+	w := NewWriterOpts(f, 0, 3, false)
+	w.SetDict(dict)
+	w.SetMultiChunk(false)
+	w.AddFile(src)
+	w.Close()
+	f.Close()
+
+	if _, err := EmbedDownloadIndex(archive, EmbedOptions{BlockSize: 1 << 20, InPlace: true}); err != nil {
+		t.Fatal(err)
+	}
+	r, err := Open(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "out2")
+	if err := r.Extract(out); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(filepath.Join(out, "b.bin"))
+	if !bytes.Equal(got, payload) {
+		t.Fatal("dict lost after download-index embed")
 	}
 }
 
@@ -127,7 +149,6 @@ func TestArchiveZstdDictSolid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r.SetDict(dict)
 	out := t.TempDir()
 	if err := r.Extract(out); err != nil {
 		t.Fatal(err)

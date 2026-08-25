@@ -397,8 +397,8 @@ func cmdAugment(args []string) error {
 
 func cmdConvert(args []string) error {
 	fs := flag.NewFlagSet("convert", flag.ExitOnError)
-	level := fs.Int("level", nya.LevelDefault,
-		"0 store, 1 fastest, 3 fast, 5 normal, 7 good, 9 best")
+	level := fs.Int("level", nya.LevelFast,
+		"0 store, 1 fastest, 3 fast (default for convert/distribute), 5 normal, 7 good, 9 best")
 	fec := fs.Int("fec", 10, "recovery data as a percentage of the payload (repack adds FEC unlike zip/7z)")
 	fecType := fs.String("fec-type", "hybrid",
 		"FEC codec when -fec > 0: hybrid (default), raptorq or ldpc")

@@ -121,6 +121,7 @@ Rules:
 | `0x0003` | SolidGroupTable | Reserved | [Solid group table](#solid-group-table-tail-0x0003) |
 | `0x0004` | SessionDescriptor | Reserved | [Multi-session](#multi-session-tail-0x0004) |
 | `0x0005` | ProfileMetadata | Reserved | [Profile metadata](#profile-metadata-tail-0x0005) |
+| `0x0006` | ZstdDictionary | **Supported** | Embedded NYA-Zstd dictionary for CompressionID 5 |
 | `0x0000`, `0xFFFF` | _Reserved_ | — | Must not appear |
 | other | Unknown | — | Skip |
 

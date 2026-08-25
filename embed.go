@@ -50,14 +50,24 @@ func EmbedDownloadIndex(path string, opt EmbedOptions) (*EmbedResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	bodySize := fi.Size()
-	if bodySize < GlobalHeaderSize {
+	if fi.Size() < GlobalHeaderSize {
 		return nil, fmt.Errorf("embed: file too small")
 	}
-	if n, err := stripEmbeddedDownloadIndex(work); err != nil {
+
+	st, err := StripDownloadIndex(work)
+	if err != nil {
 		return nil, err
-	} else {
-		bodySize = n
+	}
+	bodySize := st.BodySize
+	tailEnd := st.FinalSize
+	if !st.HadIndex {
+		if off, sz, ok := peekTailChain(work); ok {
+			bodySize = off
+			tailEnd = off + sz
+		} else {
+			bodySize = st.FinalSize
+			tailEnd = st.FinalSize
+		}
 	}
 
 	f, err := os.OpenFile(work, os.O_RDWR, 0)
@@ -65,7 +75,7 @@ func EmbedDownloadIndex(path string, opt EmbedOptions) (*EmbedResult, error) {
 		return nil, err
 	}
 	defer f.Close()
-	if err := f.Truncate(bodySize); err != nil {
+	if err := f.Truncate(tailEnd); err != nil {
 		return nil, err
 	}
 
@@ -74,7 +84,6 @@ func EmbedDownloadIndex(path string, opt EmbedOptions) (*EmbedResult, error) {
 		return nil, err
 	}
 
-	// Placeholder archive hash; patched after append.
 	var zero [32]byte
 	payload, err := EncodeDownloadIndexPayload(opt.BlockSize, blocks, zero)
 	if err != nil {
@@ -82,9 +91,11 @@ func EmbedDownloadIndex(path string, opt EmbedOptions) (*EmbedResult, error) {
 	}
 	tailRecord := WrapTailRecord(TailTypeDownloadIndex, payload)
 	tailOff := bodySize
-	tailSize := int64(len(tailRecord))
+	appendAt := tailEnd
+	keptLen := appendAt - bodySize
+	newChainSize := keptLen + int64(len(tailRecord))
 
-	if _, err := f.Seek(tailOff, io.SeekStart); err != nil {
+	if _, err := f.Seek(appendAt, io.SeekStart); err != nil {
 		return nil, err
 	}
 	if _, err := f.Write(tailRecord); err != nil {
@@ -93,30 +104,30 @@ func EmbedDownloadIndex(path string, opt EmbedOptions) (*EmbedResult, error) {
 	footer := DownloadIndexFooter{
 		Magic:           DownloadIndexFooterMagic,
 		TailChainOffset: uint64(tailOff),
-		TailChainSize:   uint64(tailSize),
+		TailChainSize:   uint64(newChainSize),
 	}
 	if _, err := f.Write(footer.Marshal()); err != nil {
 		return nil, err
 	}
-	finalSize := bodySize + tailSize + DownloadIndexFooterSize
+	finalSize := appendAt + int64(len(tailRecord)) + DownloadIndexFooterSize
 
 	gh, err := readGlobalHeaderAt(f)
 	if err != nil {
 		return nil, err
 	}
 	gh.Flags |= FlagHasDownloadIndex
-	SetTailChainReserved(gh, uint64(tailOff), uint64(tailSize))
+	if keptLen > 0 {
+		gh.Flags |= FlagHasZstdDict // preserved non-download tails typically include dict
+	}
+	SetTailChainReserved(gh, uint64(tailOff), uint64(newChainSize))
 	if err := writeAt(f, 0, mustHeaderBytes(gh)); err != nil {
 		return nil, err
 	}
 
-	// Header patch changed body bytes — rebuild block hashes for [0, bodySize).
 	blocks, err = buildTransportBlocks(f, bodySize, opt.BlockSize)
 	if err != nil {
 		return nil, err
 	}
-	// archiveBlake3 is the body digest (pre-tail). Hashing the whole file would
-	// be self-referential because the digest sits inside the tail payload.
 	bodyHash, err := hashFileBytes(f, 0, bodySize)
 	if err != nil {
 		return nil, err
@@ -125,11 +136,11 @@ func EmbedDownloadIndex(path string, opt EmbedOptions) (*EmbedResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	tailRecord = WrapTailRecord(TailTypeDownloadIndex, payload)
-	if int64(len(tailRecord)) != tailSize {
+	patched := WrapTailRecord(TailTypeDownloadIndex, payload)
+	if len(patched) != len(tailRecord) {
 		return nil, fmt.Errorf("embed: tail size changed")
 	}
-	if _, err := f.WriteAt(tailRecord, tailOff); err != nil {
+	if _, err := f.WriteAt(patched, appendAt); err != nil {
 		return nil, err
 	}
 
@@ -139,8 +150,25 @@ func EmbedDownloadIndex(path string, opt EmbedOptions) (*EmbedResult, error) {
 		FinalSize:       finalSize,
 		BlockCount:      len(blocks),
 		TailChainOffset: tailOff,
-		TailChainSize:   tailSize,
+		TailChainSize:   newChainSize,
 	}, nil
+}
+
+func peekTailChain(path string) (offset, size int64, ok bool) {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0, 0, false
+	}
+	defer f.Close()
+	gh, err := readGlobalHeaderAt(f)
+	if err != nil {
+		return 0, 0, false
+	}
+	off, sz, ok := TailChainFromReserved(gh)
+	if !ok {
+		return 0, 0, false
+	}
+	return int64(off), int64(sz), true
 }
 
 func hashFileBytes(f *os.File, off, size int64) ([32]byte, error) {
@@ -199,9 +227,9 @@ func HasEmbeddedDownloadIndex(path string) (bool, error) {
 	return int64(foot.TailChainOffset+foot.TailChainSize+DownloadIndexFooterSize) == size, nil
 }
 
-// StripDownloadIndex removes an embedded download index (tail + EOF footer) and
-// clears FlagHasDownloadIndex. Idempotent: if no index is present, returns
-// HadIndex=false and leaves the file unchanged.
+// StripDownloadIndex removes an embedded download index (type 0x0001 + EOF
+// footer) and clears FlagHasDownloadIndex. Other tail records (e.g. zstd
+// dictionary 0x0006) are preserved. Idempotent when no index is present.
 func StripDownloadIndex(path string) (*StripResult, error) {
 	f, err := os.OpenFile(path, os.O_RDWR, 0)
 	if err != nil {
@@ -228,25 +256,71 @@ func StripDownloadIndex(path string) (*StripResult, error) {
 	if int64(foot.TailChainOffset+foot.TailChainSize+DownloadIndexFooterSize) != size {
 		return out, nil
 	}
-	body := int64(foot.TailChainOffset)
-	if err := f.Truncate(body); err != nil {
+	raw := make([]byte, foot.TailChainSize)
+	if _, err := f.ReadAt(raw, int64(foot.TailChainOffset)); err != nil {
 		return nil, err
 	}
+	recs, err := ParseTailChain(raw)
+	if err != nil {
+		return nil, err
+	}
+	var kept []TailRecord
+	hadDL := false
+	for _, r := range recs {
+		if r.TypeID == TailTypeDownloadIndex {
+			hadDL = true
+			continue
+		}
+		kept = append(kept, r)
+	}
+	if !hadDL {
+		return out, nil
+	}
+
+	chainOff := int64(foot.TailChainOffset)
+	keptBytes := EncodeTailChain(kept)
+	newEnd := chainOff + int64(len(keptBytes))
+	if len(keptBytes) > 0 {
+		if _, err := f.WriteAt(keptBytes, chainOff); err != nil {
+			return nil, err
+		}
+	}
+	if err := f.Truncate(newEnd); err != nil {
+		return nil, err
+	}
+
 	gh, err := readGlobalHeaderAt(f)
 	if err != nil {
 		return nil, fmt.Errorf("strip download index: read header: %w", err)
 	}
 	gh.Flags &^= FlagHasDownloadIndex
-	if gh.Flags&FlagKDFArgon2id == 0 {
-		binary.LittleEndian.PutUint64(gh.Reserved[0:8], 0)
-		binary.LittleEndian.PutUint64(gh.Reserved[8:16], 0)
+	if len(kept) == 0 {
+		if gh.Flags&FlagKDFArgon2id == 0 {
+			binary.LittleEndian.PutUint64(gh.Reserved[0:8], 0)
+			binary.LittleEndian.PutUint64(gh.Reserved[8:16], 0)
+		}
+		gh.Flags &^= FlagHasZstdDict // only if we dropped everything; kept empty
+	} else {
+		SetTailChainReserved(gh, uint64(chainOff), uint64(len(keptBytes)))
+		hasDict := false
+		for _, r := range kept {
+			if r.TypeID == TailTypeZstdDictionary {
+				hasDict = true
+				break
+			}
+		}
+		if !hasDict {
+			gh.Flags &^= FlagHasZstdDict
+		} else {
+			gh.Flags |= FlagHasZstdDict
+		}
 	}
 	if err := writeAt(f, 0, mustHeaderBytes(gh)); err != nil {
 		return nil, err
 	}
 	out.HadIndex = true
-	out.BodySize = body
-	out.FinalSize = body
+	out.BodySize = chainOff // transport body excludes all remaining tails
+	out.FinalSize = newEnd
 	return out, nil
 }
 
@@ -347,18 +421,11 @@ func readEmbeddedIndex(r io.ReaderAt, size int64) (body int64, blocks []Download
 	if _, err := r.ReadAt(raw, int64(foot.TailChainOffset)); err != nil {
 		return 0, nil, 0, archHash, err
 	}
-	if len(raw) < 8 {
-		return 0, nil, 0, archHash, fmt.Errorf("embedded index: short tail")
+	payload, found := FindTailPayload(raw, TailTypeDownloadIndex)
+	if !found {
+		return 0, nil, 0, archHash, fmt.Errorf("embedded index: missing download-index record")
 	}
-	typeID := binary.LittleEndian.Uint32(raw[0:4])
-	plen := binary.LittleEndian.Uint32(raw[4:8])
-	if typeID != TailTypeDownloadIndex {
-		return 0, nil, 0, archHash, fmt.Errorf("embedded index: unexpected tail type 0x%x", typeID)
-	}
-	if int(plen)+8 > len(raw) {
-		return 0, nil, 0, archHash, fmt.Errorf("embedded index: truncated record")
-	}
-	blockSize, blocks, archHash, err = DecodeDownloadIndexPayload(raw[8 : 8+plen])
+	blockSize, blocks, archHash, err = DecodeDownloadIndexPayload(payload)
 	if err != nil {
 		return 0, nil, 0, archHash, err
 	}

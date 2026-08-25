@@ -37,10 +37,14 @@ type Reader struct {
 	data []byte
 }
 
-// SetDict supplies the external zstd dictionary for CompressionID 5 entries.
-// The same bytes must have been passed to Writer.SetDict when creating the archive.
-// The dictionary is not embedded in the archive yet (see ROADMAP).
-func (r *Reader) SetDict(dict []byte) { r.dict = dict }
+// SetDict supplies an external zstd dictionary for CompressionID 5 entries.
+// When the archive embeds tail 0x0006, Open loads it automatically; SetDict
+// overrides the embedded copy when non-empty.
+func (r *Reader) SetDict(dict []byte) {
+	if len(dict) > 0 {
+		r.dict = dict
+	}
+}
 
 func (r *Reader) notify(e DirEntry, err error) {
 	if r.OnEntry != nil {
@@ -119,7 +123,77 @@ func Open(path string, password ...[]byte) (*Reader, error) {
 	if len(password) > 0 {
 		r.Password = password[0]
 	}
+	if dict, ok := loadEmbeddedZstdDict(f, gh); ok {
+		r.dict = dict
+	}
 	return r, nil
+}
+
+// loadEmbeddedZstdDict reads tail type 0x0006 when present.
+func loadEmbeddedZstdDict(f *os.File, gh *GlobalHeader) ([]byte, bool) {
+	raw, ok := readArchiveTailChain(f, gh)
+	if !ok {
+		return nil, false
+	}
+	payload, found := FindTailPayload(raw, TailTypeZstdDictionary)
+	if !found {
+		return nil, false
+	}
+	dict, err := DecodeZstdDictPayload(payload)
+	if err != nil || len(dict) == 0 {
+		return nil, false
+	}
+	return dict, true
+}
+
+// readArchiveTailChain returns raw tail-chain bytes (no EOF footer).
+func readArchiveTailChain(f *os.File, gh *GlobalHeader) ([]byte, bool) {
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, false
+	}
+	size := fi.Size()
+	if size < GlobalHeaderSize {
+		return nil, false
+	}
+
+	// Prefer NYADIDX1 footer (multi-record chain including download index).
+	if size >= DownloadIndexFooterSize+GlobalHeaderSize {
+		footerBuf := make([]byte, DownloadIndexFooterSize)
+		if _, err := f.ReadAt(footerBuf, size-DownloadIndexFooterSize); err == nil {
+			if foot, err := ParseDownloadIndexFooter(footerBuf); err == nil {
+				if foot.TailChainSize > 0 &&
+					int64(foot.TailChainOffset+foot.TailChainSize+DownloadIndexFooterSize) == size {
+					raw := make([]byte, foot.TailChainSize)
+					if _, err := f.ReadAt(raw, int64(foot.TailChainOffset)); err == nil {
+						return raw, true
+					}
+				}
+			}
+		}
+	}
+
+	if off, sz, ok := TailChainFromReserved(gh); ok {
+		if int64(off+sz) <= size {
+			raw := make([]byte, sz)
+			if _, err := f.ReadAt(raw, int64(off)); err == nil {
+				return raw, true
+			}
+		}
+	}
+
+	// Flag-only fallback: tails start after the core archive layout.
+	if gh.Flags&FlagHasZstdDict == 0 {
+		return nil, false
+	}
+	coreEnd := int64(gh.CentralDirOffset) + int64(gh.CentralDirSize)
+	// fec len + fec + hash count + hashes + optional global meta
+	coreEnd += 4 // fec len field always written
+	// We do not re-parse lengths here; seek from Open's perspective is fragile.
+	// Rely on Reserved/footer for normal creates; flag-only is best-effort via
+	// scanning from EOF backward is not implemented.
+	_ = coreEnd
+	return nil, false
 }
 
 func (r *Reader) List() []DirEntry {
