@@ -46,11 +46,13 @@ upx --best --lzma \
   "$STAGING/linux-arm64/nya" "$STAGING/linux-arm64/nya-get" \
   "$STAGING/windows-amd64/nya.exe" "$STAGING/windows-amd64/nya-get.exe"
 
+LINUX_AMD64_EXTRAS=()
 if command -v cargo >/dev/null; then
   echo "==> Rust linux amd64 (nya-fm + sfx stub)"
   cargo build --release -p nya-fm -p nya-sfx-stub
   cp target/release/nya-fm target/release/nya-sfx-stub "$STAGING/linux-amd64/"
   chmod +x "$STAGING/linux-amd64/nya-fm" "$STAGING/linux-amd64/nya-sfx-stub"
+  LINUX_AMD64_EXTRAS+=(nya-fm nya-sfx-stub)
 
   if command -v x86_64-w64-mingw32-gcc >/dev/null; then
     echo "==> Rust windows amd64 SFX stub (mingw)"
@@ -66,8 +68,7 @@ fi
 
 echo "==> pack"
 tar -C "$STAGING/linux-amd64" -czf "$DIST/nya-${VER}-linux-amd64.tar.gz" \
-  nya nya-get $( [[ -f $STAGING/linux-amd64/nya-fm ]] && echo nya-fm ) \
-  $( [[ -f $STAGING/linux-amd64/nya-sfx-stub ]] && echo nya-sfx-stub )
+  nya nya-get "${LINUX_AMD64_EXTRAS[@]}"
 tar -C "$STAGING/linux-arm64" -czf "$DIST/nya-${VER}-linux-arm64.tar.gz" nya nya-get
 tar -C "$STAGING/darwin-arm64" -czf "$DIST/nya-${VER}-darwin-arm64.tar.gz" nya nya-get
 tar -C "$STAGING/darwin-amd64" -czf "$DIST/nya-${VER}-darwin-amd64.tar.gz" nya nya-get
@@ -90,4 +91,4 @@ echo "Artifacts in $DIST:"
 ls -lah "$DIST"/nya-"${VER}"-*
 echo
 echo "Publish:"
-echo "  gh release create v${VER} $DIST/nya-${VER}-* --title \"NYA v${VER}\" --notes-file $DIST/NOTES-v${VER}.txt"
+echo "  gh release create v${VER} \$DIST/nya-${VER}-* --title \"NYA v${VER}\" --notes-file \$DIST/NOTES-v${VER}.txt"
