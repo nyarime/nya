@@ -49,3 +49,10 @@ and **xz -9 / 7z -mx9 / zstd -19** on the same corpora as the README table.
 5. Incompressible ELF-like payloads stay at ~100% regardless of tool.
 
 Reproduce: `NYA_BENCH_WRITE=1 go test -run TestREADMEBenchmarkSuite -timeout 60m -v ./...`
+
+## Solid ZSTD dictionary (levels 3–4)
+
+For text-heavy game packs (configs, shaders, locale), a trained zstd dictionary
+on `-solid` archives can beat plain NYA-Zstd. See **`docs/SOLID-DICT.md`** for
+when to use `nya create -dict …` and the offline `zstd --train` workflow.
+Regression: `go test -run TestSolidZstdDictSmallerThanWithout -v ./...`
