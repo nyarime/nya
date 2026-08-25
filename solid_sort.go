@@ -74,10 +74,11 @@ const (
 	contentKindJSON    = "b_json"
 	contentKindELF     = "c_elf"
 	contentKindPE      = "d_pe"
-	contentKindPNG     = "e_png"
-	contentKindZIP     = "f_zip"
-	contentKindGzip    = "g_gzip"
-	contentKindWasm    = "h_wasm"
+	contentKindMachO   = "e_macho"
+	contentKindPNG     = "f_png"
+	contentKindZIP     = "g_zip"
+	contentKindGzip    = "h_gzip"
+	contentKindWasm    = "i_wasm"
 	contentKindBinary  = "y_binary"
 )
 
@@ -146,10 +147,26 @@ func binaryKindLabel(path string) string {
 	if len(h) >= 2 && h[0] == 'M' && h[1] == 'Z' {
 		return contentKindPE
 	}
+	if isMachOMagic(h) {
+		return contentKindMachO
+	}
 	if len(h) >= 4 && h[0] == 0x00 && h[1] == 'a' {
 		return contentKindWasm
 	}
 	return contentKindBinary
+}
+
+func isMachOMagic(h []byte) bool {
+	if len(h) < 4 {
+		return false
+	}
+	m := binary.LittleEndian.Uint32(h[:4])
+	switch m {
+	case 0xFEEDFACE, 0xFEEDFACF, 0xCEFAEDFE, 0xCFFAEDFE, 0xCAFEBABE, 0xBEBAFECA:
+		return true
+	default:
+		return false
+	}
 }
 
 func looksLikeJSON(h []byte) bool {
@@ -191,6 +208,9 @@ func contentKindFromBytes(h []byte) string {
 	}
 	if len(h) >= 2 && binary.LittleEndian.Uint16(h[:2]) == 0x5a4d {
 		return contentKindPE
+	}
+	if isMachOMagic(h) {
+		return contentKindMachO
 	}
 	return contentKindUnknown
 }

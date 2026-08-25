@@ -495,7 +495,7 @@ func (nw *Writer) chooseBCJForFile(raw []byte) ([]byte, uint8) {
 	}
 	filtered := make([]byte, len(raw))
 	copy(filtered, raw)
-	ApplyBCJFilterArch(filtered, bcjArch, true)
+	ApplyBCJFilterArchSmart(filtered, bcjArch, true)
 
 	origLen, err := nw.blockedCompressedLen(raw)
 	if err != nil {

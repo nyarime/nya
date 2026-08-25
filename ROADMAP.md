@@ -125,7 +125,7 @@ ongoing craft, not a one-sprint checkbox.
 | **Better zstd matcher** | Close ratio gap vs libzstd without new on-disk ID |
 | **Optional “best effort” optimal path** | Switchable optimal parse / deeper search — not default |
 | **`nya get` resume / partial** | Harden `.nyam.state`, Range, multi-chunk partial fetch |
-| **Executable-aware filters (learn from UPX)** | See below — ideas only; not “beat UPX on ELF in the archive table” |
+| **Executable-aware filters (learn from UPX)** | ELF + **PE (Windows exe)** + **Mach-O (macOS)** — see [docs/SPEC-FILTER-EXEC.md](docs/SPEC-FILTER-EXEC.md) |
 | **NYA-LZMA2 depth** | SIMD match extend, optimal-window policy, solid+dedup profile |
 | **Real early users** | Firmware analysis / game distribution — even internal — before v1 freeze marketing |
 
@@ -148,7 +148,7 @@ archive compressor.
 
 | UPX does | NYA archive does today |
 | --- | --- |
-| Parse ELF/PE/Mach-O layout | Optional BCJ on whole blob + generic LZ |
+| Parse ELF/PE/Mach-O layout | Optional BCJ on code sections + generic LZ |
 | Section-/reloc-aware transforms | No section map |
 | NRV / LZMA tuned for code + tiny runtime stub | Compress → extract to original bytes |
 | On-disk shrink 50–70% on *normal* programs | Must restore bit-identical file content |
@@ -197,6 +197,7 @@ also strengthens the distribute/recover story.
 | [SPEC-CODECS.md](SPEC-CODECS.md) | Zstd vs LZMA2 roles |
 | [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) | `.nyam` / get transport |
 | [docs/NOTE-UPX.md](docs/NOTE-UPX.md) | UPX license + what we can learn for ELF |
+| [docs/SPEC-FILTER-EXEC.md](docs/SPEC-FILTER-EXEC.md) | ELF / PE / Mach-O section-aware BCJ |
 
 Update this file when priorities change; keep commits conventional
 (`docs: …` / `feat: …`).

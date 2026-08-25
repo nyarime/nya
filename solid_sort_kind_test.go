@@ -15,6 +15,7 @@ func TestDetectContentKind(t *testing.T) {
 		{"json", []byte(`{"key":"value"}`), contentKindJSON},
 		{"text", []byte("package main\nfunc f() {}\n"), contentKindText},
 		{"pe", []byte{'M', 'Z', 0, 0}, contentKindPE},
+		{"macho", le32(0xFEEDFACF), contentKindMachO},
 	}
 	for _, tc := range cases {
 		if got := contentKindFromBytes(tc.data); got != tc.want {
