@@ -1,0 +1,16 @@
+[package]
+name = "nya-fm"
+version = "0.1.0"
+edition = "2021"
+description = "NYA File Manager (Rust GUI) — list and extract .nya archives"
+license = "MIT"
+
+[[bin]]
+name = "nya-fm"
+path = "src/main.rs"
+
+[dependencies]
+nya-sfx-stub = { path = "../sfx" }
+eframe = { version = "0.29", default-features = true, features = ["default_fonts", "glow"] }
+egui = "0.29"
+rfd = "0.15"

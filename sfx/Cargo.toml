@@ -5,6 +5,10 @@ edition = "2021"
 description = "NYA self-extracting archive stub (extract-only)"
 license = "MIT"
 
+[lib]
+name = "nya_archive"
+path = "src/lib.rs"
+
 [[bin]]
 name = "nya-sfx-stub"
 path = "src/main.rs"
