@@ -41,22 +41,24 @@ func cmdSend(args []string) error {
 	out := fs.String("o", "", "when packing: write .nya here (default: temp, deleted on exit)")
 	level := fs.Int("level", nya.LevelFast, "when packing: 0–9 (default 3=fast)")
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, `nya send — share a file or folder over HTTP + Cloudflare Quick Tunnel
+		fmt.Fprintf(os.Stderr, `nya send — share a file or folder over HTTP + Cloudflare Quick Tunnel
 
 Usage:
-  nya send [flags] <file>           # browser direct link + index.nyam for nya get
-  nya send [flags] <directory>      # browser .nya archive + index.nyam for nya get
-  nya send [flags] <archive.nya>    # serve existing archive + index.nyam
+  nya send [flags] <file>           # %s
+  nya send [flags] <directory>      # %s
+  nya send [flags] <archive.nya>    # %s
 
 Links:
-  file      → 直链 (original) + index.nyam (compressed transfer, restore same file)
-  folder    → .nya (browser downloads archive) + index.nyam (restore same tree)
-  Packing uses content magic (not extension): text/code/logs compress well.
+  %s
+  %s
+  %s
 
-Receiver:
+%s
   nya get --url https://xxxx.trycloudflare.com/index.nyam
 
-`)
+`, T("send.usage_file"), T("send.usage_dir"), T("send.usage_nya"),
+			T("send.links_file"), T("send.links_folder"), T("send.links_magic"),
+			T("send.receiver"))
 		fs.PrintDefaults()
 	}
 	if err := parseFlagSet(fs, args, map[string]bool{
@@ -79,7 +81,7 @@ Receiver:
 	}
 
 	mode := sendModeNya
-	directPath := "" // original file for browser 直链
+	directPath := "" // original file for browser direct link
 	directName := ""
 	archive := abs
 	cleanup := func() {}
@@ -259,31 +261,32 @@ func printSendLinks(mode sendMode, indexURL, nyaURL, directURL, indexLocal, nyaL
 	if public {
 		switch mode {
 		case sendModeFile:
-			fmt.Fprintln(os.Stderr, "Browser 直链 (原文件):")
+			fmt.Fprintln(os.Stderr, T("send.browser_direct"))
 			fmt.Fprintf(os.Stderr, "  %s\n", directURL)
-			fmt.Fprintln(os.Stderr, "nya get (压缩传输 → 还原同名文件):")
+			fmt.Fprintln(os.Stderr, T("send.nya_get_file"))
 			fmt.Fprintf(os.Stderr, "  nya get --url %s\n", indexURL)
-			fmt.Fprintf(os.Stderr, "  (.nya payload: %s)\n", nyaURL)
+			fmt.Fprintf(os.Stderr, T("send.payload_hint")+"\n", nyaURL)
 		case sendModeDir:
-			fmt.Fprintln(os.Stderr, "Browser (下载 .nya 压缩档):")
+			fmt.Fprintln(os.Stderr, T("send.browser_nya"))
 			fmt.Fprintf(os.Stderr, "  %s\n", nyaURL)
-			fmt.Fprintln(os.Stderr, "nya get (还原为原文件夹):")
+			fmt.Fprintln(os.Stderr, T("send.nya_get_dir"))
 			fmt.Fprintf(os.Stderr, "  nya get --url %s\n", indexURL)
 		default:
-			fmt.Fprintln(os.Stderr, "Browser (.nya):")
+			fmt.Fprintln(os.Stderr, T("send.browser_nya_only"))
 			fmt.Fprintf(os.Stderr, "  %s\n", nyaURL)
-			fmt.Fprintln(os.Stderr, "nya get:")
+			fmt.Fprintln(os.Stderr, T("send.nya_get"))
 			fmt.Fprintf(os.Stderr, "  nya get --url %s\n", indexURL)
 		}
 	} else {
-		fmt.Fprintln(os.Stderr, "LAN:")
+		fmt.Fprintln(os.Stderr, T("send.lan"))
 		if directLocal != "" {
-			fmt.Fprintf(os.Stderr, "  browser file: %s\n", directLocal)
+			fmt.Fprintf(os.Stderr, T("send.browser_file")+"\n", directLocal)
 		}
-		fmt.Fprintf(os.Stderr, "  browser .nya: %s\n", nyaLocal)
-		fmt.Fprintf(os.Stderr, "  nya get:      nya get --url %s\n", indexLocal)
+		fmt.Fprintf(os.Stderr, T("send.browser_nya_fmt")+"\n", nyaLocal)
+		fmt.Fprintf(os.Stderr, T("send.nya_get_fmt")+"\n", indexLocal)
 	}
-	fmt.Fprintln(os.Stderr, "\nCtrl+C to stop.")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, T("send.stop"))
 }
 
 func buildSendIndex(archive, archiveName string) ([]byte, error) {
