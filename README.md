@@ -71,11 +71,14 @@ See [examples/windows-open](examples/windows-open/README.md).
 
 ```bash
 nya create -level 9 -solid -fec 20 GamePack.nya ./GameData/
-nya manifest GamePack.nya -o GamePack.nyam --url https://cdn.example.com/GamePack.nya
+nya manifest --embed-only GamePack.nya             # single-URL friendly
+# or also write a sidecar:
+# nya manifest --embed -o GamePack.nyam --url https://cdn.example.com/GamePack.nya GamePack.nya
 
 go install github.com/nyarime/nya/cmd/nya-get@latest
-nya-get -c 16 GamePack.nyam    # parallel Range download + resume
-nya-get --paths "Game/Data/level1.bin" GamePack.nyam  # partial fetch (chunk ranges)
+nya-get --url https://cdn.example.com/GamePack.nya          # no .nyam needed
+nya-get -c 16 GamePack.nyam                                 # classic sidecar
+nya-get --paths "Game/Data/level1.bin" GamePack.nyam        # partial fetch
 ```
 
 See [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) for the `.nyam` manifest schema.
