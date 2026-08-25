@@ -195,8 +195,26 @@ Binary layout and tail chain placement: [SPEC-EXTENSIONS.md](SPEC-EXTENSIONS.md)
 § Download index tail. Global header flag bit 4 (`HasDownloadIndex`) SHOULD be
 set when the tail is present.
 
-Phase 1: `.nyam` sidecar only (current). Phase 2: `nya manifest --embed` writes
-tail type `0x0001` without changing the JSON schema fields documented here.
+**Phase 2 (implemented):** `nya manifest --embed` / `--embed-only` appends:
+
+1. Tail record `typeId = 0x0001` (same fields as this document’s `download` object).
+2. A fixed **40-byte EOF footer** (`NYADIDX1`) with `TailChainOffset` /
+   `TailChainSize`, so clients can locate the index with one `Range` read even
+   when header `Reserved[0:16]` is occupied by Argon2id KDF parameters.
+
+Transport blocks describe the archive **body** (`[0, TailChainOffset)`).
+`archiveBlake3` in the payload is the BLAKE3 of that body (not a
+self-referential hash of the index itself). `nya extract` / `Open` ignore the
+trailing index.
+
+Single-URL fetch (`nya-get --url https://cdn/pack.nya`):
+
+1. `HEAD` (or `Range: bytes=0-0`) → remote size  
+2. `Range` last 40 bytes → footer  
+3. `Range` tail → decode blocks  
+4. Parallel `Range` of body blocks + verify body `archiveBlake3`
+
+Sidecar `.nyam` remains supported and may be emitted alongside `--embed`.
 
 ## Version history
 
