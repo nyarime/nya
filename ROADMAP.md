@@ -124,10 +124,47 @@ Stabilize:
 | **Better zstd matcher** | Close ratio gap vs libzstd without new on-disk ID |
 | **Optional “best effort” optimal path** | Switchable optimal parse / deeper search — not default |
 | **`nya get` resume / partial** | Harden `.nyam.state`, Range, multi-chunk partial fetch |
+| **Executable-aware filters (learn from UPX)** | See below — ideas only; not “beat UPX on ELF in the archive table” |
 | **Real early users** | Firmware analysis / game distribution — even internal — before v1 freeze marketing |
 
 Codec iteration stays under [SPEC-CODECS.md](SPEC-CODECS.md): same
 CompressionID, better software.
+
+### Why ELF benches sit at ~100% (and UPX still wins elsewhere)
+
+README tables show **nya / xz / 7z / zstd all ≈ 100%** on the sample ELF
+blobs. That is **not** “NYA uniquely fails on binaries.” Those inputs are
+already high-entropy (stripped, media-like, or effectively incompressible as
+a flat byte stream). Archive codecs treat the file as an opaque buffer;
+headers + BCJ help a little on *typical* code, and lose when there is nothing
+left to model.
+
+**[UPX](https://upx.github.io/)** is **open source** (GPLv2+, optional special
+exceptions for packed commercial binaries — see its `LICENSE` / `COPYING`).
+It is also a **different product**: an *executable packer*, not a general
+archive compressor.
+
+| UPX does | NYA archive does today |
+| --- | --- |
+| Parse ELF/PE/Mach-O layout | Optional BCJ on whole blob + generic LZ |
+| Section-/reloc-aware transforms | No section map |
+| NRV / LZMA tuned for code + tiny runtime stub | Compress → extract to original bytes |
+| On-disk shrink 50–70% on *normal* programs | Must restore bit-identical file content |
+
+So: **you can and should study UPX** (ideas are learnable; copying code means
+GPL hygiene — NYA is already GPL-3.0, still review UPX’s special exceptions
+before vendoring). Expectation management:
+
+1. **Do not** promise that `nya create` on a random ELF will match `upx --best`.
+2. **Do** steal the *format-aware* lessons that fit an archive:
+   - Parse ELF/PE sections; apply stronger filters only on `.text` / code
+   - Detect already-packed / high-entropy segments → **store** (`PayloadDense`)
+   - Optional “pack executable entries” profile is a **separate** feature
+     (closer to SFX/stub territory), not the default archive path
+3. Keep the product headline on **FEC + distribution**; executable packing is
+   a niche enhancer for firmware/game *binaries inside* a pack, not the wedge.
+
+Detail: [docs/NOTE-UPX.md](docs/NOTE-UPX.md).
 
 ---
 
