@@ -100,7 +100,7 @@ See [examples/windows-open](examples/windows-open/README.md).
 ### Send + get (TryCloudflare)
 
 ```bash
-# Sender — installs official cloudflared to ~/.local/bin if missing
+# Sender — silently installs + verifies cloudflared if missing
 nya send GamePack.nya
 # → prints: nya get --url https://xxxx.trycloudflare.com/GamePack.nya
 

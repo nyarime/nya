@@ -2,7 +2,9 @@ package main
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,37 +12,48 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"time"
 )
 
 func resolveCloudflared(explicit string, allowFetch bool) (string, error) {
 	if explicit != "" && explicit != "cloudflared" {
 		if p, err := exec.LookPath(explicit); err == nil {
+			if err := verifyCloudflared(p); err != nil {
+				return "", err
+			}
 			return p, nil
 		}
 		if st, err := os.Stat(explicit); err == nil && !st.IsDir() {
+			if err := verifyCloudflared(explicit); err != nil {
+				return "", err
+			}
 			return explicit, nil
 		}
 		return "", fmt.Errorf("cloudflared not found at %q", explicit)
 	}
 	if p, err := exec.LookPath("cloudflared"); err == nil {
-		return p, nil
-	}
-	if installed := installedCloudflaredPath(); fileExecutable(installed) {
-		return installed, nil
-	}
-	if cached := cachedCloudflaredPath(); fileExecutable(cached) {
-		// Promote a previous cache download into the user bin.
-		if p, err := installCloudflaredBinary(cached); err == nil {
+		if err := verifyCloudflared(p); err == nil {
 			return p, nil
 		}
-		return cached, nil
+	}
+	if installed := installedCloudflaredPath(); fileExecutable(installed) {
+		if err := verifyCloudflared(installed); err == nil {
+			return installed, nil
+		}
+	}
+	if cached := cachedCloudflaredPath(); fileExecutable(cached) {
+		if p, err := installCloudflaredBinary(cached); err == nil {
+			if err := verifyCloudflared(p); err == nil {
+				return p, nil
+			}
+		}
+		if err := verifyCloudflared(cached); err == nil {
+			return cached, nil
+		}
 	}
 	if !allowFetch {
 		return "", fmt.Errorf("cloudflared not found; install it or omit -no-fetch-cloudflared so nya can install one")
 	}
-	fmt.Fprintln(os.Stderr, "nya send: cloudflared not found — installing official binary…")
 	return fetchCloudflared()
 }
 
@@ -98,6 +111,29 @@ func pathListContains(dir string) bool {
 	return false
 }
 
+// verifyCloudflared runs `cloudflared --version` to confirm the binary works.
+func verifyCloudflared(bin string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, bin, "--version")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		msg := bytes.TrimSpace(out)
+		if len(msg) > 200 {
+			msg = msg[:200]
+		}
+		if len(msg) > 0 {
+			return fmt.Errorf("cloudflared check failed (%s): %w", msg, err)
+		}
+		return fmt.Errorf("cloudflared check failed: %w", err)
+	}
+	low := bytes.ToLower(out)
+	if !bytes.Contains(low, []byte("cloudflared")) && !bytes.Contains(low, []byte("version")) {
+		return fmt.Errorf("cloudflared check failed: unexpected --version output")
+	}
+	return nil
+}
+
 func cloudflaredReleaseAsset() (asset string, archived bool, err error) {
 	switch runtime.GOOS {
 	case "linux":
@@ -129,6 +165,7 @@ func cloudflaredReleaseAsset() (asset string, archived bool, err error) {
 	return "", false, fmt.Errorf("no cloudflared build for %s/%s", runtime.GOOS, runtime.GOARCH)
 }
 
+// fetchCloudflared silently downloads and installs the official binary, then verifies it.
 func fetchCloudflared() (string, error) {
 	asset, archived, err := cloudflaredReleaseAsset()
 	if err != nil {
@@ -179,22 +216,23 @@ func fetchCloudflared() (string, error) {
 		return "", err
 	}
 
-	installed, err := installCloudflaredBinary(cache)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "nya send: cloudflared downloaded to %s (could not install to PATH: %v)\n", cache, err)
-		return cache, nil
+	bin := cache
+	if installed, err := installCloudflaredBinary(cache); err == nil {
+		bin = installed
 	}
-	return installed, nil
+	if err := verifyCloudflared(bin); err != nil {
+		return "", fmt.Errorf("installed cloudflared but check failed: %w", err)
+	}
+	return bin, nil
 }
 
-// installCloudflaredBinary copies src into the per-user bin dir and reports the path.
+// installCloudflaredBinary silently copies src into the per-user bin dir.
 func installCloudflaredBinary(src string) (string, error) {
 	dest := installedCloudflaredPath()
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return "", err
 	}
 	if sameFile(src, dest) {
-		fmt.Fprintf(os.Stderr, "nya send: cloudflared ready at %s\n", dest)
 		return dest, nil
 	}
 
@@ -224,14 +262,10 @@ func installCloudflaredBinary(src string) (string, error) {
 		return "", err
 	}
 
-	// So LookPath / child shells in this process see it immediately.
 	binDir := filepath.Dir(dest)
-	alreadyOnPATH := pathListContains(binDir)
-	if !alreadyOnPATH {
+	if !pathListContains(binDir) {
 		os.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-		hintUserBinPATH(binDir)
 	}
-	fmt.Fprintf(os.Stderr, "nya send: installed cloudflared to %s\n", dest)
 	return dest, nil
 }
 
@@ -247,14 +281,6 @@ func sameFile(a, b string) bool {
 		return false
 	}
 	return os.SameFile(ai, bi)
-}
-
-func hintUserBinPATH(binDir string) {
-	// pathListContains may be true only because we prepended for this process.
-	fmt.Fprintf(os.Stderr, "nya send: tip: ensure %s is on your PATH so `cloudflared` works in new shells\n", binDir)
-	if runtime.GOOS != "windows" && strings.Contains(binDir, ".local"+string(filepath.Separator)+"bin") {
-		fmt.Fprintln(os.Stderr, "         (many Linux/macOS setups already include ~/.local/bin)")
-	}
 }
 
 func extractCloudflaredTGZ(r io.Reader, out *os.File) error {
