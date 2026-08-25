@@ -595,10 +595,7 @@ func (enc *lzmaEncoder) findRepMatchAt(pos int, reps *[4]uint32) (repIdx int, le
 		if cpos < 0 {
 			continue
 		}
-		ml := zstdMatchLen(enc.src, pos, cpos)
-		if ml > maxLen {
-			ml = maxLen
-		}
+		ml := lzmaMatchLen(enc.src, pos, cpos, maxLen)
 		if ml > bestLen {
 			bestLen = ml
 			bestRep = i
