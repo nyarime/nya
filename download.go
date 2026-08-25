@@ -23,6 +23,9 @@ type DownloadOptions struct {
 	HTTPClient  *http.Client
 	OnBlock     func(block DownloadBlock, done, total int)
 	Resume      bool
+	// Paths selects partial fetch: only transport blocks overlapping the
+	// manifest entry chunk ranges for these paths (plus header and central dir).
+	Paths []string
 }
 
 // DownloadResult summarizes a fetch run.
@@ -32,6 +35,7 @@ type DownloadResult struct {
 	BlocksSkipped int
 	BytesWritten  int64
 	Elapsed       time.Duration
+	Partial       bool // true when Paths was set (no whole-file checksum)
 }
 
 // Download fetches a .nya using transport blocks from manifest.
@@ -61,6 +65,18 @@ func Download(ctx context.Context, opt DownloadOptions) (*DownloadResult, error)
 	urls := sortedSourceURLs(opt.Manifest.Sources)
 	start := time.Now()
 
+	blocks := opt.Manifest.Download.Blocks
+	if len(opt.Paths) > 0 {
+		ranges, err := opt.Manifest.FetchRangesForPaths(opt.Paths)
+		if err != nil {
+			return nil, err
+		}
+		blocks = filterBlocksByRanges(blocks, ranges)
+		if len(blocks) == 0 {
+			return nil, fmt.Errorf("download: no transport blocks overlap selected paths")
+		}
+	}
+
 	out, err := os.OpenFile(opt.Output, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		return nil, err
@@ -88,9 +104,9 @@ func Download(ctx context.Context, opt DownloadOptions) (*DownloadResult, error)
 		}
 	}
 
-	total := len(opt.Manifest.Download.Blocks)
+	total := len(blocks)
 	var pending []DownloadBlock
-	for _, b := range opt.Manifest.Download.Blocks {
+	for _, b := range blocks {
 		if _, ok := done[b.ID]; ok {
 			continue
 		}
@@ -100,11 +116,14 @@ func Download(ctx context.Context, opt DownloadOptions) (*DownloadResult, error)
 	res := &DownloadResult{
 		BlocksTotal:   total,
 		BlocksSkipped: total - len(pending),
+		Partial:       len(opt.Paths) > 0,
 	}
 
 	if len(pending) == 0 {
-		if err := verifyArchiveFile(opt.Output, opt.Manifest); err != nil {
-			return res, err
+		if !res.Partial {
+			if err := verifyArchiveFile(opt.Output, opt.Manifest); err != nil {
+				return res, err
+			}
 		}
 		res.Elapsed = time.Since(start)
 		return res, nil
@@ -157,8 +176,10 @@ func Download(ctx context.Context, opt DownloadOptions) (*DownloadResult, error)
 	if v := fail.Load(); v != nil {
 		return res, v.(error)
 	}
-	if err := verifyArchiveFile(opt.Output, opt.Manifest); err != nil {
-		return res, err
+	if !res.Partial {
+		if err := verifyArchiveFile(opt.Output, opt.Manifest); err != nil {
+			return res, err
+		}
 	}
 	res.Elapsed = time.Since(start)
 	return res, nil

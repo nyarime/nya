@@ -67,6 +67,79 @@ func TestDownloadParallel(t *testing.T) {
 	}
 }
 
+func TestDownloadPartialPaths(t *testing.T) {
+	dir := t.TempDir()
+	smallPath := filepath.Join(dir, "tiny.txt")
+	largePayload := make([]byte, 512*1024)
+	for i := range largePayload {
+		largePayload[i] = byte(i ^ (i >> 3))
+	}
+	largePath := filepath.Join(dir, "wide.bin")
+	if err := os.WriteFile(smallPath, []byte("tiny"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(largePath, largePayload, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	archive := filepath.Join(dir, "mix.nya")
+	f, err := os.Create(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := NewWriterOpts(f, 0, 5, false)
+	w.SetCompression(CompressionStore)
+	if err := w.AddFile(smallPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.AddFile(largePath); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	rawArchive, err := os.ReadFile(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m, err := BuildManifest(archive, 4*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Download.Blocks) < 4 {
+		t.Fatalf("transport blocks=%d want >=4", len(m.Download.Blocks))
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var start, end int64
+		fmt.Sscanf(r.Header.Get("Range"), "bytes=%d-%d", &start, &end)
+		w.WriteHeader(http.StatusPartialContent)
+		w.Write(rawArchive[start : end+1])
+	}))
+	defer srv.Close()
+	m.Sources = []ManifestSource{{URL: srv.URL}}
+
+	out := filepath.Join(dir, "partial.nya")
+	res, err := Download(context.Background(), DownloadOptions{
+		Manifest:    m,
+		Output:      out,
+		Concurrency: 4,
+		Paths:       []string{"tiny.txt"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.Partial {
+		t.Fatal("expected partial result")
+	}
+	if res.BlocksTotal >= len(m.Download.Blocks) {
+		t.Fatalf("partial blocks total %d should be < %d", res.BlocksTotal, len(m.Download.Blocks))
+	}
+}
+
 func TestDownloadResume(t *testing.T) {
 	dir := t.TempDir()
 	payload := []byte("abcdefgh01234567")

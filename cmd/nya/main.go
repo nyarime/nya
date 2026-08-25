@@ -450,12 +450,13 @@ func cmdManifest(args []string) error {
 		return err
 	}
 
-	fmt.Printf("%s: %d blocks x %s, archive %s (%s)\n",
+	fmt.Printf("%s: %d blocks x %s, archive %s (%s), %d file entries\n",
 		outPath,
 		len(m.Download.Blocks),
 		nya.HumanSize(int(m.Download.BlockSize)),
 		m.Archive.Name,
-		nya.HumanSize(int(m.Archive.Size)))
+		nya.HumanSize(int(m.Archive.Size)),
+		len(m.Entries))
 	return nil
 }
 
