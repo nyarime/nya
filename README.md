@@ -33,23 +33,28 @@ again in parity symbols.
 
 ## Install
 
-**One-click (recommended when Actions/setup.exe unavailable):**
-
 ```bash
-# Linux / macOS → ~/.local/bin
+# Linux / macOS → ~/.local/bin (latest release)
 curl -fsSL https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.sh | bash
 ```
 
 ```powershell
-# Windows (user PATH + .nya → nya open)
+# Windows → %LOCALAPPDATA%\Programs\NYA (+ user PATH, .nya → nya open)
 irm https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.ps1 | iex
 ```
 
-Uninstall: `scripts/uninstall.sh` / `uninstall.ps1` (or `install.* --uninstall` / `-Uninstall`).
-See [docs/RELEASE.md](docs/RELEASE.md).
+```bash
+# Uninstall
+curl -fsSL https://raw.githubusercontent.com/nyarime/nya/main/scripts/uninstall.sh | bash
+```
 
-**Windows setup.exe** (when built): download from
-[GitHub Releases](https://github.com/nyarime/nya/releases).
+```powershell
+irm https://raw.githubusercontent.com/nyarime/nya/main/scripts/uninstall.ps1 | iex
+```
+
+Pin a version: `bash install.sh --version 0.1.6` / `install.ps1 -Version 0.1.6`.  
+Also: `install.sh --uninstall`, `install.ps1 -Uninstall`.  
+Releases: [GitHub Releases](https://github.com/nyarime/nya/releases). See [docs/RELEASE.md](docs/RELEASE.md).
 
 **From source / Go:**
 
