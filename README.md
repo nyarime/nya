@@ -100,7 +100,7 @@ See [examples/windows-open](examples/windows-open/README.md).
 ### Send + get (TryCloudflare)
 
 ```bash
-# Sender — cloudflared auto-downloaded to cache if missing
+# Sender — installs official cloudflared to ~/.local/bin if missing
 nya send GamePack.nya
 # → prints: nya get --url https://xxxx.trycloudflare.com/GamePack.nya
 
@@ -108,7 +108,7 @@ nya send GamePack.nya
 nya get --url https://xxxx.trycloudflare.com/GamePack.nya
 ```
 
-Options: `-no-tunnel` (LAN only), `-no-fetch-cloudflared` (require system install).
+Options: `-no-tunnel` (LAN only), `-no-fetch-cloudflared` (require a system `cloudflared`).
 Quick Tunnels are ephemeral (Cloudflare ToS).
 
 ### Large package distribution (`nya get`)

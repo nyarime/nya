@@ -25,7 +25,7 @@ func cmdSend(args []string) error {
 	bind := fs.String("bind", "127.0.0.1", "local bind address")
 	cloudflared := fs.String("cloudflared", "cloudflared", "cloudflared binary (PATH, absolute, or auto)")
 	noTunnel := fs.Bool("no-tunnel", false, "only serve locally (no TryCloudflare)")
-	noFetch := fs.Bool("no-fetch-cloudflared", false, "do not auto-download cloudflared when missing")
+	noFetch := fs.Bool("no-fetch-cloudflared", false, "do not auto-install cloudflared when missing")
 	noEmbed := fs.Bool("no-embed", false, "do not upsert download index before send")
 	fs.Usage = func() {
 		fmt.Fprint(os.Stderr, `nya send — serve a .nya over HTTP and publish via Cloudflare Quick Tunnel
@@ -33,8 +33,9 @@ func cmdSend(args []string) error {
 Usage:
   nya send [flags] <archive.nya>
 
-If cloudflared is not on PATH, nya downloads the official binary into the
-user cache (unless -no-fetch-cloudflared). Use -no-tunnel for LAN-only.
+If cloudflared is missing, nya installs the official binary into ~/.local/bin
+(or %LocalAppData%\nya\bin on Windows) unless -no-fetch-cloudflared.
+Use -no-tunnel for LAN-only.
 
 Receiver:
   nya get --url https://xxxx.trycloudflare.com/archive.nya
