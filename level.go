@@ -35,8 +35,8 @@ var levelTable = [10]levelSpec{
 	5: {codec: CompressionLZMA2, lzma: Lzma2Options{DictSize: 4 << 20, Depth: 16, NiceLen: 32}},
 	6: {codec: CompressionLZMA2, lzma: Lzma2Options{DictSize: 8 << 20, Depth: 32, NiceLen: 48}},
 	7: {codec: CompressionLZMA2, lzma: Lzma2Options{DictSize: 16 << 20, Depth: 64, NiceLen: 64}},
-	8: {codec: CompressionLZMA2, lzma: Lzma2Options{DictSize: 32 << 20, Depth: 128, NiceLen: 96}},
-	9: {codec: CompressionLZMA2, lzma: Lzma2Options{DictSize: 64 << 20, Depth: 256, NiceLen: 128}},
+	8: {codec: CompressionLZMA2, lzma: Lzma2Options{DictSize: 32 << 20, Depth: 128, NiceLen: 96, OptimalParse: true}},
+	9: {codec: CompressionLZMA2, lzma: Lzma2Options{DictSize: 64 << 20, Depth: 256, NiceLen: 128, OptimalParse: true}},
 }
 
 // LevelName gives the human label for a level, matching the wording archivers
