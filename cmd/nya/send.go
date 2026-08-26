@@ -250,6 +250,7 @@ func cmdSend(args []string) error {
 			publicBase = strings.TrimRight(u, "/")
 			tunnelSink.mute()
 			fmt.Fprintf(os.Stderr, T("send.tunnel.ready")+"\n", publicBase)
+			reportSendCloudflareTrace(ctx, publicBase)
 		case <-time.After(45 * time.Second):
 			tunnelSink.mute()
 			_ = srv.Shutdown(context.Background())

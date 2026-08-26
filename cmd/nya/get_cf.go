@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -116,28 +117,83 @@ func cfTraceOriginURL(raw string) string {
 	return u.Scheme + "://" + u.Host + "/"
 }
 
-// printCFTrace fetches /cdn-cgi/trace and logs Cloudflare edge metadata.
-func printCFTrace(ctx context.Context, client *http.Client, pageURL string) error {
+// fetchCFTrace returns raw /cdn-cgi/trace body from any HTTPS page URL on that host.
+func fetchCFTrace(ctx context.Context, client *http.Client, pageURL string) (string, error) {
 	traceURL, err := cfTraceURL(pageURL)
 	if err != nil {
-		return err
+		return "", err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, traceURL, nil)
 	if err != nil {
-		return err
+		return "", err
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("cf-trace: %w", err)
+		return "", fmt.Errorf("cf-trace: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("cf-trace: HTTP %s", resp.Status)
+		return "", fmt.Errorf("cf-trace: HTTP %s", resp.Status)
 	}
 	buf := make([]byte, 4096)
 	n, _ := resp.Body.Read(buf)
-	body := string(buf[:n])
-	getStatusf("nya get: cloudflare trace (%s)\n", cfTraceOriginURL(pageURL))
+	return string(buf[:n]), nil
+}
+
+func cfTraceFields(body string) (colo, ip, loc string) {
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "colo="):
+			colo = strings.TrimPrefix(line, "colo=")
+		case strings.HasPrefix(line, "ip="):
+			ip = strings.TrimPrefix(line, "ip=")
+		case strings.HasPrefix(line, "loc="):
+			loc = strings.TrimPrefix(line, "loc=")
+		}
+	}
+	return colo, ip, loc
+}
+
+func httpClientForCFTrace() *http.Client {
+	return &http.Client{
+		Timeout:   10 * time.Second,
+		Transport: nya.DownloadHTTPTransport(),
+	}
+}
+
+// printCloudflareTrace logs edge metadata (send/get overview: which CF colo this hop uses).
+func printCloudflareTrace(ctx context.Context, client *http.Client, pageURL, headerFmt string) error {
+	body, err := fetchCFTrace(ctx, client, pageURL)
+	if err != nil {
+		return err
+	}
+	colo, ip, loc := cfTraceFields(body)
+	fmt.Fprintf(os.Stderr, headerFmt+"\n", cfTraceOriginURL(pageURL))
+	if colo != "" || ip != "" || loc != "" {
+		fmt.Fprintf(os.Stderr, T("cf.trace.summary")+"\n", colo, ip, loc)
+	}
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "  %s\n", line)
+	}
+	return nil
+}
+
+// printCFTrace is the nya get preflight hook (--cf-trace).
+func printCFTrace(ctx context.Context, client *http.Client, pageURL string) error {
+	getStatusf(T("get.cf.trace")+"\n", cfTraceOriginURL(pageURL))
+	body, err := fetchCFTrace(ctx, client, pageURL)
+	if err != nil {
+		return err
+	}
+	colo, ip, loc := cfTraceFields(body)
+	if colo != "" || ip != "" || loc != "" {
+		getStatusf(T("cf.trace.summary")+"\n", colo, ip, loc)
+	}
 	for _, line := range strings.Split(body, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
@@ -146,6 +202,17 @@ func printCFTrace(ctx context.Context, client *http.Client, pageURL string) erro
 		getStatusf("  %s\n", line)
 	}
 	return nil
+}
+
+// reportSendCloudflareTrace runs after Quick Tunnel is up (origin-side uplink view).
+func reportSendCloudflareTrace(ctx context.Context, publicBase string) {
+	if strings.TrimSpace(publicBase) == "" {
+		return
+	}
+	page := strings.TrimRight(publicBase, "/") + "/"
+	if err := printCloudflareTrace(ctx, httpClientForCFTrace(), page, T("send.cf.trace")); err != nil {
+		fmt.Fprintf(os.Stderr, T("send.cf.trace.err")+"\n", err)
+	}
 }
 
 func cfTraceFromManifest(_ *http.Client, m *nya.Manifest, urlFlag string) string {

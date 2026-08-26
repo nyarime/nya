@@ -41,6 +41,13 @@ func TestCFTraceURL(t *testing.T) {
 	}
 }
 
+func TestCFTraceFields(t *testing.T) {
+	colo, ip, loc := cfTraceFields("colo=HKG\nip=1.2.3.4\nloc=HK\n")
+	if colo != "HKG" || ip != "1.2.3.4" || loc != "HK" {
+		t.Fatalf("colo=%s ip=%s loc=%s", colo, ip, loc)
+	}
+}
+
 func TestPrintCFTrace(t *testing.T) {
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/cdn-cgi/trace" {
