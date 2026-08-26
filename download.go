@@ -340,23 +340,17 @@ func blockMatchesHash(data []byte, wantHex string) bool {
 }
 
 func verifyArchiveFile(path string, m *Manifest) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	fi, err := f.Stat()
+	fi, err := os.Stat(path)
 	if err != nil {
 		return err
 	}
 	if fi.Size() != m.Archive.Size {
 		return fmt.Errorf("download: size %d != manifest %d", fi.Size(), m.Archive.Size)
 	}
-	data, err := io.ReadAll(f)
+	h, err := blake3Sum256File(path, fi.Size())
 	if err != nil {
 		return err
 	}
-	h := Blake3Sum256(data)
 	if hex.EncodeToString(h[:]) != m.Archive.Blake3 {
 		return fmt.Errorf("download: archive checksum mismatch")
 	}
