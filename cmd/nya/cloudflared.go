@@ -12,8 +12,47 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 )
+
+// writeQuickTunnelConfig writes a minimal cloudflared config so TryCloudflare
+// quick tunnels do not inherit ~/.cloudflared/config.yml (named tunnels need cert.pem).
+func writeQuickTunnelConfig(tunnelURL string) (path string, cleanup func(), err error) {
+	cleanup = func() {}
+	f, err := os.CreateTemp("", "nya-quick-tunnel-*.yml")
+	if err != nil {
+		return "", cleanup, err
+	}
+	path = f.Name()
+	if _, err := fmt.Fprintf(f, "url: %s\n", tunnelURL); err != nil {
+		f.Close()
+		os.Remove(path)
+		return "", cleanup, err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(path)
+		return "", cleanup, err
+	}
+	cleanup = func() { _ = os.Remove(path) }
+	return path, cleanup, nil
+}
+
+// cloudflaredTunnelEnv returns os.Environ() without empty TUNNEL_ORIGIN_CERT,
+// which would otherwise force cloudflared to look for cert.pem.
+func cloudflaredTunnelEnv() []string {
+	env := os.Environ()
+	out := make([]string, 0, len(env))
+	for _, e := range env {
+		if strings.HasPrefix(e, "TUNNEL_ORIGIN_CERT=") {
+			if strings.TrimSpace(strings.TrimPrefix(e, "TUNNEL_ORIGIN_CERT=")) == "" {
+				continue
+			}
+		}
+		out = append(out, e)
+	}
+	return out
+}
 
 func resolveCloudflared(explicit string, allowFetch bool) (string, error) {
 	if explicit != "" && explicit != "cloudflared" {

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -54,6 +55,47 @@ func TestInstallCloudflaredBinary(t *testing.T) {
 	st, err := os.Stat(dest)
 	if err != nil || st.Size() < 4 {
 		t.Fatalf("bad install %v %v", dest, st)
+	}
+}
+
+func TestWriteQuickTunnelConfig(t *testing.T) {
+	path, cleanup, err := writeQuickTunnelConfig("http://127.0.0.1:54321")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(data); got != "url: http://127.0.0.1:54321\n" {
+		t.Fatalf("config=%q", got)
+	}
+	cleanup()
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("expected temp config removed, stat err=%v", err)
+	}
+}
+
+func TestCloudflaredTunnelEnv(t *testing.T) {
+	t.Setenv("TUNNEL_ORIGIN_CERT", "")
+	t.Setenv("PATH", "/usr/bin")
+	env := cloudflaredTunnelEnv()
+	for _, e := range env {
+		if strings.HasPrefix(e, "TUNNEL_ORIGIN_CERT=") {
+			t.Fatalf("empty TUNNEL_ORIGIN_CERT should be dropped, got %q", e)
+		}
+	}
+	t.Setenv("TUNNEL_ORIGIN_CERT", "/tmp/cert.pem")
+	env = cloudflaredTunnelEnv()
+	found := false
+	for _, e := range env {
+		if e == "TUNNEL_ORIGIN_CERT=/tmp/cert.pem" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("non-empty TUNNEL_ORIGIN_CERT should be kept")
 	}
 }
 

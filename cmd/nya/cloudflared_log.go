@@ -69,3 +69,15 @@ func isCloudflaredErrorLine(line string) bool {
 		strings.Contains(low, "failed") ||
 		strings.HasPrefix(low, "error:")
 }
+
+func isOriginCertTunnelError(line string) bool {
+	low := strings.ToLower(line)
+	return strings.Contains(low, "origin certificate") ||
+		strings.Contains(low, "origincert") ||
+		strings.Contains(low, "cert.pem")
+}
+
+func originCertTunnelHint(detail string) string {
+	_ = detail
+	return T("send.tunnel.origincert.hint")
+}

@@ -167,7 +167,13 @@ func cmdSend(args []string) error {
 		}
 		fmt.Fprintln(os.Stderr, T("send.tunnel.start"))
 		tunnelURL := fmt.Sprintf("http://%s", ln.Addr().String())
-		tunnelCmd = exec.CommandContext(ctx, bin, "tunnel", "--url", tunnelURL)
+		configPath, configCleanup, err := writeQuickTunnelConfig(tunnelURL)
+		if err != nil {
+			return fmt.Errorf("quick tunnel config: %w", err)
+		}
+		defer configCleanup()
+		tunnelCmd = exec.CommandContext(ctx, bin, "tunnel", "--no-autoupdate", "--config", configPath, "--url", tunnelURL)
+		tunnelCmd.Env = cloudflaredTunnelEnv()
 		pr, pw, err := os.Pipe()
 		if err != nil {
 			return err
@@ -185,12 +191,20 @@ func cmdSend(args []string) error {
 		}()
 
 		found := make(chan string, 1)
+		fatalTunnel := make(chan string, 1)
 		go func() {
 			sc := bufio.NewScanner(pr)
 			buf := make([]byte, 0, 64*1024)
 			sc.Buffer(buf, 1024*1024)
 			for sc.Scan() {
-				if u := tunnelSink.handleLine(sc.Text()); u != "" {
+				line := sc.Text()
+				if isOriginCertTunnelError(line) {
+					select {
+					case fatalTunnel <- line:
+					default:
+					}
+				}
+				if u := tunnelSink.handleLine(line); u != "" {
 					select {
 					case found <- u:
 					default:
@@ -204,6 +218,13 @@ func cmdSend(args []string) error {
 			publicBase = strings.TrimRight(u, "/")
 			tunnelSink.mute()
 			fmt.Fprintf(os.Stderr, T("send.tunnel.ready")+"\n", publicBase)
+		case msg := <-fatalTunnel:
+			tunnelSink.mute()
+			_ = srv.Shutdown(context.Background())
+			if tunnelCmd.Process != nil {
+				_ = tunnelCmd.Process.Kill()
+			}
+			return fmt.Errorf("%s\n%s", T("send.tunnel.origincert"), originCertTunnelHint(msg))
 		case <-time.After(45 * time.Second):
 			tunnelSink.mute()
 			_ = srv.Shutdown(context.Background())

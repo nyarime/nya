@@ -48,3 +48,13 @@ func TestTunnelLogSinkVerbose(t *testing.T) {
 	// should not panic; suppresses most lines
 	s.handleLine("INF some routine cloudflared info message")
 }
+
+func TestOriginCertTunnelError(t *testing.T) {
+	line := "2026-08-26T11:45:45Z ERR Cannot determine default origin certificate path. No file cert.pem"
+	if !isOriginCertTunnelError(line) {
+		t.Fatal("expected origin cert detection")
+	}
+	if isOriginCertTunnelError("INF quick Tunnel ready") {
+		t.Fatal("should not match normal line")
+	}
+}
