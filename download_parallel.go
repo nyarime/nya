@@ -2,14 +2,14 @@ package nya
 
 import "math"
 
-// TryCloudflareMaxParallel is the practical upper bound for concurrent HTTP
-// Range requests through a TryCloudflare quick tunnel.
-const TryCloudflareMaxParallel = 20
+// TryCloudflareMaxParallel is the practical upper bound for concurrent in-flight
+// HTTP Range requests through a TryCloudflare quick tunnel (~200 per tunnel).
+const TryCloudflareMaxParallel = 200
 
 const minDownloadBlock = 64 * 1024 // matches ParseBlockSize floor
 
 // BlockSizeForParallel picks a transport block size so a file uses at most
-// maxParallel blocks (e.g. 1 GiB / 20 ≈ 50 MiB per block).
+// maxParallel blocks (e.g. 1 GiB / 200 ≈ 5 MiB per block).
 func BlockSizeForParallel(bodySize int64, maxParallel int) int64 {
 	if maxParallel <= 0 {
 		maxParallel = TryCloudflareMaxParallel

@@ -34,7 +34,8 @@ func cmdSend(args []string) error {
 	fs := flag.NewFlagSet("send", flag.ExitOnError)
 	port := fs.Int("port", 0, "local HTTP port (0 = ephemeral)")
 	bind := fs.String("bind", "127.0.0.1", "local bind address")
-	tlsFlag := fs.Bool("tls", false, "serve origin over HTTPS (auto self-signed cert; cloudflared uses --no-tls-verify)")
+	tlsFlag := fs.Bool("tls", false, "force HTTPS origin (auto self-signed cert; implied when tunnel is on)")
+	noTLS := fs.Bool("no-tls", false, "disable HTTPS origin (only with -no-tunnel or for debugging)")
 	tlsHost := fs.String("tls-host", "nya.naixi.net", "hostname/CN for auto-generated -tls certificate")
 	tlsCert := fs.String("tls-cert", "", "PEM certificate for HTTPS origin (with -tls-key)")
 	tlsKey := fs.String("tls-key", "", "PEM private key for HTTPS origin (with -tls-cert)")
@@ -103,7 +104,8 @@ func cmdSend(args []string) error {
 		// .nya archive: embed below with TryCloudflare-optimal block size
 	}
 
-	tlsCfg, err := prepareSendTLS(*tlsFlag, *tlsCert, *tlsKey, *tlsHost)
+	enableTLS := sendOriginTLS(*noTunnel, *noTLS, *tlsFlag, *tlsCert, *tlsKey)
+	tlsCfg, err := prepareSendTLS(enableTLS, *tlsCert, *tlsKey, *tlsHost)
 	if err != nil {
 		return err
 	}
@@ -305,6 +307,13 @@ func printSendLinks(mode sendMode, indexURL, nyaURL, directURL, indexLocal, nyaL
 		fmt.Fprintf(os.Stderr, "  nya get --url %s\n", indexURL)
 	}
 	fmt.Fprintln(os.Stderr, T("send.stop"))
+}
+
+func sendOriginTLS(noTunnel, noTLS, tlsFlag bool, tlsCert, tlsKey string) bool {
+	if tlsFlag || tlsCert != "" || tlsKey != "" {
+		return true
+	}
+	return !noTunnel && !noTLS
 }
 
 func buildSendIndex(archive, publicNyaName string, blockSize int64) ([]byte, error) {
