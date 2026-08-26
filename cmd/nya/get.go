@@ -40,7 +40,7 @@ Usage:
 		return err
 	}
 
-	client := &http.Client{Timeout: 0}
+	client := httpClientForGet()
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 

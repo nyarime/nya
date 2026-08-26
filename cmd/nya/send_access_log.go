@@ -11,10 +11,19 @@ import (
 	"github.com/nyarime/nya"
 )
 
+// sendLogConfig controls nya send access logging.
+type sendLogConfig struct {
+	logNyamBrowser bool // log browser fetches of .nyam (default: hide)
+}
+
 // sendAccessLogger logs each HTTP fetch with peer, size, and timing.
-func sendAccessLogger(next http.Handler) http.Handler {
+func sendAccessLogger(cfg sendLogConfig, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if !shouldLogSendAccess(r, cfg.logNyamBrowser) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -58,6 +67,9 @@ func logSendAccess(r *http.Request, status int, nbytes int64, dur time.Duration)
 		extra = " " + T("send.log.range") + "=" + truncateLog(rg, 48)
 	}
 	if ua := strings.TrimSpace(r.Header.Get("User-Agent")); ua != "" {
+		if isNyaGetUserAgent(ua) {
+			extra += " " + T("send.log.nyaget")
+		}
 		extra += " ua=" + truncateLog(ua, 56)
 	}
 	statusWord := T("send.log.ok")
@@ -105,4 +117,15 @@ func truncateLog(s string, max int) string {
 		return s
 	}
 	return s[:max-1] + "…"
+}
+
+func shouldLogSendAccess(r *http.Request, logNyamBrowser bool) bool {
+	if logNyamBrowser {
+		return true
+	}
+	path := strings.ToLower(strings.TrimPrefix(r.URL.Path, "/"))
+	if strings.HasSuffix(path, ".nyam") && !isNyaGetUserAgent(r.Header.Get("User-Agent")) {
+		return false
+	}
+	return true
 }

@@ -43,6 +43,7 @@ func cmdSend(args []string) error {
 	noTunnel := fs.Bool("no-tunnel", false, "only serve locally (no TryCloudflare)")
 	noEmbed := fs.Bool("no-embed", false, "do not upsert download index before send")
 	verboseTunnel := fs.Bool("verbose-tunnel", false, "print full cloudflared logs (noisy)")
+	logNyamBrowser := fs.Bool("log-nyam-browser", false, "log browser fetches of .nyam (default: hide; nya get always logged)")
 	out := fs.String("o", "", "when packing: write .nya here (default: temp, deleted on exit)")
 	level := fs.Int("level", nya.LevelFast, "when packing: 0–9 (default 3=fast)")
 	fs.Usage = func() {
@@ -172,7 +173,7 @@ func cmdSend(args []string) error {
 			http.NotFound(w, r)
 		}
 	})
-	srv := &http.Server{Handler: sendAccessLogger(mux)}
+	srv := &http.Server{Handler: sendAccessLogger(sendLogConfig{logNyamBrowser: *logNyamBrowser}, mux)}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
