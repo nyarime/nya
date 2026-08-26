@@ -54,6 +54,11 @@ type Writer struct {
 	solidBuf     bytes.Buffer
 	solidEntries []solidFileEntry
 	solidBCJArch string // detected BCJ arch for solid stream
+
+	packProgress      PackProgress
+	packProgressTotal int64
+	packProgressDone  int64
+	packProgressMu    sync.Mutex
 }
 
 // NewWriter creates a writer at the given compression level. See the Level
@@ -280,6 +285,7 @@ func (nw *Writer) addFile(path string, info os.FileInfo) error {
 	if err != nil {
 		return err
 	}
+	nw.notePackProgress(int64(len(raw)), "read", relPath)
 
 	if nw.solid {
 		return nw.addFileSolid(relPath, raw, linfo)
@@ -316,6 +322,7 @@ func (nw *Writer) resolveAbsPath(relPath string) string {
 // whole file (like solid mode) and applied before chunk split; 512 KiB blocks
 // inside each chunk are compressed without re-applying BCJ.
 func (nw *Writer) addFileNormal(relPath string, raw []byte, info os.FileInfo) error {
+	nw.notePackProgress(0, "compress", relPath)
 	raw, bcjID := nw.chooseBCJForFile(raw)
 	chunkSizes := splitRawChunkSizes(len(raw), nw.chunkSize, nw.multiChunk)
 	if len(chunkSizes) == 0 {
@@ -571,6 +578,7 @@ func (nw *Writer) Close() error {
 }
 
 func (nw *Writer) closeSolid() error {
+	nw.notePackProgress(0, "finalize", "solid")
 	solidData := nw.solidBuf.Bytes()
 
 	nw.applyAutoSolidDict(solidData)

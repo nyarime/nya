@@ -29,7 +29,7 @@ func TestRestoreDownloadedArchiveFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	archive := filepath.Join(root, "pack.nya")
-	if err := writeNyaArchive(archive, src, nya.LevelFastest, false); err != nil {
+	if err := writeNyaArchive(archive, src, nya.SendPackProfile{Level: nya.LevelFastest}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := ensureSendEmbed(archive, 0); err != nil {
@@ -63,7 +63,7 @@ func TestRestoreDownloadedArchiveDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	archive := filepath.Join(root, "g.nya")
-	if err := writeNyaArchive(archive, src, nya.LevelFastest, false); err != nil {
+	if err := writeNyaArchive(archive, src, nya.SendPackProfile{Level: nya.LevelFastest}, nil); err != nil {
 		t.Fatal(err)
 	}
 

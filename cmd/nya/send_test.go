@@ -57,7 +57,7 @@ func TestPackSendSourceDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := filepath.Join(root, "out.nya")
-	archive, cleanup, err := packSendSource(src, out, nya.LevelFastest, true)
+	archive, cleanup, err := packSendSource(src, out, nya.LevelFastest, true, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +85,7 @@ func TestPackSendSourceTempCleanup(t *testing.T) {
 	if err := os.WriteFile(src, []byte("one file"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	archive, cleanup, err := packSendSource(src, "", nya.LevelFastest, false)
+	archive, cleanup, err := packSendSource(src, "", nya.LevelFastest, true, false)
 	if err != nil {
 		t.Fatal(err)
 	}

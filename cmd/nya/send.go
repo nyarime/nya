@@ -46,7 +46,7 @@ func cmdSend(args []string) error {
 	logNyamBrowser := fs.Bool("log-nyam-browser", false, "deprecated: use -access-log info")
 	accessLog := fs.String("access-log", "notice", "access log: notice (hide browser .nyam), info (all), warn (errors only)")
 	out := fs.String("o", "", "when packing: write .nya here (default: temp, deleted on exit)")
-	level := fs.Int("level", nya.LevelFast, "when packing: 0–9 (default 3=fast)")
+	level := fs.Int("level", nya.LevelFast, "when packing: 0–9 (default: auto by content; use -level to override)")
 	fs.Usage = func() {
 		fmt.Fprint(os.Stderr, T("send.usage"))
 		fs.PrintDefaults()
@@ -77,10 +77,12 @@ func cmdSend(args []string) error {
 	archive := abs
 	cleanup := func() {}
 
+	levelExplicit := flagWasSet(args, "level")
+
 	switch {
 	case st.IsDir():
 		mode = sendModeDir
-		archive, cleanup, err = packSendSource(abs, *out, *level, false)
+		archive, cleanup, err = packSendSource(abs, *out, *level, levelExplicit, false)
 		if err != nil {
 			return err
 		}
@@ -93,7 +95,7 @@ func cmdSend(args []string) error {
 		mode = sendModeFile
 		directPath = abs
 		directName = filepath.Base(abs)
-		archive, cleanup, err = packSendSource(abs, *out, *level, false)
+		archive, cleanup, err = packSendSource(abs, *out, *level, levelExplicit, false)
 		if err != nil {
 			return err
 		}
@@ -406,9 +408,13 @@ func isNyaArchivePath(path string) bool {
 }
 
 // packSendSource archives a directory or file into a .nya for sending.
-func packSendSource(src, out string, level int, embed bool) (archive string, cleanup func(), err error) {
+func packSendSource(src, out string, level int, levelExplicit, embed bool) (archive string, cleanup func(), err error) {
 	cleanup = func() {}
-	if level < 0 || level > 9 {
+	profile, err := nya.SendPackProfileFor(src, levelExplicit, level)
+	if err != nil {
+		return "", cleanup, err
+	}
+	if levelExplicit && (level < 0 || level > 9) {
 		return "", cleanup, fmt.Errorf("level %d is out of range, want 0 to 9", level)
 	}
 	dest := out
@@ -435,17 +441,27 @@ func packSendSource(src, out string, level int, embed bool) (archive string, cle
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "nya send: packing %s\n", dest)
-	textLike, dense, _, scanErr := nya.ScanPayloadKinds(src)
-	if scanErr != nil {
-		cleanup()
-		return "", func() {}, scanErr
+	if !levelExplicit {
+		solidNote := ""
+		if profile.Solid {
+			solidNote = " +solid"
+		}
+		fmt.Fprintf(os.Stderr, "nya send: auto pack %s (level %d%s, %s)\n",
+			filepath.Base(src), profile.Level, solidNote, profile.Reason)
 	}
-	solid := textLike >= 2 && textLike >= dense
-	if err := writeNyaArchive(dest, src, level, solid); err != nil {
+	fmt.Fprintf(os.Stderr, "nya send: packing %s\n", dest)
+
+	progress := newSendPackProgress(ensureSendPackProgressMin(sendPackProgressTotal(src)))
+	if err := writeNyaArchive(dest, src, profile, progress); err != nil {
 		cleanup()
 		return "", func() {}, err
 	}
+	st, err := os.Stat(dest)
+	if err != nil {
+		cleanup()
+		return "", func() {}, err
+	}
+	progress.finish(st.Size(), profile)
 	if embed {
 		if err := ensureSendEmbed(dest, 0); err != nil {
 			cleanup()
@@ -455,13 +471,16 @@ func packSendSource(src, out string, level int, embed bool) (archive string, cle
 	return dest, cleanup, nil
 }
 
-func writeNyaArchive(dest, src string, level int, solid bool) error {
+func writeNyaArchive(dest, src string, profile nya.SendPackProfile, progress *sendPackProgress) error {
 	f, err := os.Create(dest)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	w := nya.NewWriterOpts(f, 0, level, solid)
+	w := nya.NewWriterOpts(f, 0, profile.Level, profile.Solid)
+	if progress != nil {
+		w.SetPackProgress(sendPackProgressTotal(src), progress.callback())
+	}
 	if err := w.AddFile(src); err != nil {
 		return err
 	}
