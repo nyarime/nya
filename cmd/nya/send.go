@@ -43,7 +43,8 @@ func cmdSend(args []string) error {
 	noTunnel := fs.Bool("no-tunnel", false, "only serve locally (no TryCloudflare)")
 	noEmbed := fs.Bool("no-embed", false, "do not upsert download index before send")
 	verboseTunnel := fs.Bool("verbose-tunnel", false, "print full cloudflared logs (noisy)")
-	logNyamBrowser := fs.Bool("log-nyam-browser", false, "log browser fetches of .nyam (default: hide; nya get always logged)")
+	logNyamBrowser := fs.Bool("log-nyam-browser", false, "deprecated: use -access-log info")
+	accessLog := fs.String("access-log", "notice", "access log: notice (hide browser .nyam), info (all), warn (errors only)")
 	out := fs.String("o", "", "when packing: write .nya here (default: temp, deleted on exit)")
 	level := fs.Int("level", nya.LevelFast, "when packing: 0–9 (default 3=fast)")
 	fs.Usage = func() {
@@ -157,6 +158,14 @@ func cmdSend(args []string) error {
 		directLocal = baseLocal + "/" + url.PathEscape(directName)
 	}
 
+	logLevel, err := parseSendAccessLogLevel(*accessLog)
+	if err != nil {
+		return err
+	}
+	if *logNyamBrowser {
+		logLevel = sendAccessLogInfo
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
@@ -173,7 +182,7 @@ func cmdSend(args []string) error {
 			http.NotFound(w, r)
 		}
 	})
-	srv := &http.Server{Handler: sendAccessLogger(sendLogConfig{logNyamBrowser: *logNyamBrowser}, mux)}
+	srv := &http.Server{Handler: sendAccessLogger(sendLogConfig{level: logLevel}, mux)}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()

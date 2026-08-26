@@ -9,11 +9,8 @@ import (
 
 func TestNyaGetUserAgent(t *testing.T) {
 	ua := nyaGetUserAgent()
-	if !strings.HasPrefix(ua, "NyaGet/") {
-		t.Fatalf("ua=%q", ua)
-	}
-	if !strings.Contains(ua, "github.com/nyarime/nya") {
-		t.Fatalf("ua=%q", ua)
+	if ua != "NyaGet/"+nyaCLIVersion() {
+		t.Fatalf("ua=%q want aria2-style NyaGet/VERSION", ua)
 	}
 }
 
@@ -24,42 +21,75 @@ func TestIsNyaGetUserAgent(t *testing.T) {
 	if isNyaGetUserAgent("Mozilla/5.0") {
 		t.Fatal("browser")
 	}
-	if isNyaGetUserAgent("curl/8.0") {
-		t.Fatal("curl")
+	if isNyaGetUserAgent("aria2/1.37.0") {
+		t.Fatal("aria2")
 	}
 }
 
-func TestShouldLogSendAccess(t *testing.T) {
-	r := httptestNewRequest("/file.nyam", "Mozilla/5.0")
-	if shouldLogSendAccess(r, false) {
-		t.Fatal("browser nyam should be hidden by default")
+func TestParseSendAccessLogLevel(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want sendAccessLogLevel
+	}{
+		{"notice", sendAccessLogNotice},
+		{"normal", sendAccessLogNotice},
+		{"info", sendAccessLogInfo},
+		{"verbose", sendAccessLogInfo},
+		{"warn", sendAccessLogWarn},
+	} {
+		got, err := parseSendAccessLogLevel(tc.in)
+		if err != nil || got != tc.want {
+			t.Fatalf("%q => %v err=%v want %v", tc.in, got, err, tc.want)
+		}
 	}
-	if !shouldLogSendAccess(r, true) {
-		t.Fatal("-log-nyam-browser should show browser nyam")
+}
+
+func TestShouldLogSendAccessAt(t *testing.T) {
+	r := httptestNewRequest("/file.nyam", "Mozilla/5.0")
+	if shouldLogSendAccessAt(sendAccessLogNotice, r, http.StatusOK) {
+		t.Fatal("browser nyam hidden at notice")
+	}
+	if !shouldLogSendAccessAt(sendAccessLogInfo, r, http.StatusOK) {
+		t.Fatal("info shows browser nyam")
+	}
+	if shouldLogSendAccessAt(sendAccessLogWarn, r, http.StatusOK) {
+		t.Fatal("warn hides success")
+	}
+	if !shouldLogSendAccessAt(sendAccessLogWarn, r, http.StatusNotFound) {
+		t.Fatal("warn shows errors")
 	}
 	r2 := httptestNewRequest("/file.nyam", nyaGetUserAgent())
-	if !shouldLogSendAccess(r2, false) {
-		t.Fatal("nya get nyam should log")
-	}
-	r3 := httptestNewRequest("/file.nya", "Mozilla/5.0")
-	if !shouldLogSendAccess(r3, false) {
-		t.Fatal("browser nya direct should still log")
+	if !shouldLogSendAccessAt(sendAccessLogNotice, r2, http.StatusOK) {
+		t.Fatal("nya get nyam at notice")
 	}
 }
 
 func TestHttpClientForGetUserAgent(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("User-Agent"); !isNyaGetUserAgent(got) {
-			t.Fatalf("ua=%q", got)
+		if got := r.Header.Get("User-Agent"); got != nyaGetUserAgent() {
+			t.Fatalf("default ua=%q", got)
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
-	resp, err := httpClientForGet().Get(srv.URL)
+	resp, err := httpClientForGet("").Get(srv.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
+
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("User-Agent"); got != "aria2/1.37.0" {
+			t.Fatalf("override ua=%q", got)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv2.Close()
+	resp2, err := httpClientForGet("aria2/1.37.0").Get(srv2.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp2.Body.Close()
 }
 
 func httptestNewRequest(path, ua string) *http.Request {
@@ -68,4 +98,10 @@ func httptestNewRequest(path, ua string) *http.Request {
 		r.Header.Set("User-Agent", ua)
 	}
 	return r
+}
+
+func TestNyaGetUserAgentNoExtraURL(t *testing.T) {
+	if strings.Contains(nyaGetUserAgent(), "github.com") {
+		t.Fatal("aria2 does not append project URL to UA")
+	}
 }

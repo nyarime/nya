@@ -14,9 +14,9 @@ func nyaCLIVersion() string {
 	return "dev"
 }
 
-// nyaGetUserAgent identifies nya get HTTP requests (curl/wget/aria2-style Product/Version).
+// nyaGetUserAgent identifies nya get HTTP requests (aria2-style Product/Version).
 func nyaGetUserAgent() string {
-	return nyaGetUAProduct + "/" + nyaCLIVersion() + " (+https://github.com/nyarime/nya)"
+	return nyaGetUAProduct + "/" + nyaCLIVersion()
 }
 
 func isNyaGetUserAgent(ua string) bool {
