@@ -13,16 +13,32 @@ import (
 const noExtSortKey = "\xff"
 
 type solidSortEntry struct {
-	path string
-	ext  string
-	kind string // content fingerprint from file header
-	size int64
+	path  string
+	class int    // payload class rank (text-like first, opaque binary last)
+	ext   string
+	kind  string // content fingerprint from file header
+	size  int64
 }
 
-// sortSolidFilePaths reorders files for solid compression. Similar extensions
-// are grouped together (like 7-Zip solid archives), with content-kind as a
-// secondary key within each extension group, and larger files first within
-// each (ext, kind) bucket so repeated structure warms the dictionary.
+// solidClassRank orders members for solid LZMA2: compressible text-like
+// payloads first so the dictionary warms on shared tokens, then unknown,
+// already-compressed dense media, and opaque binary last (7z-style).
+func solidClassRank(path string) int {
+	switch ClassifyFile(path) {
+	case PayloadTextLike:
+		return 0
+	case PayloadDense:
+		return 2
+	case PayloadBinary:
+		return 3
+	default:
+		return 1
+	}
+}
+
+// sortSolidFilePaths reorders files for solid compression. Text-like members
+// precede opaque binary (extension grouping within each class, content-kind
+// within extension, larger files first within each bucket).
 func sortSolidFilePaths(files []string) []string {
 	if len(files) < 2 {
 		return files
@@ -40,15 +56,19 @@ func sortSolidFilePaths(files []string) []string {
 			ext = noExtSortKey
 		}
 		entries[i] = solidSortEntry{
-			path: p,
-			ext:  ext,
-			kind: detectContentKind(p),
-			size: fi.Size(),
+			path:  p,
+			class: solidClassRank(p),
+			ext:   ext,
+			kind:  detectContentKind(p),
+			size:  fi.Size(),
 		}
 	}
 
 	sort.Slice(entries, func(i, j int) bool {
 		a, b := entries[i], entries[j]
+		if a.class != b.class {
+			return a.class < b.class
+		}
 		if a.ext != b.ext {
 			return a.ext < b.ext
 		}
