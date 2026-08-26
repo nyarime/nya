@@ -14,6 +14,13 @@ import (
 	"github.com/nyarime/nya"
 )
 
+// cfTraceWellKnownURL is the stable /cdn-cgi/trace endpoint. TryCloudflare quick-tunnel
+// hostnames do not serve this path; send uses the well-known URL for origin-side edge info.
+const cfTraceWellKnownURL = "https://www.cloudflare.net/cdn-cgi/trace"
+
+// cfTraceSendURL is the probe target for nya send auto trace (tests may override).
+var cfTraceSendURL = cfTraceWellKnownURL
+
 // getHTTPOptions configures nya get HTTP client (UA, optional CF edge IP pin).
 type getHTTPOptions struct {
 	userAgent string
@@ -205,12 +212,9 @@ func printCFTrace(ctx context.Context, client *http.Client, pageURL string) erro
 }
 
 // reportSendCloudflareTrace runs after Quick Tunnel is up (origin-side uplink view).
-func reportSendCloudflareTrace(ctx context.Context, publicBase string) {
-	if strings.TrimSpace(publicBase) == "" {
-		return
-	}
-	page := strings.TrimRight(publicBase, "/") + "/"
-	if err := printCloudflareTrace(ctx, httpClientForCFTrace(), page, T("send.cf.trace")); err != nil {
+// Uses the well-known Cloudflare trace URL — not the ephemeral trycloudflare.com host.
+func reportSendCloudflareTrace(ctx context.Context, _ string) {
+	if err := printCloudflareTrace(ctx, httpClientForCFTrace(), cfTraceSendURL, T("send.cf.trace")); err != nil {
 		fmt.Fprintf(os.Stderr, T("send.cf.trace.err")+"\n", err)
 	}
 }
