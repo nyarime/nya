@@ -16,8 +16,8 @@ func TestSendPackProfileSingleText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Level != LevelBest || !p.Solid {
-		t.Fatalf("got level=%d solid=%t reason=%q", p.Level, p.Solid, p.Reason)
+	if p.Level != LevelFast || p.Solid {
+		t.Fatalf("time-first: got level=%d solid=%t reason=%q", p.Level, p.Solid, p.Reason)
 	}
 }
 
@@ -47,7 +47,7 @@ func TestSendPackProfileSingleBinary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Level != LevelGood || p.Solid {
+	if p.Level != LevelFast || p.Solid {
 		t.Fatalf("got level=%d solid=%t", p.Level, p.Solid)
 	}
 }
@@ -64,8 +64,8 @@ func TestSendPackProfileTextDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p.Level != LevelBest || !p.Solid {
-		t.Fatalf("got level=%d solid=%t", p.Level, p.Solid)
+	if p.Level != LevelFast || p.Solid {
+		t.Fatalf("time-first: got level=%d solid=%t", p.Level, p.Solid)
 	}
 }
 
@@ -81,5 +81,22 @@ func TestSendPackProfileExplicitLevel(t *testing.T) {
 	}
 	if p.Level != 3 || p.Solid {
 		t.Fatalf("explicit level should not auto-solid single file: level=%d solid=%t", p.Level, p.Solid)
+	}
+}
+
+func TestSendPackProfileExplicitLevel9SolidDir(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "b.txt"), []byte("y\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p, err := SendPackProfileFor(root, true, 9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Level != 9 || !p.Solid {
+		t.Fatalf("explicit 9 + multi text should solid: level=%d solid=%t", p.Level, p.Solid)
 	}
 }

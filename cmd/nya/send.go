@@ -46,7 +46,7 @@ func cmdSend(args []string) error {
 	logNyamBrowser := fs.Bool("log-nyam-browser", false, "deprecated: use -access-log info")
 	accessLog := fs.String("access-log", "notice", "access log: notice (hide browser .nyam), info (all), warn (errors only)")
 	out := fs.String("o", "", "when packing: write .nya here (default: temp, deleted on exit)")
-	level := fs.Int("level", nya.LevelFast, "when packing: 0–9 (default: auto by content; use -level to override)")
+	level := fs.Int("level", nya.LevelFast, "when packing: 0–9 (default: auto time-first Zstd; -level 9 for smallest)")
 	fs.Usage = func() {
 		fmt.Fprint(os.Stderr, T("send.usage"))
 		fs.PrintDefaults()
