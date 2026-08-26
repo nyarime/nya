@@ -42,6 +42,7 @@ func splitDirectoryPaths(basePath string, allPaths []string, nw *Writer) []strin
 func (nw *Writer) addCollectedFiles(files []string) error {
 	if nw.solid {
 		files = sortSolidFilePaths(files)
+		nw.solidSourceFiles = append(nw.solidSourceFiles, files...)
 		for _, f := range files {
 			fi, err := os.Stat(f)
 			if err != nil {

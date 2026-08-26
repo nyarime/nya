@@ -27,10 +27,23 @@ func (nw *Writer) tryBCJForArchive(raw []byte, bcjArch string, wholeStream bool)
 	} else {
 		ApplyBCJFilterArchSmart(filtered, bcjArch, true)
 	}
-	origLen, err := nw.blockedCompressedLen(raw)
-	if err != nil {
-		return raw, BCJNone, false
+	var (
+		origLen int
+		err     error
+	)
+	if wholeStream {
+		comp, err := nw.compressRaw(raw)
+		if err != nil {
+			return raw, BCJNone, false
+		}
+		origLen = len(comp)
+	} else {
+		origLen, err = nw.blockedCompressedLen(raw)
+		if err != nil {
+			return raw, BCJNone, false
+		}
 	}
+
 	var compLen int
 	if wholeStream {
 		comp, err := nw.compressRaw(filtered)
