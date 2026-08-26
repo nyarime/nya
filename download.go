@@ -21,6 +21,7 @@ type DownloadOptions struct {
 	StatePath   string
 	Concurrency int
 	HTTPClient  *http.Client
+	OnInit       func(completedBlocks, totalBlocks int, completedBytes int64)
 	OnBlockStart func(block DownloadBlock, done, total int)
 	OnBlock     func(block DownloadBlock, done, total int)
 	OnBlockBytes func(block DownloadBlock, fetched, blockSize int64, done, total int)
@@ -50,6 +51,9 @@ func Download(ctx context.Context, opt DownloadOptions) (*DownloadResult, error)
 	}
 	if opt.Output == "" {
 		opt.Output = opt.Manifest.Archive.Name
+	}
+	if opt.Concurrency <= 0 {
+		opt.Concurrency = DownloadConcurrency(opt.Manifest, 0)
 	}
 	if opt.Concurrency <= 0 {
 		opt.Concurrency = 8
@@ -129,6 +133,16 @@ func Download(ctx context.Context, opt DownloadOptions) (*DownloadResult, error)
 		}
 		res.Elapsed = time.Since(start)
 		return res, nil
+	}
+
+	if opt.OnInit != nil {
+		var completedBytes int64
+		for _, b := range blocks {
+			if _, ok := done[b.ID]; ok {
+				completedBytes += b.Size
+			}
+		}
+		opt.OnInit(len(done), total, completedBytes)
 	}
 
 	type job struct{ block DownloadBlock }

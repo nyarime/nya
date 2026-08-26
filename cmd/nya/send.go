@@ -34,6 +34,10 @@ func cmdSend(args []string) error {
 	fs := flag.NewFlagSet("send", flag.ExitOnError)
 	port := fs.Int("port", 0, "local HTTP port (0 = ephemeral)")
 	bind := fs.String("bind", "127.0.0.1", "local bind address")
+	tlsFlag := fs.Bool("tls", false, "serve origin over HTTPS (auto self-signed cert; cloudflared uses --no-tls-verify)")
+	tlsHost := fs.String("tls-host", "nya.naixi.net", "hostname/CN for auto-generated -tls certificate")
+	tlsCert := fs.String("tls-cert", "", "PEM certificate for HTTPS origin (with -tls-key)")
+	tlsKey := fs.String("tls-key", "", "PEM private key for HTTPS origin (with -tls-cert)")
 	cloudflared := fs.String("cloudflared", "cloudflared", "cloudflared binary (PATH or absolute path)")
 	noTunnel := fs.Bool("no-tunnel", false, "only serve locally (no TryCloudflare)")
 	noEmbed := fs.Bool("no-embed", false, "do not upsert download index before send")
@@ -46,6 +50,7 @@ func cmdSend(args []string) error {
 	}
 	if err := parseFlagSet(fs, args, map[string]bool{
 		"port": true, "bind": true, "cloudflared": true, "o": true, "level": true,
+		"tls-host": true, "tls-cert": true, "tls-key": true,
 	}); err != nil {
 		return err
 	}
@@ -72,7 +77,7 @@ func cmdSend(args []string) error {
 	switch {
 	case st.IsDir():
 		mode = sendModeDir
-		archive, cleanup, err = packSendSource(abs, *out, *level, !*noEmbed)
+		archive, cleanup, err = packSendSource(abs, *out, *level, false)
 		if err != nil {
 			return err
 		}
@@ -85,7 +90,7 @@ func cmdSend(args []string) error {
 		mode = sendModeFile
 		directPath = abs
 		directName = filepath.Base(abs)
-		archive, cleanup, err = packSendSource(abs, *out, *level, !*noEmbed)
+		archive, cleanup, err = packSendSource(abs, *out, *level, false)
 		if err != nil {
 			return err
 		}
@@ -95,30 +100,53 @@ func cmdSend(args []string) error {
 			return err
 		}
 	default:
-		if !*noEmbed {
-			if err := ensureSendEmbed(archive); err != nil {
-				return err
-			}
-			st, err = os.Stat(archive)
-			if err != nil {
-				return err
-			}
-		}
+		// .nya archive: embed below with TryCloudflare-optimal block size
 	}
+
+	tlsCfg, err := prepareSendTLS(*tlsFlag, *tlsCert, *tlsKey, *tlsHost)
+	if err != nil {
+		return err
+	}
+	defer tlsCfg.close()
 
 	ln, err := net.Listen("tcp", fmt.Sprintf("%s:%d", *bind, *port))
 	if err != nil {
 		return err
 	}
 	defer ln.Close()
+	if tlsCfg.enabled {
+		ln, err = tlsListen(ln, tlsCfg.certFile, tlsCfg.keyFile)
+		if err != nil {
+			return fmt.Errorf("send: tls: %w", err)
+		}
+	}
 
 	archiveName, indexName := sendPublicNames(mode, abs, directName)
-	nyamJSON, err := buildSendIndex(archive, archiveName)
+	sendBlockSize := nya.BlockSizeForParallel(st.Size(), nya.TryCloudflareMaxParallel)
+	if !*noEmbed {
+		if err := ensureSendEmbed(archive, sendBlockSize); err != nil {
+			return err
+		}
+		st, err = os.Stat(archive)
+		if err != nil {
+			return err
+		}
+	}
+	nyamJSON, err := buildSendIndex(archive, archiveName, sendBlockSize)
 	if err != nil {
 		return err
 	}
+	blockCount := sendManifestBlockCount(nyamJSON)
+	if !*noEmbed && blockCount > 0 {
+		fmt.Fprintf(os.Stderr, "nya send: %d transport blocks @ %s (max %d parallel)\n",
+			blockCount, nya.HumanSize(int(sendBlockSize)), nya.TryCloudflareMaxParallel)
+	}
 
-	baseLocal := fmt.Sprintf("http://%s", ln.Addr().String())
+	scheme := "http"
+	if tlsCfg.enabled {
+		scheme = "https"
+	}
+	baseLocal := fmt.Sprintf("%s://%s", scheme, ln.Addr().String())
 	indexLocal := baseLocal + "/" + url.PathEscape(indexName)
 	nyaLocal := baseLocal + "/" + url.PathEscape(archiveName)
 	directLocal := ""
@@ -165,8 +193,15 @@ func cmdSend(args []string) error {
 			return err
 		}
 		fmt.Fprintln(os.Stderr, T("send.tunnel.start"))
-		tunnelURL := fmt.Sprintf("http://%s", ln.Addr().String())
-		tunnelCmd = exec.CommandContext(ctx, bin, "tunnel", "--url", tunnelURL)
+		tunnelURL := fmt.Sprintf("%s://%s", scheme, ln.Addr().String())
+		tunnelArgs := []string{"tunnel", "--url", tunnelURL}
+		if tlsCfg.enabled {
+			tunnelArgs = append(tunnelArgs, "--no-tls-verify")
+			if *tlsHost != "" {
+				tunnelArgs = append(tunnelArgs, "--origin-server-name", *tlsHost)
+			}
+		}
+		tunnelCmd = exec.CommandContext(ctx, bin, tunnelArgs...)
 		pr, pw, err := os.Pipe()
 		if err != nil {
 			return err
@@ -272,13 +307,32 @@ func printSendLinks(mode sendMode, indexURL, nyaURL, directURL, indexLocal, nyaL
 	fmt.Fprintln(os.Stderr, T("send.stop"))
 }
 
-func buildSendIndex(archive, publicNyaName string) ([]byte, error) {
-	m, err := nya.BuildManifest(archive, 0, nya.ManifestSource{URL: publicNyaName, Priority: 10})
+func buildSendIndex(archive, publicNyaName string, blockSize int64) ([]byte, error) {
+	if blockSize <= 0 {
+		fi, err := os.Stat(archive)
+		if err != nil {
+			return nil, err
+		}
+		blockSize = nya.BlockSizeForParallel(fi.Size(), nya.TryCloudflareMaxParallel)
+	}
+	m, err := nya.BuildManifest(archive, blockSize, nya.ManifestSource{URL: publicNyaName, Priority: 10})
 	if err != nil {
 		return nil, err
 	}
 	m.Archive.Name = publicNyaName
 	return json.MarshalIndent(m, "", "  ")
+}
+
+func sendManifestBlockCount(nyamJSON []byte) int {
+	var stub struct {
+		Download struct {
+			Blocks []json.RawMessage `json:"blocks"`
+		} `json:"download"`
+	}
+	if err := json.Unmarshal(nyamJSON, &stub); err != nil {
+		return 0
+	}
+	return len(stub.Download.Blocks)
 }
 
 // sendPublicNames picks URL basenames from the source, not temp paths.
@@ -373,7 +427,7 @@ func packSendSource(src, out string, level int, embed bool) (archive string, cle
 		return "", func() {}, err
 	}
 	if embed {
-		if err := ensureSendEmbed(dest); err != nil {
+		if err := ensureSendEmbed(dest, 0); err != nil {
 			cleanup()
 			return "", func() {}, err
 		}
@@ -397,7 +451,14 @@ func writeNyaArchive(dest, src string, level int, solid bool) error {
 	return f.Close()
 }
 
-func ensureSendEmbed(path string) error {
-	_, err := nya.EmbedDownloadIndex(path, nya.EmbedOptions{InPlace: true})
+func ensureSendEmbed(path string, blockSize int64) error {
+	if blockSize <= 0 {
+		fi, err := os.Stat(path)
+		if err != nil {
+			return err
+		}
+		blockSize = nya.BlockSizeForParallel(fi.Size(), nya.TryCloudflareMaxParallel)
+	}
+	_, err := nya.EmbedDownloadIndex(path, nya.EmbedOptions{BlockSize: blockSize, InPlace: true})
 	return err
 }

@@ -20,7 +20,7 @@ import (
 func cmdGet(args []string) error {
 	fs := flag.NewFlagSet("get", flag.ExitOnError)
 	out := fs.String("o", "", "extract/output dir or file path")
-	concurrency := fs.Int("c", 8, "parallel download connections (nyam/.nya)")
+	concurrency := fs.Int("c", 0, "parallel download connections (0 = auto: one per block, max 20)")
 	resume := fs.Bool("resume", true, "resume incomplete download")
 	urlFlag := fs.String("url", "", ".nyam / .nya / plain file URL")
 	paths := fs.String("paths", "", "comma-separated entry paths for partial fetch")
@@ -249,21 +249,32 @@ func getViaManifest(ctx context.Context, client *http.Client, urlFlag, manifestP
 	}
 
 	getStatusf("nya get: downloading %d blocks…\n", len(m.Download.Blocks))
+	workers := nya.DownloadConcurrency(m, concurrency)
+	if concurrency <= 0 {
+		getStatusf("nya get: auto concurrency %d (one worker per block, max %d)\n",
+			workers, nya.TryCloudflareMaxParallel)
+	}
 
+	prog := newGetDownloadProgress(m)
 	res, err := nya.Download(ctx, nya.DownloadOptions{
 		Manifest:    m,
 		Output:      archiveOut,
 		StatePath:   statePath,
-		Concurrency: concurrency,
+		Concurrency: workers,
 		Resume:      resume,
 		Paths:       pathList,
 		HTTPClient:  client,
-		OnBlockStart: func(b nya.DownloadBlock, _, total int) {
-			getStatusf("\rnya get: fetching block %d/%d (%s)…", b.ID+1, total, nya.HumanSize(int(b.Size)))
+		OnInit: func(completedBlocks, _ int, completedBytes int64) {
+			prog.init(completedBlocks, completedBytes)
 		},
-		OnBlock: func(b nya.DownloadBlock, done, total int) {
-			pct := done * 100 / total
-			getStatusf("\rnya get: %d/%d blocks (%d%%)  ", done, total, pct)
+		OnBlockStart: func(b nya.DownloadBlock, _, _ int) {
+			prog.blockStart(b.ID)
+		},
+		OnBlockBytes: func(b nya.DownloadBlock, fetched, _ int64, _, _ int) {
+			prog.blockBytes(b.ID, fetched)
+		},
+		OnBlock: func(b nya.DownloadBlock, _, _ int) {
+			prog.blockDone(b.ID, b.Size)
 		},
 	})
 	fmt.Fprintln(os.Stderr)

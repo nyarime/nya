@@ -32,7 +32,7 @@ func TestRestoreDownloadedArchiveFile(t *testing.T) {
 	if err := writeNyaArchive(archive, src, nya.LevelFastest, false); err != nil {
 		t.Fatal(err)
 	}
-	if err := ensureSendEmbed(archive); err != nil {
+	if err := ensureSendEmbed(archive, 0); err != nil {
 		t.Fatal(err)
 	}
 

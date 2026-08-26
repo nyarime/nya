@@ -8,3 +8,4 @@
 *.rev
 /nya
 /cmd/nya/nya
+*.nyam.state
