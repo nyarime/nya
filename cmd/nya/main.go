@@ -13,36 +13,9 @@ import (
 	"github.com/nyarime/nya"
 )
 
-const usage = `nya — Nyarime Archive
-
-Usage:
-  nya create  [flags] <archive.nya> <path>   create an archive from a file or directory
-                                             (embeds download index by default; -no-embed to skip)
-  nya list    <archive.nya>                  list archive contents
-  nya extract [flags] <archive.nya> [dir]    extract an archive (default: current directory)
-  nya open    [flags] <archive.nya>          extract beside archive into .<basename>/ (shell / double-click)
-  nya verify  <archive.nya>                  check stored BLAKE3 digests
-  nya info    <archive.nya>                  show header details
-  nya repair  <archive> [out]                 repair NYA / ZIP / RAR (format detected by magic)
-  nya augment <archive.nya> [out.nya]        increase FEC repair data (Leopard-RS / Hybrid / RaptorQ)
-  nya convert [flags] <in.zip|7z|rar> <out.nya>  unpack legacy archive and repack as NYA (zip/7z/rar)
-                                             (embeds download index by default; -no-embed to skip)
-  nya manifest add  [flags] <archive.nya>    upsert embedded download index (optional -o .nyam)
-  nya manifest del  <archive.nya>            remove embedded download index
-  nya manifest export [flags] <archive.nya>  write .nyam sidecar only
-  nya sfx     [flags] <archive.nya> -o <out.exe> wrap archive as self-extractor
-  nya get     [flags] --url <URL>            download (nyam restore / plain file) + progress
-  nya send    [flags] <file|dir|archive.nya> share: direct/.nya + <name>.nyam
-  nya gui     [archive.nya]                  open nyaFM GUI
-  nya associate [-uninstall]                 Windows: register .nya double-click → nya open
-
-Levels run 0 to 9, the way 7-Zip and WinRAR present them: 0 stores, 1 is
-fastest, 5 is the default, 9 is smallest. Levels up to 4 use Zstandard for
-quick extraction; 5 and above use LZMA2 for size. "-codec" overrides that
-choice if you want a specific one.
-
-Run "nya <command> -h" for the flags of a command.
-`
+func printMainUsage() {
+	fmt.Print(T("usage.main"))
+}
 
 func main() {
 	if nya.ShouldRunSFXMode(os.Args) {
@@ -54,7 +27,7 @@ func main() {
 	}
 
 	if len(os.Args) < 2 {
-		fmt.Fprint(os.Stderr, usage)
+		printMainUsage()
 		os.Exit(2)
 	}
 
@@ -76,7 +49,7 @@ func main() {
 		err = cmdRepair(os.Args[2:])
 	case "augment":
 		err = cmdAugment(os.Args[2:])
-	case "convert", "import", "repack":
+	case "convert", "import", "export", "repack":
 		err = cmdConvert(os.Args[2:])
 	case "manifest":
 		err = cmdManifest(os.Args[2:])
@@ -91,10 +64,10 @@ func main() {
 	case "associate":
 		err = cmdAssociate(os.Args[2:])
 	case "-h", "--help", "help":
-		fmt.Print(usage)
+		printMainUsage()
 		return
 	default:
-		fmt.Fprintf(os.Stderr, "nya: unknown command %q\n\n%s", os.Args[1], usage)
+		fmt.Fprintf(os.Stderr, "nya: unknown command %q\n\n%s", os.Args[1], T("usage.main"))
 		os.Exit(2)
 	}
 
@@ -116,7 +89,7 @@ func cmdCreate(args []string) error {
 	sfxStub := fs.String("sfx-stub", "", "optional stub binary (default: running nya executable)")
 	codec := fs.String("codec", "",
 		"override the level's codec: lzma2, zstd or store")
-	password := fs.String("password", "", "encrypt the payload with this password")
+	password := fs.String("password", "", T("flag.password_out"))
 	workers := fs.Int("workers", 0, "number of compression workers (0 = automatic)")
 	multiChunk := fs.Bool("multi-chunk", true, "split non-solid files > 4 MiB into multiple chunks (format 1.3)")
 	chunkSize := fs.Int("chunk-size", 0, "raw chunk size for multi-chunk entries (0 = automatic)")
@@ -230,7 +203,7 @@ func cmdCreate(args []string) error {
 
 func cmdList(args []string) error {
 	fs := flag.NewFlagSet("list", flag.ExitOnError)
-	password := fs.String("password", "", "archive password")
+	password := fs.String("password", "", T("flag.password_in"))
 	fs.Parse(args)
 	if fs.NArg() != 1 {
 		return fmt.Errorf("list needs an archive path")
@@ -260,7 +233,7 @@ func cmdList(args []string) error {
 
 func cmdExtract(args []string) error {
 	fs := flag.NewFlagSet("extract", flag.ExitOnError)
-	password := fs.String("password", "", "archive password")
+	password := fs.String("password", "", T("flag.password_in"))
 	workers := fs.Int("workers", 0, "parallel chunk decompression workers (0 = automatic)")
 	dictPath := fs.String("dict", "", "external zstd dictionary (required for CompressionID 5 archives)")
 	fs.Parse(args)
@@ -291,7 +264,7 @@ func cmdExtract(args []string) error {
 
 func cmdVerify(args []string) error {
 	fs := flag.NewFlagSet("verify", flag.ExitOnError)
-	password := fs.String("password", "", "archive password")
+	password := fs.String("password", "", T("flag.password_in"))
 	fs.Parse(args)
 	if fs.NArg() != 1 {
 		return fmt.Errorf("verify needs an archive path")
@@ -398,34 +371,33 @@ func cmdAugment(args []string) error {
 
 func cmdConvert(args []string) error {
 	fs := flag.NewFlagSet("convert", flag.ExitOnError)
+	fs.Usage = func() {
+		fmt.Fprint(os.Stderr, convertUsageText())
+		fs.PrintDefaults()
+	}
 	level := fs.Int("level", nya.LevelFast,
-		"0 store, 1 fastest, 3 fast (default for convert/distribute), 5 normal, 7 good, 9 best")
-	fec := fs.Int("fec", 10, "recovery data as a percentage of the payload (repack adds FEC unlike zip/7z)")
+		"0 store, 1 fastest, 3 fast (default for convert), 5 normal, 7 good, 9 best")
+	fec := fs.Int("fec", 10, "FEC %% of payload when output is .nya (ignored for zip/7z/rar out)")
 	fecType := fs.String("fec-type", "hybrid",
 		"FEC codec when -fec > 0: hybrid (default), raptorq or ldpc")
-	solid := fs.Bool("solid", false, "solid compression (recommended for many small files)")
+	solid := fs.Bool("solid", false, "solid compression when output is .nya")
 	codec := fs.String("codec", "",
-		"override the level's codec: lzma2, zstd or store")
-	password := fs.String("password", "", "encrypt the output .nya with this password")
-	sourcePassword := fs.String("source-password", "", "password for encrypted zip/7z/rar input")
-	workers := fs.Int("workers", 0, "number of compression workers (0 = automatic)")
-	noEmbed := fs.Bool("no-embed", false, "do not embed download index (default: embed for single-URL nya-get)")
+		"override codec when output is .nya: lzma2, zstd or store")
+	password := fs.String("password", "", T("flag.password_out"))
+	sourcePassword := fs.String("source-password", "", T("flag.source_password"))
+	workers := fs.Int("workers", 0, "compression workers when output is .nya (0 = automatic)")
+	noEmbed := fs.Bool("no-embed", false, "do not embed download index when output is .nya")
 	embedBlock := fs.String("embed-block-size", "4m", "transport block size when embedding download index")
 	fs.Parse(args)
 
 	if fs.NArg() != 2 {
-		return fmt.Errorf("convert needs an input archive and output .nya path")
+		return fmt.Errorf("%s", T("convert.need_args"))
 	}
 	src, dst := fs.Arg(0), fs.Arg(1)
-	if !strings.HasSuffix(strings.ToLower(dst), ".nya") {
-		return fmt.Errorf("output must be a .nya path")
-	}
-	if !nya.Convertable(src) {
-		return fmt.Errorf("input %q is not a supported archive (supported: %s)", src, nya.ListConvertFormats())
-	}
 
 	var fecTypeVal uint8
-	if *fec > 0 {
+	dstIsNya := strings.HasSuffix(strings.ToLower(dst), ".nya")
+	if dstIsNya && *fec > 0 {
 		switch *fecType {
 		case "hybrid", "":
 			fecTypeVal = nya.FECHybrid
@@ -438,8 +410,8 @@ func cmdConvert(args []string) error {
 		}
 	}
 
-	opts := nya.ConvertOptions{
-		FECPercent:     *fec,
+	inOpts := nya.ConvertOptions{
+		FECPercent:     0,
 		Level:          *level,
 		Solid:          *solid,
 		Codec:          *codec,
@@ -447,16 +419,23 @@ func cmdConvert(args []string) error {
 		FECType:        fecTypeVal,
 		Workers:        *workers,
 	}
-	if *password != "" {
-		opts.Password = []byte(*password)
+	if dstIsNya {
+		inOpts.FECPercent = *fec
+	}
+	if *password != "" && dstIsNya {
+		inOpts.Password = []byte(*password)
+	}
+	outOpts := nya.ExportOptions{}
+	if *password != "" && !dstIsNya {
+		outOpts.Password = *password
 	}
 
 	start := time.Now()
-	res, err := nya.ConvertArchive(src, dst, opts)
+	res, err := nya.ConvertHub(src, dst, inOpts, outOpts)
 	if err != nil {
 		return err
 	}
-	if !*noEmbed {
+	if dstIsNya && !*noEmbed {
 		if err := embedDownloadIndexCLI(dst, *embedBlock); err != nil {
 			return err
 		}
@@ -464,14 +443,14 @@ func cmdConvert(args []string) error {
 			res.OutputSize = fi.Size()
 		}
 	}
-	fmt.Printf("%s → %s  %s  [%s]", filepath.Base(src), dst, nya.HumanSize(int(res.OutputSize)), nya.LevelName(*level))
-	if *fec > 0 {
+	fmt.Printf(T("convert.done"), filepath.Base(src), dst, nya.HumanSize(int(res.OutputSize)), nya.LevelName(*level))
+	if dstIsNya && *fec > 0 {
 		fmt.Printf("  +%d%% FEC", *fec)
 	}
-	if !*noEmbed {
+	if dstIsNya && !*noEmbed {
 		fmt.Printf("  +download-index")
 	}
-	fmt.Printf("  (%s)  in %s\n", res.SourceFormat, time.Since(start).Round(time.Millisecond))
+	fmt.Printf("  (%s→%s)  in %s\n", res.SourceFormat, res.DestFormat, time.Since(start).Round(time.Millisecond))
 	return nil
 }
 
@@ -535,7 +514,7 @@ func openOrPasswordHint(path, password string) (*nya.Reader, error) {
 		return r, nil
 	}
 	if err == nya.ErrPasswordRequired {
-		return nil, fmt.Errorf("%w — use: nya extract -password '…' %s", err, path)
+		return nil, fmt.Errorf("%w "+T("err.password_hint_extract"), err, path)
 	}
 	return nil, err
 }
