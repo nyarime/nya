@@ -26,7 +26,7 @@ func cmdGet(args []string) error {
 	paths := fs.String("paths", "", "comma-separated entry paths for partial fetch")
 	noExtract := fs.Bool("no-extract", false, "keep the .nya only; do not restore files/dirs")
 	keepNya := fs.Bool("keep-nya", false, "after extract, keep the downloaded .nya")
-	userAgent := fs.String("user-agent", "", "HTTP User-Agent (default: NyaGet/VERSION, aria2-style)")
+	userAgent := fs.String("user-agent", "", "HTTP User-Agent (default: Nya/VERSION)")
 	fs.Usage = func() {
 		fmt.Fprint(os.Stderr, `nya get — download and restore
 
