@@ -136,6 +136,7 @@ Formats: {{formats}}
 		"send.log.range":    "range",
 		"send.log.cf":       "(Cloudflare)",
 		"send.log.local":    "(local)",
+		"send.log.nyaget":   "(nya-get)",
 		"send.usage": `nya send — publish a file or folder
 
 Usage:
@@ -233,6 +234,7 @@ Example:
 		"send.log.range":    "范围",
 		"send.log.cf":       "(Cloudflare)",
 		"send.log.local":    "(本地)",
+		"send.log.nyaget":   "(nya-get)",
 		"send.usage": `nya send — 发布文件或目录
 
 用法：
