@@ -49,8 +49,8 @@ func TestGetDownloadProgressSnapshot(t *testing.T) {
 	p.blockStart(1)
 	p.blockBytes(1, 500_000)
 
-	got, total, done, tot := p.snapshot()
-	if total != 10_000_000 || got != 4_500_000 || done != 1 || tot != 3 {
-		t.Fatalf("snapshot got=%d total=%d blocks=%d/%d", got, total, done, tot)
+	got, total, done, tot, active := p.snapshot()
+	if total != 10_000_000 || got != 4_500_000 || done != 1 || tot != 3 || active != 1 {
+		t.Fatalf("snapshot got=%d total=%d blocks=%d/%d active=%d", got, total, done, tot, active)
 	}
 }

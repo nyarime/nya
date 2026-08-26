@@ -48,6 +48,9 @@ type getDownloadProgress struct {
 	inFlight   map[uint32]int64
 	start      time.Time
 	lastRender time.Time
+	lastSpeedAt time.Time
+	lastSpeedBytes int64
+	displaySpeed float64
 }
 
 func newGetDownloadProgress(m *nya.Manifest) *getDownloadProgress {
@@ -89,14 +92,14 @@ func (p *getDownloadProgress) blockDone(id uint32, size int64) {
 	p.render(true)
 }
 
-func (p *getDownloadProgress) snapshot() (downloaded, total int64, blocksDone, blocksTotal int) {
+func (p *getDownloadProgress) snapshot() (downloaded, total int64, blocksDone, blocksTotal, active int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	var inflight int64
 	for _, b := range p.inFlight {
 		inflight += b
 	}
-	return p.completedBytes + inflight, p.totalBytes, p.completedBlocks, p.totalBlocks
+	return p.completedBytes + inflight, p.totalBytes, p.completedBlocks, p.totalBlocks, len(p.inFlight)
 }
 
 func (p *getDownloadProgress) render(force bool) {
@@ -106,11 +109,30 @@ func (p *getDownloadProgress) render(force bool) {
 	}
 	p.lastRender = now
 
-	downloaded, total, blocksDone, blocksTotal := p.snapshot()
+	downloaded, total, blocksDone, blocksTotal, active := p.snapshot()
 	elapsed := now.Sub(p.start).Seconds()
 	var speed float64
 	if elapsed > 0 {
 		speed = float64(downloaded) / elapsed
+	}
+	if !p.lastSpeedAt.IsZero() {
+		dt := now.Sub(p.lastSpeedAt).Seconds()
+		if dt >= 0.4 {
+			instant := float64(downloaded-p.lastSpeedBytes) / dt
+			if p.displaySpeed <= 0 {
+				p.displaySpeed = instant
+			} else {
+				p.displaySpeed = p.displaySpeed*0.6 + instant*0.4
+			}
+			p.lastSpeedAt = now
+			p.lastSpeedBytes = downloaded
+		}
+	} else {
+		p.lastSpeedAt = now
+		p.lastSpeedBytes = downloaded
+	}
+	if p.displaySpeed > 0 {
+		speed = p.displaySpeed
 	}
 
 	pct := int64(0)
@@ -132,7 +154,11 @@ func (p *getDownloadProgress) render(force bool) {
 	} else if downloaded > 0 {
 		line += "  @ …"
 	}
-	line += fmt.Sprintf("  [%d/%d blocks]", blocksDone, blocksTotal)
+	line += fmt.Sprintf("  [%d/%d blocks", blocksDone, blocksTotal)
+	if active > 0 {
+		line += fmt.Sprintf(", %d active", active)
+	}
+	line += "]"
 	getStatusPrint(line)
 }
 

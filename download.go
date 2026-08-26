@@ -53,6 +53,9 @@ func Download(ctx context.Context, opt DownloadOptions) (*DownloadResult, error)
 		opt.Output = opt.Manifest.Archive.Name
 	}
 	if opt.Concurrency <= 0 {
+		opt.Concurrency = DownloadConcurrency(opt.Manifest, 0)
+	}
+	if opt.Concurrency <= 0 {
 		opt.Concurrency = 8
 	}
 	if opt.HTTPClient == nil {

@@ -20,7 +20,7 @@ import (
 func cmdGet(args []string) error {
 	fs := flag.NewFlagSet("get", flag.ExitOnError)
 	out := fs.String("o", "", "extract/output dir or file path")
-	concurrency := fs.Int("c", 8, "parallel download connections (nyam/.nya)")
+	concurrency := fs.Int("c", 0, "parallel download connections (0 = auto: one per block, max 20)")
 	resume := fs.Bool("resume", true, "resume incomplete download")
 	urlFlag := fs.String("url", "", ".nyam / .nya / plain file URL")
 	paths := fs.String("paths", "", "comma-separated entry paths for partial fetch")
@@ -249,13 +249,18 @@ func getViaManifest(ctx context.Context, client *http.Client, urlFlag, manifestP
 	}
 
 	getStatusf("nya get: downloading %d blocks…\n", len(m.Download.Blocks))
+	workers := nya.DownloadConcurrency(m, concurrency)
+	if concurrency <= 0 {
+		getStatusf("nya get: auto concurrency %d (one worker per block, max %d)\n",
+			workers, nya.TryCloudflareMaxParallel)
+	}
 
 	prog := newGetDownloadProgress(m)
 	res, err := nya.Download(ctx, nya.DownloadOptions{
 		Manifest:    m,
 		Output:      archiveOut,
 		StatePath:   statePath,
-		Concurrency: concurrency,
+		Concurrency: workers,
 		Resume:      resume,
 		Paths:       pathList,
 		HTTPClient:  client,
