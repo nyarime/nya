@@ -20,7 +20,7 @@ import (
 func cmdGet(args []string) error {
 	fs := flag.NewFlagSet("get", flag.ExitOnError)
 	out := fs.String("o", "", "extract/output dir or file path")
-	concurrency := fs.Int("c", 0, "parallel download connections (0 = auto: one per block, max 20)")
+	concurrency := fs.Int("c", 0, "parallel download connections (0 = auto: one per block, max 200)")
 	resume := fs.Bool("resume", true, "resume incomplete download")
 	urlFlag := fs.String("url", "", ".nyam / .nya / plain file URL")
 	paths := fs.String("paths", "", "comma-separated entry paths for partial fetch")
