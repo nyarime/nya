@@ -58,6 +58,9 @@ func DetectHubFormat(path string) (string, error) {
 // ConvertHub unpacks src (any supported archive) to a temp tree and repacks as dst.
 // File-tree hub: zip/7z/rar/tar/nya ↔ zip/7z/rar/tar/nya.
 func ConvertHub(src, dst string, inOpts ConvertOptions, outOpts ExportOptions) (*ExportResult, error) {
+	if _, err := os.Stat(src); err != nil {
+		return nil, fmt.Errorf("convert: input: %w", err)
+	}
 	srcFmt, err := DetectHubFormat(src)
 	if err != nil {
 		return nil, err

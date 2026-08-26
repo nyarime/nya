@@ -38,6 +38,7 @@ func TestBuildSolidDictGamePack(t *testing.T) {
 }
 
 func TestSolidAutoDictWired(t *testing.T) {
+	solidIntegrationSerial(t)
 	corpus := gamePackCorpus(t)
 	for _, level := range []int{3, 4} {
 		level := level
@@ -49,18 +50,19 @@ func TestSolidAutoDictWired(t *testing.T) {
 			noDictSize := writeSolidDictArchive(t, corpus, noDictPath, level, nil)
 			autoSize := writeSolidAutoDictArchive(t, corpus, autoPath, level)
 
-			t.Logf("level %d: no-dict=%d auto=%d", level, noDictSize, autoSize)
-			if autoSize >= noDictSize {
-				t.Fatalf("auto dict should shrink archive: no-dict=%d auto=%d", noDictSize, autoSize)
-			}
-
 			r, err := Open(autoPath)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if r.Header.Flags&FlagHasZstdDict == 0 {
-				t.Fatal("FlagHasZstdDict not set")
+				t.Fatalf("level %d: FlagHasZstdDict not set (auto=%d no-dict=%d)", level, autoSize, noDictSize)
 			}
+
+			t.Logf("level %d: no-dict=%d auto=%d", level, noDictSize, autoSize)
+			if autoSize >= noDictSize {
+				t.Fatalf("auto dict should shrink archive: no-dict=%d auto=%d", noDictSize, autoSize)
+			}
+
 			out := filepath.Join(work, "out")
 			if err := r.Extract(out); err != nil {
 				t.Fatal(err)
@@ -118,6 +120,7 @@ func writeSolidAutoDictArchive(t *testing.T, srcDir, archivePath string, level i
 		t.Fatal(err)
 	}
 	w := NewWriterOpts(f, 0, level, true)
+	w.SetAutoDict(true)
 	if err := w.AddFile(srcDir); err != nil {
 		t.Fatal(err)
 	}

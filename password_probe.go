@@ -48,7 +48,10 @@ func nyaNeedsPassword(path string) (bool, error) {
 func zipNeedsPassword(path string) (bool, error) {
 	zr, err := zip.OpenReader(path)
 	if err != nil {
-		// Encrypted zip central directory can still open; if open fails, defer to extract.
+		// Encrypted central directory or AES zip often fails stdlib open.
+		if sevenZipAvailable() {
+			return sevenZNeedsPassword(path)
+		}
 		return false, nil
 	}
 	defer zr.Close()
@@ -56,6 +59,18 @@ func zipNeedsPassword(path string) (bool, error) {
 		if f.Flags&0x1 != 0 {
 			return true, nil
 		}
+	}
+	// AE-1/AE-2 may omit the general-purpose encryption bit; probe first data file.
+	for _, f := range zr.File {
+		if f.FileInfo().IsDir() || strings.HasSuffix(f.Name, "/") {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			return true, nil
+		}
+		rc.Close()
+		break
 	}
 	return false, nil
 }

@@ -133,6 +133,7 @@ func writeSolidDictArchive(t *testing.T, srcDir, archivePath string, level int, 
 }
 
 func TestSolidZstdDictSmallerThanWithout(t *testing.T) {
+	solidIntegrationSerial(t)
 	corpus := gamePackCorpus(t)
 	dict := trainZstdDict(t, corpus, 8<<10)
 
