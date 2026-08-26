@@ -125,6 +125,7 @@ func TestSolidSortImprovesCompression(t *testing.T) {
 }
 
 func TestSolidArchiveUsesSort(t *testing.T) {
+	solidIntegrationSerial(t)
 	dir := t.TempDir()
 	sub := filepath.Join(dir, "tree")
 	if err := os.MkdirAll(sub, 0o755); err != nil {

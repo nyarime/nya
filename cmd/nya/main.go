@@ -2,6 +2,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -513,7 +514,7 @@ func openOrPasswordHint(path, password string) (*nya.Reader, error) {
 	if err == nil {
 		return r, nil
 	}
-	if err == nya.ErrPasswordRequired {
+	if errors.Is(err, nya.ErrPasswordRequired) {
 		return nil, fmt.Errorf("%w "+T("err.password_hint_extract"), err, path)
 	}
 	return nil, err
