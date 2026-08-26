@@ -41,7 +41,7 @@ curl -fsSL https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.sh
 ```bash
 # 可选
 bash install.sh --prefix /usr/local          # 自定义前缀
-bash install.sh --version 0.1.7              # 固定版本
+bash install.sh --version 0.1.8              # 固定版本
 ```
 
 ### Windows
@@ -55,7 +55,7 @@ irm https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.ps1 | iex
 ```powershell
 # 可选
 install.ps1 -Prefix "D:\Tools\NYA"
-install.ps1 -Version 0.1.7
+install.ps1 -Version 0.1.8
 install.ps1 -NoAssociate   # 不关联 .nya
 install.ps1 -NoPath        # 不改 PATH
 ```
