@@ -16,7 +16,7 @@ This repository is the **canonical** format spec, reference implementation,
 and `nya` CLI (`get` / `send` / `gui` / `sfx`, …). Pure Go, no cgo. Dependencies:
 
 - `github.com/nyarime/gofec` (RaptorQ / LDPC)
-- `github.com/nyarime/compress` **v0.2.6** — house NYA-Zstd + NYA-LZMA2 ([Apache-2.0](docs/COMPRESS-ECOSYSTEM.md))
+- `github.com/nyarime/compress` **v0.2.7** — house NYA-Zstd + NYA-LZMA2 ([Apache-2.0](docs/COMPRESS-ECOSYSTEM.md))
 - `golang.org/x/sys` (xattrs)
 
 **NYA-Zstd** is the house codec (RFC 8878); **NYA-LZMA2** is the `--best` lane — see [SPEC-CODECS.md](SPEC-CODECS.md).
@@ -307,10 +307,10 @@ Single-stream level-9 optimal + dual-encode guard (`compress/lzma2` harness):
 
 | corpus | nya% | 7z -mx9% | gap |
 | --- | ---: | ---: | ---: |
-| structured text (synthetic) | 1.1 | 1.6 | −0.5pp |
+| structured text (synthetic) | 0.9 | 1.6 | −0.7pp |
 | pseudo_enwik (synthetic) | 0.7 | 1.1 | −0.5pp |
-| mixed JSON / log lines | 7.1 | 5.0 | +2.1pp |
-| Silesia dickens (1 MiB slice) | 38.3 | 29.6 | +8.8pp |
+| mixed JSON / log lines | **4.8** | 5.0 | **−0.1pp** |
+| Silesia dickens (1 MiB slice) | **30.2** | 29.6 | **+0.6pp** |
 
 Regenerate: `go test -C $(go env GOPATH)/pkg/mod/github.com/nyarime/compress@v0.2.6/lzma2 -run TestBenchVs7zCorpora -timeout 15m` or clone [nyarime/compress](https://github.com/nyarime/compress).
 
@@ -320,7 +320,7 @@ Regenerate: `go test -C $(go env GOPATH)/pkg/mod/github.com/nyarime/compress@v0.
 
 | | NYA | 7z | gap |
 | --- | ---: | ---: | ---: |
-| compressed / raw | **9.86%** | 8.44% | **+1.42pp** |
+| compressed / raw | **8.75%** | 8.44% | **+0.32pp** |
 
 Solid writer applies **extension grouping**, **text-like-first sorting**, and
 level-9 LZMA2. Gap improved from ~+1.79pp (text sort only) with BCJ
