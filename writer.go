@@ -33,6 +33,8 @@ type Writer struct {
 	kdfSalt           [argon2SaltLen]byte
 	kdfSaltSet        bool
 	dict              []byte
+	autoDict          bool // auto-build zstd dict for text-heavy solid (default true)
+	solidSourceFiles  []string
 	dataOff           uint64
 	hashTables        [][]uint32
 	fecBuf            bytes.Buffer
@@ -71,7 +73,7 @@ func NewWriterOpts(w io.WriteSeeker, fecPercent int, level int, solid bool, pass
 	if level < 0 {
 		level = LevelDefault
 	}
-	w2 := &Writer{w: w, fecPercent: fecPercent, solid: solid, fecType: DefaultFECType, multiChunk: true}
+	w2 := &Writer{w: w, fecPercent: fecPercent, solid: solid, fecType: DefaultFECType, multiChunk: true, autoDict: true}
 	w2.SetLevel(level)
 	if len(password) > 0 {
 		w2.password = password[0]
@@ -99,6 +101,11 @@ const (
 )
 
 func (nw *Writer) SetDict(dict []byte) { nw.dict = dict }
+
+// SetAutoDict controls whether solid archives auto-derive an embedded zstd
+// dictionary from text-like members (levels 3–4, or ≥75% text-like at higher
+// levels). Explicit SetDict disables auto when dict is non-empty.
+func (nw *Writer) SetAutoDict(on bool) { nw.autoDict = on }
 func (nw *Writer) SetWorkers(n int)    { nw.workers = n }
 
 // SetMultiChunk enables splitting non-solid files larger than 4 MiB into
@@ -566,6 +573,9 @@ func (nw *Writer) Close() error {
 func (nw *Writer) closeSolid() error {
 	solidData := nw.solidBuf.Bytes()
 
+	nw.applyAutoSolidDict(solidData)
+	nw.refreshSolidCompressionIDs()
+
 	// Apply BCJ filter to entire solid stream if arch detected
 	bcjArch := nw.solidBCJArch
 	bcjID := BCJArchToID(bcjArch)
@@ -776,6 +786,55 @@ func (nw *Writer) appendEmbeddedDict(gh *GlobalHeader) error {
 	}
 	_, err = nw.w.Seek(0, io.SeekEnd)
 	return err
+}
+
+// applyAutoSolidDict builds a zstd dictionary from text-like solid members when
+// eligible and the dict shrinks the solid stream vs plain zstd. BCJ/signature
+// paths are unchanged: BCJ runs after this, using the same codec as the final
+// compress step.
+func (nw *Writer) applyAutoSolidDict(solidData []byte) {
+	if !nw.autoDict || len(nw.dict) > 0 || len(nw.solidSourceFiles) == 0 {
+		return
+	}
+	textLike, dense, other := countSolidTextLike(nw.solidSourceFiles)
+	if !solidAutoZstdDictEligible(nw.level, textLike, dense, other) {
+		return
+	}
+	samples := collectSolidTextLikePrefixes(nw.solidSourceFiles, solidDictSamplePrefix)
+	dict := buildSolidZstdDictFromSamples(samples, DefaultSolidZstdDictMax)
+	if len(dict) == 0 {
+		return
+	}
+	zlevel := nw.zstdLevelForDict()
+	if !solidDictHelps(solidData, dict, zlevel) {
+		return
+	}
+	nw.dict = dict
+	nw.compressLevel = zlevel
+}
+
+// refreshSolidCompressionIDs updates directory entries after auto-dict applies.
+func (nw *Writer) refreshSolidCompressionIDs() {
+	if len(nw.dict) == 0 {
+		return
+	}
+	id := nw.compressionID()
+	for i := range nw.entries {
+		if nw.entries[i].EntryType == EntryFile {
+			nw.entries[i].CompressionID = id
+		}
+	}
+}
+
+// zstdLevelForDict returns the zstd effort for auto dictionary compression.
+func (nw *Writer) zstdLevelForDict() int {
+	if nw.compressLevel > 0 && nw.usesZstd() {
+		return nw.compressLevel
+	}
+	if nw.level >= LevelFast && nw.level <= 4 {
+		return specForLevel(nw.level).zstdLevel
+	}
+	return levelTable[4].zstdLevel // zstd -19 for solid dict on higher levels
 }
 
 func (nw *Writer) buildGlobalMetaPayload(dirBytes []byte) []byte {

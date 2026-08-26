@@ -115,6 +115,8 @@ func writeSolidDictArchive(t *testing.T, srcDir, archivePath string, level int, 
 	w := NewWriterOpts(f, 0, level, true)
 	if len(dict) > 0 {
 		w.SetDict(dict)
+	} else {
+		w.SetAutoDict(false)
 	}
 	if err := w.AddFile(srcDir); err != nil {
 		t.Fatal(err)
