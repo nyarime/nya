@@ -152,7 +152,7 @@ nya get --url https://xxxx.trycloudflare.com/novel.txt.nyam
 Index URLs are named after the source (`name.nyam` / `name.nya`), not a fixed `/index.nyam`.
 CLI defaults to English (`NYA_LANG=zh` or `LANG=zh_CN` for Chinese).
 
-Options: `-no-tunnel`, `-no-fetch-cloudflared`. Quick Tunnels are ephemeral (Cloudflare ToS).
+Options: `-no-tunnel`. If cloudflared is missing, install from https://developers.cloudflare.com/tunnel/downloads/ . Quick Tunnels are ephemeral (Cloudflare ToS).
 
 ### Large package distribution (`nya get`)
 

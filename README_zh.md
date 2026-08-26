@@ -143,7 +143,7 @@ nya get --url https://xxxx.trycloudflare.com/novel.txt.nyam
 索引 URL 跟资源名走（`name.nyam` / `name.nya`），不是固定的 `/index.nyam`。  
 CLI 默认英文；`NYA_LANG=zh` 或 `LANG=zh_CN` 可切中文提示。
 
-选项：`-no-tunnel`、`-no-fetch-cloudflared`。Quick Tunnel 为临时链接（遵循 Cloudflare ToS）。
+选项：`-no-tunnel`。未安装 cloudflared 时见 https://developers.cloudflare.com/tunnel/downloads/ 。Quick Tunnel 为临时链接（遵循 Cloudflare ToS）。
 
 ### 大包分发（`nya get`）
 

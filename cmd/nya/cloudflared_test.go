@@ -4,58 +4,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
-
-func TestCloudflaredReleaseAsset(t *testing.T) {
-	asset, archived, err := cloudflaredReleaseAsset()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if asset == "" {
-		t.Fatal("empty asset")
-	}
-	if runtime.GOOS == "darwin" && !archived {
-		t.Fatal("darwin should be tgz")
-	}
-	t.Log(asset, archived)
-}
-
-func TestUserBinDir(t *testing.T) {
-	dir := userBinDir()
-	if dir == "" {
-		t.Fatal("empty userBinDir")
-	}
-	if runtime.GOOS != "windows" && !filepath.IsAbs(dir) {
-		t.Fatalf("expected abs path, got %q", dir)
-	}
-	t.Log(dir)
-}
-
-func TestInstallCloudflaredBinary(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
-	t.Setenv("XDG_CACHE_HOME", filepath.Join(home, "cache"))
-	t.Setenv("LOCALAPPDATA", filepath.Join(home, "AppData", "Local"))
-
-	src := filepath.Join(home, "cloudflared-src")
-	if err := os.WriteFile(src, []byte("#!/bin/sh\necho ok\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	dest, err := installCloudflaredBinary(src)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := installedCloudflaredPath()
-	if dest != want {
-		t.Fatalf("got %q want %q", dest, want)
-	}
-	st, err := os.Stat(dest)
-	if err != nil || st.Size() < 4 {
-		t.Fatalf("bad install %v %v", dest, st)
-	}
-}
 
 func TestVerifyCloudflared(t *testing.T) {
 	dir := t.TempDir()
@@ -88,30 +39,41 @@ func TestVerifyCloudflared(t *testing.T) {
 	}
 }
 
-func TestFetchCloudflared(t *testing.T) {
-	if testing.Short() {
-		t.Skip("network")
-	}
+func TestResolveCloudflaredMissing(t *testing.T) {
 	dir := t.TempDir()
+	t.Setenv("PATH", filepath.Join(dir, "empty-bin"))
 	t.Setenv("HOME", dir)
 	t.Setenv("USERPROFILE", dir)
-	t.Setenv("XDG_CACHE_HOME", filepath.Join(dir, "cache"))
-	t.Setenv("LOCALAPPDATA", filepath.Join(dir, "AppData", "Local"))
-	// Keep PATH without cloudflared so resolve would fetch; fetch itself installs.
-	t.Setenv("PATH", filepath.Join(dir, "empty-bin"))
 
-	p, err := fetchCloudflared()
+	_, err := resolveCloudflared("cloudflared")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, cloudflaredDownloadURL) {
+		t.Fatalf("missing download URL: %q", msg)
+	}
+	if !strings.Contains(msg, "-no-tunnel") {
+		t.Fatalf("missing LAN hint: %q", msg)
+	}
+}
+
+func TestResolveCloudflaredExplicit(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "cloudflared")
+	script := "#!/bin/sh\necho 'cloudflared version 0.0.0 (test)'\n"
+	if runtime.GOOS == "windows" {
+		bin += ".bat"
+		script = "@echo cloudflared version 0.0.0 (test)\r\n"
+	}
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, err := resolveCloudflared(bin)
 	if err != nil {
 		t.Fatal(err)
 	}
-	st, err := os.Stat(p)
-	if err != nil || st.Size() < 1000 {
-		t.Fatalf("bad binary %v %v", p, st)
-	}
-	if p != installedCloudflaredPath() {
-		t.Fatalf("expected install path %q, got %q", installedCloudflaredPath(), p)
-	}
-	if err := verifyCloudflared(p); err != nil {
-		t.Fatal(err)
+	if got != bin {
+		t.Fatalf("got %q want %q", got, bin)
 	}
 }
