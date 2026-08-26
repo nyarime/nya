@@ -26,6 +26,7 @@ func cmdGet(args []string) error {
 	paths := fs.String("paths", "", "comma-separated entry paths for partial fetch")
 	noExtract := fs.Bool("no-extract", false, "keep the .nya only; do not restore files/dirs")
 	keepNya := fs.Bool("keep-nya", false, "after extract, keep the downloaded .nya")
+	userAgent := fs.String("user-agent", "", "HTTP User-Agent (default: NyaGet/VERSION, aria2-style)")
 	fs.Usage = func() {
 		fmt.Fprint(os.Stderr, `nya get — download and restore
 
@@ -36,11 +37,11 @@ Usage:
 `)
 		fs.PrintDefaults()
 	}
-	if err := parseFlagSet(fs, args, map[string]bool{"o": true, "c": true, "url": true, "paths": true}); err != nil {
+	if err := parseFlagSet(fs, args, map[string]bool{"o": true, "c": true, "url": true, "paths": true, "user-agent": true}); err != nil {
 		return err
 	}
 
-	client := httpClientForGet()
+	client := httpClientForGet(*userAgent)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 

@@ -11,9 +11,9 @@ import (
 	"github.com/nyarime/nya"
 )
 
-// sendLogConfig controls nya send access logging.
+// sendLogConfig controls nya send access logging (aria2-style notice/info/warn).
 type sendLogConfig struct {
-	logNyamBrowser bool // log browser fetches of .nyam (default: hide)
+	level sendAccessLogLevel
 }
 
 // sendAccessLogger logs each HTTP fetch with peer, size, and timing.
@@ -23,14 +23,12 @@ func sendAccessLogger(cfg sendLogConfig, next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if !shouldLogSendAccess(r, cfg.logNyamBrowser) {
-			next.ServeHTTP(w, r)
-			return
-		}
 		start := time.Now()
 		lw := &sendLogWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(lw, r)
-		logSendAccess(r, lw.status, lw.written, time.Since(start))
+		if shouldLogSendAccessAt(cfg.level, r, lw.status) {
+			logSendAccess(r, lw.status, lw.written, time.Since(start))
+		}
 	})
 }
 
@@ -117,15 +115,4 @@ func truncateLog(s string, max int) string {
 		return s
 	}
 	return s[:max-1] + "…"
-}
-
-func shouldLogSendAccess(r *http.Request, logNyamBrowser bool) bool {
-	if logNyamBrowser {
-		return true
-	}
-	path := strings.ToLower(strings.TrimPrefix(r.URL.Path, "/"))
-	if strings.HasSuffix(path, ".nyam") && !isNyaGetUserAgent(r.Header.Get("User-Agent")) {
-		return false
-	}
-	return true
 }
