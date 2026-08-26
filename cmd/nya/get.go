@@ -250,6 +250,7 @@ func getViaManifest(ctx context.Context, client *http.Client, urlFlag, manifestP
 
 	getStatusf("nya get: downloading %d blocks…\n", len(m.Download.Blocks))
 
+	prog := newGetDownloadProgress(m)
 	res, err := nya.Download(ctx, nya.DownloadOptions{
 		Manifest:    m,
 		Output:      archiveOut,
@@ -258,12 +259,17 @@ func getViaManifest(ctx context.Context, client *http.Client, urlFlag, manifestP
 		Resume:      resume,
 		Paths:       pathList,
 		HTTPClient:  client,
-		OnBlockStart: func(b nya.DownloadBlock, _, total int) {
-			getStatusf("\rnya get: fetching block %d/%d (%s)…", b.ID+1, total, nya.HumanSize(int(b.Size)))
+		OnInit: func(completedBlocks, _ int, completedBytes int64) {
+			prog.init(completedBlocks, completedBytes)
 		},
-		OnBlock: func(b nya.DownloadBlock, done, total int) {
-			pct := done * 100 / total
-			getStatusf("\rnya get: %d/%d blocks (%d%%)  ", done, total, pct)
+		OnBlockStart: func(b nya.DownloadBlock, _, _ int) {
+			prog.blockStart(b.ID)
+		},
+		OnBlockBytes: func(b nya.DownloadBlock, fetched, _ int64, _, _ int) {
+			prog.blockBytes(b.ID, fetched)
+		},
+		OnBlock: func(b nya.DownloadBlock, _, _ int) {
+			prog.blockDone(b.ID, b.Size)
 		},
 	})
 	fmt.Fprintln(os.Stderr)
