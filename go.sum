@@ -1,5 +1,5 @@
-github.com/nyarime/compress v0.2.3 h1:V0Y3yViq8DvHlf8tRv+PB9xXh06iQPOKbXg/jLGVgN8=
-github.com/nyarime/compress v0.2.3/go.mod h1:AjC/j8snkEGmWcX98vA9WfChgmZLY1YJEoUDBsXgfaw=
+github.com/nyarime/compress v0.2.4 h1:0G0yFv31z9XfbFNxKeN5Q/jKbBsJqJ/TD1zrpHys6Eo=
+github.com/nyarime/compress v0.2.4/go.mod h1:AjC/j8snkEGmWcX98vA9WfChgmZLY1YJEoUDBsXgfaw=
 github.com/nyarime/gofec/v2 v2.0.0 h1:cj7Ybxw2HYnYhmddrDf1FNB//ru8kKVjmLJTKj/Z98s=
 github.com/nyarime/gofec/v2 v2.0.0/go.mod h1:Khn3VQ0wWWUbY4PEuviSD/SQdkC7chLDYNdKPV50w0s=
 golang.org/x/crypto v0.55.0 h1:+KWHjbgOaAQ66dh/YlkZKHlz9ZUlq61AFirAR9ntP8M=
