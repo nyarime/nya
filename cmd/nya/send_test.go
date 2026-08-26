@@ -4,8 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/nyarime/nya"
 )
 
 func TestTryCloudflareURLRegex(t *testing.T) {
@@ -32,68 +30,56 @@ func TestIsNyaArchivePath(t *testing.T) {
 }
 
 func TestSendPublicNames(t *testing.T) {
-	nyaN, nyamN := sendPublicNames(sendModeFile, "/tmp/novel.txt", "novel.txt")
-	if nyaN != "novel.txt.nya" || nyamN != "novel.txt.nyam" {
-		t.Fatalf("file: %s %s", nyaN, nyamN)
+	serveN, nyamN := sendPublicNames(sendModeFile, "/tmp/novel.txt", "novel.txt", "")
+	if serveN != "novel.txt" || nyamN != "" {
+		t.Fatalf("file: %s %s", serveN, nyamN)
 	}
-	nyaN, nyamN = sendPublicNames(sendModeDir, "/data/GameData", "")
-	if nyaN != "GameData.nya" || nyamN != "GameData.nyam" {
-		t.Fatalf("dir: %s %s", nyaN, nyamN)
+	serveN, nyamN = sendPublicNames(sendModeDir, "/data/GameData", "", "GameData")
+	if serveN != "GameData" || nyamN != "" {
+		t.Fatalf("dir: %s %s", serveN, nyamN)
 	}
-	nyaN, nyamN = sendPublicNames(sendModeNya, "/out/pack.nya", "")
-	if nyaN != "pack.nya" || nyamN != "pack.nyam" {
-		t.Fatalf("nya: %s %s", nyaN, nyamN)
+	serveN, nyamN = sendPublicNames(sendModeNya, "/out/pack.nya", "", "")
+	if serveN != "pack.nya" || nyamN != "pack.nyam" {
+		t.Fatalf("nya: %s %s", serveN, nyamN)
 	}
 }
 
-
-func TestPackSendSourceDir(t *testing.T) {
+func TestWalkSendFiles(t *testing.T) {
 	root := t.TempDir()
 	src := filepath.Join(root, "GameData")
-	if err := os.MkdirAll(src, 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(src, "sub"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(src, "readme.txt"), []byte("hello send dir"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(src, "readme.txt"), []byte("hello"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	out := filepath.Join(root, "out.nya")
-	archive, cleanup, err := packSendSource(src, out, nya.LevelFastest, true)
+	if err := os.WriteFile(filepath.Join(src, "sub", "a.bin"), []byte("bin"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	prefix, files, total, err := walkSendFiles(src)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer cleanup()
-	if archive != out {
-		t.Fatalf("got %q want %q", archive, out)
+	if prefix != "GameData" {
+		t.Fatalf("prefix=%q", prefix)
 	}
-	st, err := os.Stat(archive)
-	if err != nil || st.Size() < 32 {
-		t.Fatalf("bad archive %v %v", archive, st)
+	if total != 8 {
+		t.Fatalf("total=%d", total)
 	}
-	r, err := nya.Open(archive)
-	if err != nil {
-		t.Fatal(err)
+	if len(files) != 2 {
+		t.Fatalf("files=%v", files)
 	}
-	ents := r.List()
-	if len(ents) < 1 {
-		t.Fatal("expected entries")
+	if files["GameData/readme.txt"] == "" || files["GameData/sub/a.bin"] == "" {
+		t.Fatalf("missing keys: %v", files)
 	}
 }
 
-func TestPackSendSourceTempCleanup(t *testing.T) {
-	root := t.TempDir()
-	src := filepath.Join(root, "f.txt")
-	if err := os.WriteFile(src, []byte("one file"), 0o644); err != nil {
-		t.Fatal(err)
+func TestURLPathJoin(t *testing.T) {
+	if got := urlPathJoin("GameData/readme.txt"); got != "GameData/readme.txt" {
+		t.Fatalf("got %q", got)
 	}
-	archive, cleanup, err := packSendSource(src, "", nya.LevelFastest, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(archive); err != nil {
-		t.Fatal(err)
-	}
-	cleanup()
-	if _, err := os.Stat(archive); !os.IsNotExist(err) {
-		t.Fatalf("temp archive should be removed: %v", err)
+	if got := urlPathJoin("a b/c"); got != "a%20b/c" {
+		t.Fatalf("got %q", got)
 	}
 }

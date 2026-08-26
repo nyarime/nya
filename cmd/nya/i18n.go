@@ -117,6 +117,7 @@ Formats: {{formats}}
 
 		"send.direct":       "Direct:",
 		"send.archive":      "Archive:",
+		"send.dir":          "Directory:",
 		"send.get":          "Get:",
 		"send.lan":          "Local:",
 		"send.file_fmt":     "  file    %s",
@@ -140,12 +141,13 @@ Formats: {{formats}}
 Usage:
   nya send [flags] <file|directory|archive.nya>
 
-  file         Direct URL; <name>.nyam for nya get
-  directory    <name>.nya for browsers; <name>.nyam for nya get
-  archive.nya  Serve as-is with <name>.nyam
+  file         Direct HTTP URL (no packing)
+  directory    Serve files under <name>/… (no packing)
+  archive.nya  Serve as-is with <name>.nyam for nya get
 
 Example:
-  nya get --url https://xxxx.trycloudflare.com/novel.txt.nyam
+  nya send novel.txt
+  nya get --url https://xxxx.trycloudflare.com/novel.txt
 
 `,
 	},
@@ -213,6 +215,7 @@ Example:
 
 		"send.direct":       "直链：",
 		"send.archive":      "压缩包：",
+		"send.dir":          "目录：",
 		"send.get":          "获取：",
 		"send.lan":          "本地：",
 		"send.file_fmt":     "  文件    %s",
@@ -236,12 +239,13 @@ Example:
 用法：
   nya send [flags] <文件|目录|archive.nya>
 
-  文件         浏览器直链；<名>.nyam 供 nya get
-  目录         <名>.nya 供浏览器；<名>.nyam 供 nya get
-  archive.nya  直接托管并提供 <名>.nyam
+  文件         直链 HTTP（不打包）
+  目录         在 <名>/… 下提供各文件（不打包）
+  archive.nya  直接托管，并提供 <名>.nyam 供 nya get
 
 示例：
-  nya get --url https://xxxx.trycloudflare.com/novel.txt.nyam
+  nya send novel.txt
+  nya get --url https://xxxx.trycloudflare.com/novel.txt
 
 `,
 	},
