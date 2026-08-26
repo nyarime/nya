@@ -158,10 +158,10 @@ func downloadPlainFile(ctx context.Context, client *http.Client, raw, dest strin
 			}
 			written += int64(n)
 			if total > 0 {
-				fmt.Fprintf(os.Stderr, "\rnya get: %s / %s (%d%%)",
+				getStatusf("\rnya get: %s / %s (%d%%)",
 					nya.HumanSize(int(written)), nya.HumanSize(int(total)), written*100/total)
 			} else {
-				fmt.Fprintf(os.Stderr, "\rnya get: %s", nya.HumanSize(int(written)))
+				getStatusf("\rnya get: %s", nya.HumanSize(int(written)))
 			}
 		}
 		if readErr == io.EOF {
@@ -189,6 +189,7 @@ func getViaManifest(ctx context.Context, client *http.Client, urlFlag, manifestP
 		if err != nil {
 			return err
 		}
+		printGetManifestSummary(m)
 		archiveOut = m.Archive.Name
 		statePath = nya.StatePath(archiveOut + ".nyam")
 	case manifestPath != "":
@@ -197,6 +198,7 @@ func getViaManifest(ctx context.Context, client *http.Client, urlFlag, manifestP
 		if err != nil {
 			return err
 		}
+		printGetManifestSummary(m)
 		if urlFlag != "" {
 			m.Sources = []nya.ManifestSource{{URL: urlFlag, Priority: 10}}
 		} else if len(m.Sources) == 0 {
@@ -246,6 +248,8 @@ func getViaManifest(ctx context.Context, client *http.Client, urlFlag, manifestP
 		}
 	}
 
+	getStatusf("nya get: downloading %d blocks…\n", len(m.Download.Blocks))
+
 	res, err := nya.Download(ctx, nya.DownloadOptions{
 		Manifest:    m,
 		Output:      archiveOut,
@@ -254,8 +258,12 @@ func getViaManifest(ctx context.Context, client *http.Client, urlFlag, manifestP
 		Resume:      resume,
 		Paths:       pathList,
 		HTTPClient:  client,
+		OnBlockStart: func(b nya.DownloadBlock, _, total int) {
+			getStatusf("\rnya get: fetching block %d/%d (%s)…", b.ID+1, total, nya.HumanSize(int(b.Size)))
+		},
 		OnBlock: func(b nya.DownloadBlock, done, total int) {
-			fmt.Fprintf(os.Stderr, "\rnya get: block %d/%d (%s)", done, total, nya.HumanSize(int(b.Size)))
+			pct := done * 100 / total
+			getStatusf("\rnya get: %d/%d blocks (%d%%)  ", done, total, pct)
 		},
 	})
 	fmt.Fprintln(os.Stderr)
@@ -264,6 +272,7 @@ func getViaManifest(ctx context.Context, client *http.Client, urlFlag, manifestP
 			_ = os.Remove(archiveOut)
 			_ = os.Remove(statePath)
 		}
+		fmt.Fprintf(os.Stderr, "nya get: if download keeps failing, delete resume state %s and retry\n", statePath)
 		return err
 	}
 

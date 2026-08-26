@@ -8,6 +8,19 @@ import (
 	"github.com/nyarime/nya"
 )
 
+func TestPrintGetManifestSummary(t *testing.T) {
+	m := &nya.Manifest{
+		Archive: nya.ArchiveMeta{Name: "game.bin.nya", Size: 1024},
+		Download: nya.DownloadIndex{
+			Blocks: []nya.DownloadBlock{{ID: 0, Size: 1024}},
+		},
+		Entries: []nya.ManifestEntry{
+			{Path: "game.bin", OriginalSize: 2048},
+		},
+	}
+	printGetManifestSummary(m)
+}
+
 func TestRestoreDownloadedArchiveFile(t *testing.T) {
 	root := t.TempDir()
 	src := filepath.Join(root, "novel.txt")

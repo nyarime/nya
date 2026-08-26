@@ -21,7 +21,9 @@ type DownloadOptions struct {
 	StatePath   string
 	Concurrency int
 	HTTPClient  *http.Client
+	OnBlockStart func(block DownloadBlock, done, total int)
 	OnBlock     func(block DownloadBlock, done, total int)
+	OnBlockBytes func(block DownloadBlock, fetched, blockSize int64, done, total int)
 	Resume      bool
 	// Paths selects partial fetch: only transport blocks overlapping the
 	// manifest entry chunk ranges for these paths (plus header and central dir).
@@ -133,6 +135,13 @@ func Download(ctx context.Context, opt DownloadOptions) (*DownloadResult, error)
 	jobs := make(chan job, len(pending))
 	var wg sync.WaitGroup
 	var fail atomic.Value
+	var doneMu sync.Mutex
+	doneCount := func() int {
+		doneMu.Lock()
+		n := len(done)
+		doneMu.Unlock()
+		return n
+	}
 
 	worker := func() {
 		defer wg.Done()
@@ -140,7 +149,17 @@ func Download(ctx context.Context, opt DownloadOptions) (*DownloadResult, error)
 			if ctx.Err() != nil {
 				return
 			}
-			if err := fetchBlock(ctx, opt.HTTPClient, urls, opt.Output, j.block); err != nil {
+			if opt.OnBlockStart != nil {
+				opt.OnBlockStart(j.block, doneCount(), total)
+			}
+			var onBytes func(fetched, blockSize int64)
+			if opt.OnBlockBytes != nil {
+				b := j.block
+				onBytes = func(fetched, blockSize int64) {
+					opt.OnBlockBytes(b, fetched, blockSize, doneCount(), total)
+				}
+			}
+			if err := fetchBlock(ctx, opt.HTTPClient, urls, opt.Output, j.block, onBytes); err != nil {
 				fail.Store(err)
 				return
 			}
@@ -153,13 +172,18 @@ func Download(ctx context.Context, opt DownloadOptions) (*DownloadResult, error)
 				fail.Store(fmt.Errorf("download: block %d checksum mismatch", j.block.ID))
 				return
 			}
+			doneMu.Lock()
 			done[j.block.ID] = struct{}{}
+			completed := len(done)
+			doneMu.Unlock()
 			res.BlocksFetched++
 			res.BytesWritten += j.block.Size
 			if opt.OnBlock != nil {
-				opt.OnBlock(j.block, len(done), total)
+				opt.OnBlock(j.block, completed, total)
 			}
+			doneMu.Lock()
 			writeDownloadState(opt.StatePath, opt.Output, done)
+			doneMu.Unlock()
 		}
 	}
 
@@ -195,7 +219,7 @@ func sortedSourceURLs(src []ManifestSource) []string {
 	return out
 }
 
-func fetchBlock(ctx context.Context, client *http.Client, urls []string, output string, block DownloadBlock) error {
+func fetchBlock(ctx context.Context, client *http.Client, urls []string, output string, block DownloadBlock, onBytes func(fetched, blockSize int64)) error {
 	var lastErr error
 	for _, url := range urls {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -211,30 +235,62 @@ func fetchBlock(ctx context.Context, client *http.Client, urls []string, output 
 			lastErr = err
 			continue
 		}
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			lastErr = err
-			continue
-		}
 		if resp.StatusCode != http.StatusPartialContent && resp.StatusCode != http.StatusOK {
-			lastErr = fmt.Errorf("HTTP %d", resp.StatusCode)
+			resp.Body.Close()
+			lastErr = fmt.Errorf("HTTP %d from %s", resp.StatusCode, url)
 			continue
 		}
-		if int64(len(body)) != block.Size {
-			lastErr = fmt.Errorf("got %d bytes, want %d", len(body), block.Size)
-			continue
-		}
-		if err := writeFileRange(output, block.Offset, body); err != nil {
+		if err := writeBlockBody(output, block, resp.Body, resp.ContentLength, onBytes); err != nil {
+			resp.Body.Close()
 			lastErr = err
 			continue
 		}
+		resp.Body.Close()
 		return nil
 	}
 	if lastErr == nil {
 		lastErr = fmt.Errorf("no sources")
 	}
 	return fmt.Errorf("block %d: %w", block.ID, lastErr)
+}
+
+func writeBlockBody(output string, block DownloadBlock, body io.Reader, contentLen int64, onBytes func(fetched, blockSize int64)) error {
+	f, err := os.OpenFile(output, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := f.Seek(block.Offset, io.SeekStart); err != nil {
+		return err
+	}
+
+	buf := make([]byte, 32*1024)
+	var fetched int64
+	for {
+		n, readErr := body.Read(buf)
+		if n > 0 {
+			if _, err := f.Write(buf[:n]); err != nil {
+				return err
+			}
+			fetched += int64(n)
+			if onBytes != nil {
+				onBytes(fetched, block.Size)
+			}
+		}
+		if readErr == io.EOF {
+			break
+		}
+		if readErr != nil {
+			return readErr
+		}
+	}
+	if fetched != block.Size {
+		if contentLen > 0 && contentLen != fetched {
+			return fmt.Errorf("got %d bytes, want %d (Content-Length=%d)", fetched, block.Size, contentLen)
+		}
+		return fmt.Errorf("got %d bytes, want %d", fetched, block.Size)
+	}
+	return nil
 }
 
 func writeFileRange(path string, offset int64, data []byte) error {

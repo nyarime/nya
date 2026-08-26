@@ -34,9 +34,8 @@ func cmdSend(args []string) error {
 	fs := flag.NewFlagSet("send", flag.ExitOnError)
 	port := fs.Int("port", 0, "local HTTP port (0 = ephemeral)")
 	bind := fs.String("bind", "127.0.0.1", "local bind address")
-	cloudflared := fs.String("cloudflared", "cloudflared", "cloudflared binary (PATH, absolute, or auto)")
+	cloudflared := fs.String("cloudflared", "cloudflared", "cloudflared binary (PATH or absolute path)")
 	noTunnel := fs.Bool("no-tunnel", false, "only serve locally (no TryCloudflare)")
-	noFetch := fs.Bool("no-fetch-cloudflared", false, "do not auto-install cloudflared when missing")
 	noEmbed := fs.Bool("no-embed", false, "do not upsert download index before send")
 	verboseTunnel := fs.Bool("verbose-tunnel", false, "print full cloudflared logs (noisy)")
 	out := fs.String("o", "", "when packing: write .nya here (default: temp, deleted on exit)")
@@ -160,10 +159,10 @@ func cmdSend(args []string) error {
 		tunnelSink.setVerbose(true)
 	}
 	if !*noTunnel {
-		bin, err := resolveCloudflared(*cloudflared, !*noFetch)
+		bin, err := resolveCloudflared(*cloudflared)
 		if err != nil {
 			_ = srv.Shutdown(context.Background())
-			return fmt.Errorf("%w\n  tip: install cloudflared, or nya send -no-tunnel for LAN only", err)
+			return err
 		}
 		fmt.Fprintln(os.Stderr, T("send.tunnel.start"))
 		tunnelURL := fmt.Sprintf("http://%s", ln.Addr().String())
