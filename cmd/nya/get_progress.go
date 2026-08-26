@@ -16,9 +16,11 @@ func getStatusf(format string, args ...any) {
 }
 
 func getStatusPrint(s string) {
-	fmt.Fprint(os.Stderr, s)
+	getProgressOut.print(s)
 	_ = os.Stderr.Sync()
 }
+
+var getProgressOut = newProgressWriter(os.Stderr)
 
 func printGetManifestSummary(m *nya.Manifest) {
 	if m == nil {

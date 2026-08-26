@@ -19,6 +19,10 @@ type sendPackProgress struct {
 
 	heartMu   sync.Mutex
 	heartStop chan struct{}
+
+	out            *progressWriter
+	readSpeedBps   float64
+	compressStart  time.Time
 }
 
 func newSendPackProgress(total int64) *sendPackProgress {
@@ -26,6 +30,7 @@ func newSendPackProgress(total int64) *sendPackProgress {
 		total: total,
 		start: time.Now(),
 		phase: "read",
+		out:   newProgressWriter(os.Stderr),
 	}
 }
 
@@ -65,6 +70,9 @@ func (p *sendPackProgress) callback() nya.PackProgress {
 		p.mu.Lock()
 		p.readDone = done
 		if phase != "" {
+			if (phase == "compress" || phase == "finalize") && p.phase == "read" {
+				p.markCompressStartLocked(done)
+			}
 			p.phase = phase
 		}
 		if total > 0 {
@@ -75,8 +83,17 @@ func (p *sendPackProgress) callback() nya.PackProgress {
 	}
 }
 
+func (p *sendPackProgress) markCompressStartLocked(readBytes int64) {
+	p.compressStart = time.Now()
+	elapsed := p.compressStart.Sub(p.start).Seconds()
+	if elapsed > 0 && readBytes > 0 {
+		p.readSpeedBps = float64(readBytes) / elapsed
+	}
+}
+
 func (p *sendPackProgress) finish(archiveSize int64, profile nya.SendPackProfile) {
 	p.render(true)
+	p.out.reset()
 	solid := ""
 	if profile.Solid {
 		solid = " solid"
@@ -104,18 +121,33 @@ func (p *sendPackProgress) render(force bool) {
 	total := p.total
 	phase := p.phase
 	elapsed := now.Sub(p.start).Seconds()
+	readSpeed := p.readSpeedBps
+	compressStart := p.compressStart
 	p.mu.Unlock()
 
 	var line string
 	switch phase {
 	case "compress", "finalize":
-		line = fmt.Sprintf("\r%s: %s %s, %s … %s",
+		speedPart := ""
+		if readSpeed >= 1024 {
+			speedPart = fmt.Sprintf(" @ %s %s", humanSpeed(readSpeed), T("send.pack.read_rate"))
+		}
+		compressElapsed := elapsed
+		if !compressStart.IsZero() {
+			compressElapsed = now.Sub(compressStart).Seconds()
+		}
+		line = fmt.Sprintf("\r%s: %s %s%s, %s … %s %s",
 			T("send.pack.compressing"),
 			nya.HumanSize(int(total)),
 			T("send.pack.read_done"),
+			speedPart,
 			T("send.pack."+phase),
-			humanETA(elapsed),
+			T("send.pack.elapsed"),
+			humanDuration(compressElapsed),
 		)
+		if total >= 512<<20 && phase == "finalize" {
+			line += "  " + T("send.pack.solid_slow_hint")
+		}
 	default:
 		pct := int64(0)
 		if total > 0 {
@@ -131,12 +163,11 @@ func (p *sendPackProgress) render(force bool) {
 			speed := float64(readDone) / elapsed
 			line += fmt.Sprintf("  @ %s", humanSpeed(speed))
 			if speed > 0 && readDone < total {
-				line += fmt.Sprintf("  ETA %s", humanETA(float64(total-readDone)/speed))
+				line += fmt.Sprintf("  ETA %s", humanDuration(float64(total-readDone)/speed))
 			}
 		}
 	}
 	if force && phase == "read" && readDone >= total && total > 0 {
-		// Close() returned without hitting finalize callback (tiny archive).
 		pct := int64(100)
 		line = fmt.Sprintf("\r%s: %s / %s (%d%%)",
 			T("send.pack.reading"),
@@ -145,12 +176,7 @@ func (p *sendPackProgress) render(force bool) {
 			pct,
 		)
 	}
-	sendStatusPrint(line)
-}
-
-func sendStatusPrint(s string) {
-	fmt.Fprint(os.Stderr, s)
-	_ = os.Stderr.Sync()
+	p.out.print(line)
 }
 
 func sendPackProgressTotal(path string) int64 {
@@ -166,4 +192,9 @@ func ensureSendPackProgressMin(total int64) int64 {
 		return 1
 	}
 	return total
+}
+
+// humanDuration formats a wall-clock interval (not a remaining-time estimate).
+func humanDuration(seconds float64) string {
+	return humanETA(seconds)
 }
