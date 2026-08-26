@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/nyarime/nya"
 )
 
 // httpClientForGet returns an HTTP client used by nya get with a stable User-Agent
@@ -17,7 +19,7 @@ func httpClientForGet(uaOverride string) *http.Client {
 	return &http.Client{
 		Timeout: 0,
 		Transport: &userAgentRoundTripper{
-			base: http.DefaultTransport,
+			base: nya.DownloadHTTPTransport(),
 			ua:   ua,
 		},
 	}

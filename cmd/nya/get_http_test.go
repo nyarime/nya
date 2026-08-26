@@ -9,8 +9,8 @@ import (
 
 func TestNyaGetUserAgent(t *testing.T) {
 	ua := nyaGetUserAgent()
-	if ua != "NyaGet/"+nyaCLIVersion() {
-		t.Fatalf("ua=%q want aria2-style NyaGet/VERSION", ua)
+	if ua != "Nya/"+nyaCLIVersion() {
+		t.Fatalf("ua=%q want Nya/VERSION", ua)
 	}
 }
 

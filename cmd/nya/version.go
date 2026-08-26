@@ -5,7 +5,7 @@ import "strings"
 // cliVersion is set at link time by scripts/release-local.sh / CI when available.
 var cliVersion = "0.1.10"
 
-const nyaGetUAProduct = "NyaGet"
+const nyaUAProduct = "Nya"
 
 func nyaCLIVersion() string {
 	if v := strings.TrimSpace(cliVersion); v != "" {
@@ -14,12 +14,12 @@ func nyaCLIVersion() string {
 	return "dev"
 }
 
-// nyaGetUserAgent identifies nya get HTTP requests (aria2-style Product/Version).
+// nyaGetUserAgent is the default HTTP User-Agent for nya get (aria2-style Product/Version).
 func nyaGetUserAgent() string {
-	return nyaGetUAProduct + "/" + nyaCLIVersion()
+	return nyaUAProduct + "/" + nyaCLIVersion()
 }
 
 func isNyaGetUserAgent(ua string) bool {
 	ua = strings.TrimSpace(ua)
-	return strings.HasPrefix(ua, nyaGetUAProduct+"/")
+	return strings.HasPrefix(ua, nyaUAProduct+"/")
 }
