@@ -50,9 +50,27 @@ and **xz -9 / 7z -mx9 / zstd -19** on the same corpora as the README table.
 
 Reproduce: `NYA_BENCH_WRITE=1 go test -run TestREADMEBenchmarkSuite -timeout 60m -v ./...`
 
+## Solid archive vs 7-Zip (mixed corpus)
+
+`TestSolidArchiveVs7z` — 36-file mixed text/json/binary tree, NYA level-9 solid
+vs `7z -mx9 -m0=lzma2 -ms=on`:
+
+| metric | value |
+| --- | ---: |
+| raw_total | 669606 |
+| nya_size | 66014 (**9.86%**) |
+| 7z_size | 56482 (8.44%) |
+| gap | **+1.42pp** |
+
+Writer uses extension grouping, text-like-first sort, and LZMA2 from
+`github.com/nyarime/compress` v0.2.6 (dual-encode optimal guard at level 9).
+
+Regenerate: `go test -run TestSolidArchiveVs7z -count=1 -timeout 10m -v ./...`
+
 ## Solid ZSTD dictionary (levels 3–4)
 
 For text-heavy game packs (configs, shaders, locale), a trained zstd dictionary
-on `-solid` archives can beat plain NYA-Zstd. See **`docs/SOLID-DICT.md`** for
-when to use `nya create -dict …` and the offline `zstd --train` workflow.
-Regression: `go test -run TestSolidZstdDictSmallerThanWithout -v ./...`
+on `-solid` archives can beat plain NYA-Zstd. Manual `-dict` or **auto-derived
+dict** at solid close — see **`docs/SOLID-DICT.md`** for eligibility and the
+offline `zstd --train` workflow.
+Regression: `go test -run TestSolidZstdDict -v ./...`

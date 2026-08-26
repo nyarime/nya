@@ -6,7 +6,13 @@
 
 一次打包同时带上压缩与可配置的前向纠错（FEC），用 `nya send` / CDN / `.nyam` 发一个 URL，再用 `nya get` + `nya repair` 拉回并修复。这条故事更贴合 **游戏分包、固件镜像、CDN 大文件、不可靠隧道**，而不是「又一个压缩格式」。产品方向见 **[ROADMAP.md](ROADMAP.md)**。
 
-本仓库是格式规范、参考实现与 **`nya` CLI**（`get` / `send` / `gui` / `sfx` …）的权威源。纯 Go、无 cgo；`github.com/nyarime/gofec` 提供 RaptorQ / LDPC，`golang.org/x/sys` 提供 xattr。**NYA-Zstd** 是家用编解码（RFC 8878）；**NYA-LZMA2** 走 `--best` — 见 [SPEC-CODECS.md](SPEC-CODECS.md)。
+本仓库是格式规范、参考实现与 **`nya` CLI**（`get` / `send` / `gui` / `sfx` …）的权威源。纯 Go、无 cgo。依赖：
+
+- `github.com/nyarime/gofec` — RaptorQ / LDPC
+- `github.com/nyarime/compress` **v0.2.6** — 家用 NYA-Zstd + NYA-LZMA2（[Apache-2.0](docs/COMPRESS-ECOSYSTEM.md)）
+- `golang.org/x/sys` — xattr
+
+**NYA-Zstd** 是家用编解码（RFC 8878）；**NYA-LZMA2** 走 `--best` — 见 [SPEC-CODECS.md](SPEC-CODECS.md)。
 
 ## 归档里有什么
 
@@ -188,7 +194,7 @@ nya convert -level 9 -solid -fec 10 bundle.zip bundle.nya
 | 7–8 | good | LZMA2，更大窗口与更深搜索 |
 | 9 | best | LZMA2，最大窗口与搜索 |
 
-`create` 还支持 `-solid`（整包一流）、`-codec`（覆盖等级默认编解码）、`-password`、`-workers`（创建/解压并发），以及 **`-no-embed`**（跳过默认可单 URL 下载的嵌入索引）。
+`create` 还支持 `-solid`（整包一流）、`-codec`（覆盖等级默认编解码）、`-password`、`-workers`（创建/解压并发）、**`-no-embed`**（跳过默认可单 URL 下载的嵌入索引），以及 **`-dict`**（文本型 solid 包嵌入 zstd 字典，等级 1–4）。Solid 还会在有帮助时 **自动推导字典** — 见 [docs/SOLID-DICT.md](docs/SOLID-DICT.md)。
 
 ## 作为库使用
 
@@ -269,9 +275,30 @@ if err := r.Extract("./restored"); err != nil {
 
 细节：[docs/BENCHMARK-COMPRESS.md](docs/BENCHMARK-COMPRESS.md)。
 
+### 家用 LZMA2 vs 7-Zip（`compress` v0.2.6）
+
+单流 level-9 optimal + dual-encode（`compress/lzma2` 测试）：
+
+| 语料 | nya% | 7z -mx9% | gap |
+| --- | ---: | ---: | ---: |
+| structured text（合成） | 1.1 | 1.6 | −0.5pp |
+| pseudo_enwik（合成） | 0.7 | 1.1 | −0.5pp |
+| mixed JSON / log | 7.1 | 5.0 | +2.1pp |
+| Silesia dickens（1 MiB 切片） | 38.3 | 29.6 | +8.8pp |
+
+### Solid 归档 vs 7-Zip（36 文件混合语料）
+
+`TestSolidArchiveVs7z` — NYA level-9 solid vs `7z -mx9 -m0=lzma2 -ms=on`：
+
+| | NYA | 7z | gap |
+| --- | ---: | ---: | ---: |
+| 压缩/原始 | **9.86%** | 8.44% | **+1.42pp** |
+
+Solid 写入使用 **扩展名分组**、**text-like 优先排序** 与 level-9 LZMA2；BCJ whole-stream 门控后 gap 从约 +1.79pp 改善。重跑：`go test -run TestSolidArchiveVs7z -timeout 10m -v ./...`
+
 结构化文本上 nya greedy（3.62%）优于 xz / 7z（约 4.2%）。多文件 solid 时，排序 + greedy 可贴近 xz/7z；编码仍常慢于 7-Zip。Level 9 的 optimal parse 在这些语料上往往更大更慢；当前默认是 greedy + 扩展名/内容种类排序。
 
-Solid 使用**扩展名分组**、**内容种类排序**（同扩展名内按 magic），以及 **greedy LZMA2**。重跑基准需 PATH 上有 `xz`、`7z`、`zstd`。
+Solid 使用**扩展名分组**、**内容种类排序**（同扩展名内按 magic，text-like 优先）、**可选自动 zstd 字典**（文本型 solid、等级 3–4），以及 level-9 **greedy LZMA2**（`compress` v0.2.3+ dual-encode optimal 守卫）。重跑基准需 PATH 上有 `xz`、`7z`、`zstd`。
 
 解压另一面：此处 LZMA2 约 18–59 MB/s，zstd 路径约 127–275 MB/s；读远多于写时，宜用等级 1–4。
 
@@ -327,6 +354,8 @@ NYA 是自由软件：可在 [GNU GPL v3.0](LICENSE) 下使用、修改与再分
 - [docs/SPEC-MULTICHUNK.md](docs/SPEC-MULTICHUNK.md) — **多块条目**（v1.3）
 - [docs/BENCHMARK-MULTICHUNK.md](docs/BENCHMARK-MULTICHUNK.md) — **多块并行**（压缩 worker、FEC 修复）
 - [docs/BENCHMARK-COMPRESS.md](docs/BENCHMARK-COMPRESS.md) — 压缩 A/B
+- [docs/SOLID-DICT.md](docs/SOLID-DICT.md) — solid zstd 字典（`-dict` + 自动推导）
+- [docs/COMPRESS-ECOSYSTEM.md](docs/COMPRESS-ECOSYSTEM.md) — `nyarime/compress` 拆库
 - [docs/BENCHMARK-FEC.md](docs/BENCHMARK-FEC.md) — FEC 恢复对比
 - [docs/BENCHMARK-CORPUS.md](docs/BENCHMARK-CORPUS.md) — 公开语料与 raw 数据计划
 - [docs/NOTE-UPX.md](docs/NOTE-UPX.md) — UPX 与归档压缩在 ELF 上的关系

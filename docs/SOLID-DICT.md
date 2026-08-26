@@ -2,9 +2,28 @@
 
 NYA can embed a shared **Zstandard dictionary** for solid archives when many
 members share repeated text (configs, shaders, localization, scripted data).
-Use `nya create -solid -dict trained.zdict …` (levels **1–4**, NYA-Zstd).
+Use `nya create -solid -dict trained.zdict …` (levels **1–4**, NYA-Zstd), or
+rely on **automatic dictionary derivation** (default on).
 
-## When to use `-dict` for game packs
+## Auto dictionary (default)
+
+When solid mode closes, the writer may derive a dictionary from repeated
+text-like member prefixes and embed it (tail `0x0006`) **only if** a
+round-trip check shows it beats plain zstd on that stream.
+
+Eligibility:
+
+| Condition | Auto-dict considered |
+| --- | --- |
+| Levels **3–4** (zstd solid) | Yes |
+| Level **9** with ≥75% text-like members | Yes (still zstd-only; mixed LZMA2 bench skips) |
+| Mostly binary / already compressed | Skipped |
+
+Disable: `Writer.SetAutoDict(false)` or tests that call it explicitly.
+
+Regression: `go test -run TestSolidAutoDict -v ./...`
+
+## When to use manual `-dict` for game packs
 
 | Good fit | Poor fit |
 | --- | --- |
@@ -13,7 +32,7 @@ Use `nya create -solid -dict trained.zdict …` (levels **1–4**, NYA-Zstd).
 | Solid mode (`-solid`) so one compressed stream sees cross-file redundancy | Single-file or non-solid archives (dict rarely pays off) |
 | Corpus large enough to train a dict (dozens of KiB+ of similar text) | One-off archives or highly heterogeneous content |
 
-**Workflow (MVP):**
+**Workflow (manual / offline train):**
 
 1. Collect representative pack files (or a staging directory) with repeated text
    headers / padding (see `solid_dict_test.go`).
@@ -26,4 +45,5 @@ Use `nya create -solid -dict trained.zdict …` (levels **1–4**, NYA-Zstd).
 
 Levels **3–4** balance ratio and encode time for distribute/get scenes; see
 `docs/BENCHMARK-COMPRESS.md` for LZMA2 solid baselines. Dictionary wins are
-most visible on text-heavy trees — see `solid_dict_test.go`.
+most visible on text-heavy trees — see `solid_dict_test.go` and
+`TestSolidAutoDictWired`.
