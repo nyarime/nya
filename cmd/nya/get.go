@@ -27,6 +27,8 @@ func cmdGet(args []string) error {
 	noExtract := fs.Bool("no-extract", false, "keep the .nya only; do not restore files/dirs")
 	keepNya := fs.Bool("keep-nya", false, "after extract, keep the downloaded .nya")
 	userAgent := fs.String("user-agent", "", "HTTP User-Agent (default: Nya/VERSION)")
+	cfTrace := fs.Bool("cf-trace", false, "print Cloudflare /cdn-cgi/trace before download (HTTPS URLs)")
+	resolveIP := fs.String("resolve", "", "pin HTTPS host to Cloudflare edge IP (CFST-style, e.g. 1.2.3.4 or 1.2.3.4:443)")
 	fs.Usage = func() {
 		fmt.Fprint(os.Stderr, `nya get — download and restore
 
@@ -37,13 +39,29 @@ Usage:
 `)
 		fs.PrintDefaults()
 	}
-	if err := parseFlagSet(fs, args, map[string]bool{"o": true, "c": true, "url": true, "paths": true, "user-agent": true}); err != nil {
+	if err := parseFlagSet(fs, args, map[string]bool{"o": true, "c": true, "url": true, "paths": true, "user-agent": true, "resolve": true}); err != nil {
 		return err
 	}
 
-	client := httpClientForGet(*userAgent)
+	pinned, err := parseResolveIP(*resolveIP)
+	if err != nil {
+		return err
+	}
+	pageHost := hostFromHTTPSURL(*urlFlag)
+	if pinned != "" && pageHost == "" && fs.NArg() == 1 {
+		// local .nyam: resolve host comes from manifest sources inside getViaManifest
+		pageHost = ""
+	}
+	httpOpts := getHTTPOptions{userAgent: *userAgent, resolveIP: pinned, host: pageHost}
+	client := httpClientForGetOpts(httpOpts)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
+
+	if *cfTrace && *urlFlag != "" {
+		if err := printCFTrace(ctx, client, *urlFlag); err != nil {
+			fmt.Fprintf(os.Stderr, "nya get: cf-trace: %v\n", err)
+		}
+	}
 
 	// Plain URL / unknown: try nyam/.nya first, else plain download.
 	if fs.NArg() == 0 && *urlFlag != "" {
@@ -58,10 +76,10 @@ Usage:
 			}
 			return downloadPlainFile(ctx, client, *urlFlag, dest)
 		}
-		return getViaManifest(ctx, client, *urlFlag, "", *out, *concurrency, *resume, *paths, *noExtract, *keepNya)
+		return getViaManifest(ctx, client, httpOpts, *cfTrace, *urlFlag, "", *out, *concurrency, *resume, *paths, *noExtract, *keepNya)
 	}
 	if fs.NArg() == 1 {
-		return getViaManifest(ctx, client, *urlFlag, fs.Arg(0), *out, *concurrency, *resume, *paths, *noExtract, *keepNya)
+		return getViaManifest(ctx, client, httpOpts, *cfTrace, *urlFlag, fs.Arg(0), *out, *concurrency, *resume, *paths, *noExtract, *keepNya)
 	}
 	fs.Usage()
 	os.Exit(2)
@@ -177,7 +195,7 @@ func downloadPlainFile(ctx context.Context, client *http.Client, raw, dest strin
 	return nil
 }
 
-func getViaManifest(ctx context.Context, client *http.Client, urlFlag, manifestPath, out string, concurrency int, resume bool, paths string, noExtract, keepNya bool) error {
+func getViaManifest(ctx context.Context, client *http.Client, httpOpts getHTTPOptions, cfTrace bool, urlFlag, manifestPath, out string, concurrency int, resume bool, paths string, noExtract, keepNya bool) error {
 	var m *nya.Manifest
 	var statePath string
 	var archiveOut string
@@ -185,6 +203,9 @@ func getViaManifest(ctx context.Context, client *http.Client, urlFlag, manifestP
 	switch {
 	case manifestPath == "" && urlFlag != "":
 		fmt.Fprintf(os.Stderr, "nya get: %s\n", urlFlag)
+		if httpOpts.resolveIP != "" {
+			fmt.Fprintf(os.Stderr, "nya get: resolve %s -> %s\n", httpOpts.host, httpOpts.resolveIP)
+		}
 		var err error
 		m, err = loadTransferManifest(client, urlFlag)
 		if err != nil {
@@ -206,6 +227,20 @@ func getViaManifest(ctx context.Context, client *http.Client, urlFlag, manifestP
 			return fmt.Errorf("manifest has no sources; pass -url")
 		} else if err := nya.ResolveManifestSources(m, "file://"+filepath.ToSlash(manifestPath)); err != nil {
 			return err
+		}
+		if httpOpts.resolveIP != "" && httpOpts.host == "" {
+			if h := hostFromHTTPSURL(m.Sources[0].URL); h != "" {
+				httpOpts.host = h
+				client = httpClientForGetOpts(httpOpts)
+				fmt.Fprintf(os.Stderr, "nya get: resolve %s -> %s\n", httpOpts.host, httpOpts.resolveIP)
+			}
+		}
+		if cfTrace {
+			if tracePage := cfTraceFromManifest(client, m, urlFlag); tracePage != "" {
+				if err := printCFTrace(ctx, client, tracePage); err != nil {
+					fmt.Fprintf(os.Stderr, "nya get: cf-trace: %v\n", err)
+				}
+			}
 		}
 		archiveOut = m.Archive.Name
 		if !filepath.IsAbs(archiveOut) {
