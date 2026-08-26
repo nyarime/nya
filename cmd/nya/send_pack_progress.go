@@ -10,12 +10,15 @@ import (
 )
 
 type sendPackProgress struct {
-	total     int64
-	readDone  int64
-	phase     string
-	start     time.Time
+	total      int64
+	readDone   int64
+	phase      string
+	start      time.Time
 	lastRender time.Time
-	mu        sync.Mutex
+	mu         sync.Mutex
+
+	heartMu   sync.Mutex
+	heartStop chan struct{}
 }
 
 func newSendPackProgress(total int64) *sendPackProgress {
@@ -23,6 +26,37 @@ func newSendPackProgress(total int64) *sendPackProgress {
 		total: total,
 		start: time.Now(),
 		phase: "read",
+	}
+}
+
+func (p *sendPackProgress) startHeartbeat() {
+	p.heartMu.Lock()
+	defer p.heartMu.Unlock()
+	if p.heartStop != nil {
+		return
+	}
+	stop := make(chan struct{})
+	p.heartStop = stop
+	go func() {
+		ticker := time.NewTicker(400 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				p.render(false)
+			case <-stop:
+				return
+			}
+		}
+	}()
+}
+
+func (p *sendPackProgress) stopHeartbeat() {
+	p.heartMu.Lock()
+	defer p.heartMu.Unlock()
+	if p.heartStop != nil {
+		close(p.heartStop)
+		p.heartStop = nil
 	}
 }
 
@@ -75,12 +109,12 @@ func (p *sendPackProgress) render(force bool) {
 	var line string
 	switch phase {
 	case "compress", "finalize":
-		line = fmt.Sprintf("\r%s: %s / %s … %s (%.0fs)",
+		line = fmt.Sprintf("\r%s: %s %s, %s … %s",
 			T("send.pack.compressing"),
-			nya.HumanSize(int(readDone)),
 			nya.HumanSize(int(total)),
+			T("send.pack.read_done"),
 			T("send.pack."+phase),
-			elapsed,
+			humanETA(elapsed),
 		)
 	default:
 		pct := int64(0)

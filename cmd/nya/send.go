@@ -452,6 +452,8 @@ func packSendSource(src, out string, level int, levelExplicit, embed bool) (arch
 	fmt.Fprintf(os.Stderr, "nya send: packing %s\n", dest)
 
 	progress := newSendPackProgress(ensureSendPackProgressMin(sendPackProgressTotal(src)))
+	progress.startHeartbeat()
+	defer progress.stopHeartbeat()
 	if err := writeNyaArchive(dest, src, profile, progress); err != nil {
 		cleanup()
 		return "", func() {}, err
