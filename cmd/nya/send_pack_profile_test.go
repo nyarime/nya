@@ -23,7 +23,7 @@ func TestPackSendSourceAutoTextProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Header.Flags&nya.FlagSolidCompress == 0 {
-		t.Fatal("auto text-like single file should use solid")
+	if r.Header.Flags&nya.FlagSolidCompress != 0 {
+		t.Fatal("time-first auto profile should not use solid for single log")
 	}
 }

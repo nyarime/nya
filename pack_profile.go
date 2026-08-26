@@ -1,15 +1,22 @@
 package nya
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+)
 
 // SendPackProfile picks compression settings for nya send when the user did not
-// override -level. Text-heavy inputs aim at 7-Zip-style ratio (LZMA2-9 + solid);
-// dense archives store; executables use LZMA2-7 with per-file BCJ when helpful.
+// override -level. Defaults favor *pack time* (Zstd level 3, no solid); use
+// -level 9 for smallest archives (7z-style, much slower on multi-GB logs).
 type SendPackProfile struct {
 	Level  int
 	Solid  bool
 	Reason string
 }
+
+// sendFastLevel is the default auto level: Zstd-9, fast pack + decompress.
+const sendFastLevel = LevelFast
 
 // SendPackProfileFor returns level/solid for packing src. When explicitLevel is
 // true, Level is explicitLevelVal and solid follows the legacy multi-file rule.
@@ -29,7 +36,7 @@ func SendPackProfileFor(src string, explicitLevel bool, explicitLevelVal int) (S
 
 	total := textLike + dense + other
 	if total == 0 {
-		return SendPackProfile{Level: LevelNormal, Reason: "empty"}, nil
+		return SendPackProfile{Level: sendFastLevel, Reason: "empty"}, nil
 	}
 	if total == 1 {
 		return profileSingle(ClassifyFile(src)), nil
@@ -41,9 +48,8 @@ func profileSingle(kind PayloadKind) SendPackProfile {
 	switch kind {
 	case PayloadTextLike:
 		return SendPackProfile{
-			Level:  LevelBest,
-			Solid:  true,
-			Reason: "text-like → LZMA2-9 + solid",
+			Level:  sendFastLevel,
+			Reason: "text-like → Zstd fast (time-first; -level 9 for smallest)",
 		}
 	case PayloadDense:
 		return SendPackProfile{
@@ -52,13 +58,13 @@ func profileSingle(kind PayloadKind) SendPackProfile {
 		}
 	case PayloadBinary:
 		return SendPackProfile{
-			Level:  LevelGood,
-			Reason: "executable/binary → LZMA2-7 + BCJ",
+			Level:  sendFastLevel,
+			Reason: "binary → Zstd fast + BCJ when helpful",
 		}
 	default:
 		return SendPackProfile{
-			Level:  LevelNormal,
-			Reason: "unknown → LZMA2-5",
+			Level:  sendFastLevel,
+			Reason: "unknown → Zstd fast",
 		}
 	}
 }
@@ -72,22 +78,19 @@ func profileMany(textLike, dense, other int) SendPackProfile {
 	}
 	if textLike >= dense && textLike > 0 {
 		return SendPackProfile{
-			Level:  LevelBest,
-			Solid:  true,
-			Reason: "text-heavy → LZMA2-9 + solid",
+			Level:  sendFastLevel,
+			Reason: "text-heavy → Zstd fast (time-first; -level 9 for smallest)",
 		}
 	}
 	if other >= textLike && other >= dense && other > 0 {
 		return SendPackProfile{
-			Level:  LevelGood,
-			Reason: "mostly binary → LZMA2-7 + BCJ",
+			Level:  sendFastLevel,
+			Reason: "mostly binary → Zstd fast + BCJ",
 		}
 	}
-	solid := textLike >= 2 && textLike >= dense
 	return SendPackProfile{
-		Level:  LevelNormal,
-		Solid:  solid,
-		Reason: "mixed → LZMA2-5",
+		Level:  sendFastLevel,
+		Reason: "mixed → Zstd fast",
 	}
 }
 
@@ -99,4 +102,29 @@ func clampLevel(level int) int {
 		return LevelBest
 	}
 	return level
+}
+
+// SendInputBytes returns total regular-file bytes under src (file or directory tree).
+func SendInputBytes(src string) (int64, error) {
+	fi, err := os.Lstat(src)
+	if err != nil {
+		return 0, err
+	}
+	if !fi.IsDir() {
+		if fi.Mode().IsRegular() {
+			return fi.Size(), nil
+		}
+		return 0, nil
+	}
+	var total int64
+	err = filepath.Walk(src, func(_ string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if info.Mode().IsRegular() {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total, err
 }
