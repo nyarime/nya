@@ -9,7 +9,7 @@
 本仓库是格式规范、参考实现与 **`nya` CLI**（`get` / `send` / `gui` / `sfx` …）的权威源。纯 Go、无 cgo。依赖：
 
 - `github.com/nyarime/gofec` — RaptorQ / LDPC
-- `github.com/nyarime/compress` **v0.2.6** — 家用 NYA-Zstd + NYA-LZMA2（[Apache-2.0](docs/COMPRESS-ECOSYSTEM.md)）
+- `github.com/nyarime/compress` **v0.2.7** — 家用 NYA-Zstd + NYA-LZMA2（[Apache-2.0](docs/COMPRESS-ECOSYSTEM.md)）
 - `golang.org/x/sys` — xattr
 
 **NYA-Zstd** 是家用编解码（RFC 8878）；**NYA-LZMA2** 走 `--best` — 见 [SPEC-CODECS.md](SPEC-CODECS.md)。
@@ -281,10 +281,10 @@ if err := r.Extract("./restored"); err != nil {
 
 | 语料 | nya% | 7z -mx9% | gap |
 | --- | ---: | ---: | ---: |
-| structured text（合成） | 1.1 | 1.6 | −0.5pp |
+| structured text（合成） | 0.9 | 1.6 | −0.7pp |
 | pseudo_enwik（合成） | 0.7 | 1.1 | −0.5pp |
-| mixed JSON / log | 7.1 | 5.0 | +2.1pp |
-| Silesia dickens（1 MiB 切片） | 38.3 | 29.6 | +8.8pp |
+| mixed JSON / log | **4.8** | 5.0 | **−0.1pp** |
+| Silesia dickens（1 MiB 切片） | **30.2** | 29.6 | **+0.6pp** |
 
 ### Solid 归档 vs 7-Zip（36 文件混合语料）
 
@@ -292,7 +292,7 @@ if err := r.Extract("./restored"); err != nil {
 
 | | NYA | 7z | gap |
 | --- | ---: | ---: | ---: |
-| 压缩/原始 | **9.86%** | 8.44% | **+1.42pp** |
+| 压缩/原始 | **8.75%** | 8.44% | **+0.32pp** |
 
 Solid 写入使用 **扩展名分组**、**text-like 优先排序** 与 level-9 LZMA2；BCJ whole-stream 门控后 gap 从约 +1.79pp 改善。重跑：`go test -run TestSolidArchiveVs7z -timeout 10m -v ./...`
 
