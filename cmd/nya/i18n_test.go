@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -35,5 +36,22 @@ func TestTFallback(t *testing.T) {
 	cliLang = "fr"
 	if T("send.stop") != "Ctrl+C to stop" {
 		t.Fatal(T("send.stop"))
+	}
+}
+
+func TestUsageI18n(t *testing.T) {
+	cliLang = "en"
+	if !strings.Contains(T("usage.main"), "source-password") {
+		t.Fatal("en usage.main missing password policy")
+	}
+	if !strings.Contains(T("usage.convert"), "-source-password") {
+		t.Fatal("en usage.convert missing source-password")
+	}
+	cliLang = "zh"
+	if !strings.Contains(T("usage.main"), "source-password") {
+		t.Fatal("zh usage.main missing source-password")
+	}
+	if !strings.Contains(T("usage.convert"), "不交互") {
+		t.Fatal("zh usage.convert missing no-prompt policy")
 	}
 }

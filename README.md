@@ -111,8 +111,10 @@ nya open -overwrite game.nya                       # extract into existing .\gam
 nya verify backup.nya                              # check stored digests
 nya info backup.nya                                # header details, including codec
 nya repair damaged.nya fixed.nya                   # rebuild using the parity data
-nya convert legacy.zip repaired.nya                # unpack zip/7z/rar → NYA (+FEC, +download index)
+nya convert legacy.zip repaired.nya                # zip/7z/rar/nya ↔ (+FEC on .nya out)
 nya convert -fec 20 old.rar backup.nya             # WinRAR-style recovery, but configurable
+nya convert archive.nya out.zip                    # nya → zip
+nya convert -source-password secret enc.zip out.nya  # encrypted input requires flag (no prompt)
 nya manifest add GamePack.nya                      # upsert embedded download index
 nya manifest del GamePack.nya                      # remove embedded download index
 nya manifest export -o GamePack.nyam --url https://cdn/game.nya GamePack.nya
@@ -179,20 +181,28 @@ nya repair broken.rar fixed.rar     # RAR structure rebuild (RAR4/RAR5 store blo
 
 7z is not supported for repair (no recovery record). Use `nya convert` if 7z can still extract.
 
-### Convert legacy archives (zip / 7z / rar → NYA)
+### Convert archives (zip / 7z / rar / nya ↔)
 
-Use **`nya convert`** to unpack a damaged or legacy archive and repack it as `.nya` with
-optional FEC — something zip and 7z cannot do natively, and WinRAR only partially
-addresses with fixed-size recovery records.
+**`nya convert`** is a file-tree hub: unpack any supported archive, repack as another.
+Optional FEC when the output is `.nya`.
 
 ```bash
-nya convert game.zip game.nya                      # zip via built-in reader
+nya convert game.zip game.nya                      # zip → nya
 nya convert -fec 30 archive.7z archive.nya         # 7z via p7zip (7z on PATH)
-nya convert -source-password secret old.rar new.nya  # encrypted RAR input
+nya convert -source-password secret old.rar new.nya  # encrypted input (required; no prompt)
+nya convert archive.nya out.zip                    # nya → zip
+nya convert -password lock plain.nya locked.nya    # encrypt *output* .nya
 nya convert -level 9 -solid -fec 10 bundle.zip bundle.nya
 ```
 
-Aliases: `nya import`, `nya repack`. Formats: **zip** (pure Go); **7z, rar, tar.\*** require
+**Password policy (no interactive prompt):**
+
+| Flag | Meaning |
+| --- | --- |
+| `-source-password` | Unlock encrypted **input** (zip/7z/rar/nya). **Required** if input is encrypted; omit → error. |
+| `-password` | Encrypt **output** (`.nya`, or zip/7z via 7z). Optional. |
+
+Aliases: `nya import`, `nya export`, `nya repack`. Formats: **zip** (pure Go); **7z, rar, tar.\*** require
 [7-Zip](https://www.7-zip.org/) / `p7zip-full`. Paths are stored as **UTF-8** (中文 filenames
 roundtrip correctly). See [docs/BENCHMARK-FEC.md](docs/BENCHMARK-FEC.md) for FEC vs WinRAR/7z.
 

@@ -41,6 +41,10 @@ func ConvertArchive(src, dst string, opts ConvertOptions) (*ConvertResult, error
 		format = "7z-supported"
 	}
 
+	if err := RequireSourcePassword(src, opts.SourcePassword); err != nil {
+		return nil, err
+	}
+
 	tmp, err := os.MkdirTemp("", "nya-convert-*")
 	if err != nil {
 		return nil, err
@@ -49,7 +53,7 @@ func ConvertArchive(src, dst string, opts ConvertOptions) (*ConvertResult, error
 
 	staging := filepath.Join(tmp, "data")
 	if err := ExtractForeignArchive(src, staging, ImportOptions{Password: opts.SourcePassword}); err != nil {
-		return nil, err
+		return nil, MapExtractPasswordError(err, opts.SourcePassword != "")
 	}
 
 	f, err := os.Create(dst)

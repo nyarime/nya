@@ -122,14 +122,28 @@ func readHeader(path string, n int) ([]byte, error) {
 }
 
 func extractZipArchive(path, destDir, password string) error {
-	if password != "" {
-		return fmt.Errorf("import: encrypted zip requires 7z")
-	}
 	zr, err := zip.OpenReader(path)
 	if err != nil {
 		return err
 	}
 	defer zr.Close()
+
+	encrypted := false
+	for _, f := range zr.File {
+		if f.Flags&0x1 != 0 {
+			encrypted = true
+			break
+		}
+	}
+	if encrypted {
+		if password == "" {
+			return ErrPasswordRequired
+		}
+		if !sevenZipAvailable() {
+			return fmt.Errorf("import: encrypted zip requires 7-Zip (`7z` on PATH) plus -source-password")
+		}
+		return extractVia7z(path, destDir, password)
+	}
 
 	for _, f := range zr.File {
 		name := f.Name
@@ -211,7 +225,8 @@ func extractVia7z(path, destDir, password string) error {
 		if msg == "" {
 			msg = err.Error()
 		}
-		return fmt.Errorf("import: 7z extract failed: %s", msg)
+		raw := fmt.Errorf("import: 7z extract failed: %s", msg)
+		return MapExtractPasswordError(raw, password != "")
 	}
 	return nil
 }

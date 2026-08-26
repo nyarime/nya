@@ -102,8 +102,10 @@ nya open -overwrite game.nya                       # 解进已有 .\game\（覆�
 nya verify backup.nya                              # 校验摘要
 nya info backup.nya                                # 头信息（含编解码）
 nya repair damaged.nya fixed.nya                   # 用奇偶数据修复
-nya convert legacy.zip repaired.nya                # zip/7z/rar → NYA（+FEC、+下载索引）
+nya convert legacy.zip repaired.nya                # zip/7z/rar/nya 互转（输出 .nya 可加 FEC）
 nya convert -fec 20 old.rar backup.nya
+nya convert archive.nya out.zip                    # nya → zip
+nya convert -source-password secret enc.zip out.nya  # 加密输入必须带参数（不交互）
 nya manifest add GamePack.nya                      # 写入/更新嵌入下载索引
 nya manifest del GamePack.nya                      # 删除嵌入索引
 nya manifest export -o GamePack.nyam --url https://cdn/game.nya GamePack.nya
@@ -170,18 +172,27 @@ nya repair broken.rar fixed.rar     # RAR 结构重建（RAR4/RAR5 存储块）
 
 7z 不支持修复（无恢复记录）。若 7z 仍能解开，可用 `nya convert`。
 
-### 转换旧归档（zip / 7z / rar → NYA）
+### 归档互转（zip / 7z / rar / nya ↔）
 
-**`nya convert`** 解旧包再打成 `.nya`，可加 FEC — zip/7z 本身做不到，WinRAR 的恢复记录也只有有限能力。
+**`nya convert`** 以文件树为中枢：解开任一支持格式，再打成另一种。输出为 `.nya` 时可加 FEC。
 
 ```bash
 nya convert game.zip game.nya
 nya convert -fec 30 archive.7z archive.nya         # 需 PATH 上有 7z
-nya convert -source-password secret old.rar new.nya
+nya convert -source-password secret old.rar new.nya  # 加密输入必填；不交互询问
+nya convert archive.nya out.zip                    # nya → zip
+nya convert -password lock plain.nya locked.nya    # 加密*输出* .nya
 nya convert -level 9 -solid -fec 10 bundle.zip bundle.nya
 ```
 
-别名：`nya import`、`nya repack`。格式：**zip**（纯 Go）；**7z / rar / tar.\*** 需 [7-Zip](https://www.7-zip.org/) / `p7zip-full`。路径存 **UTF-8**（中文文件名可往返）。FEC 对比见 [docs/BENCHMARK-FEC.md](docs/BENCHMARK-FEC.md)。
+**密码策略（不交互询问）：**
+
+| 参数 | 含义 |
+| --- | --- |
+| `-source-password` | 解开加密**输入**（zip/7z/rar/nya）。输入已加密时**必填**；省略 → 报错。 |
+| `-password` | 加密**输出**（`.nya`，或经 7z 的 zip/7z）。可选。 |
+
+别名：`nya import`、`nya export`、`nya repack`。格式：**zip**（纯 Go）；**7z / rar / tar.\*** 需 [7-Zip](https://www.7-zip.org/) / `p7zip-full`。路径存 **UTF-8**（中文文件名可往返）。FEC 对比见 [docs/BENCHMARK-FEC.md](docs/BENCHMARK-FEC.md)。
 
 等级 0–9，观感类似 7-Zip / WinRAR：
 
