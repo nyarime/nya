@@ -104,16 +104,22 @@ Multi-chunk is **on by default** for non-solid files > 4 MiB
 
 - CompressionID **5** + `Writer.SetDict` / `Reader.SetDict` / CLI `-dict`
 - Solid path uses dict via `compressRaw`
-- Dictionary is **external** for now (same file at create and extract)
-- **Next:** embed dict in archive / auto-train from solid groups
+- Dictionary is **external** (`-dict`) or **embedded** (tail `0x0006`)
+- **Auto-train from solid groups** — `applyAutoSolidDict()` at solid close;
+  enabled by default on text-heavy packs (levels 3–4, or ≥75% text-like at
+  level 9 when derived dict beats plain zstd). Skips when no round-trip gain.
 
-**Status:** external + **embedded** (tail `0x0006`) landed; auto-train from solid groups still TODO.
+**Status:** external + embedded + **auto-wire landed** (#46); mixed LZMA2 bench
+unchanged — auto-dict targets zstd solid levels. See [docs/SOLID-DICT.md](docs/SOLID-DICT.md).
 
 ### 6. Keep grinding NYA-LZMA2 (not “done”)
 
-BT4 + optional optimal parse exist, but the encoder is **not thoroughly
-finished** vs xz/7-Zip. Tracked in [SPEC-CODECS.md](SPEC-CODECS.md). This is
-ongoing craft, not a one-sprint checkbox.
+BT4 + optional optimal parse exist in **`github.com/nyarime/compress` v0.2.6**,
+but the encoder is **not thoroughly finished** vs xz/7-Zip. Recent compress
+releases: dual-encode guard, length price tables, BT4 navigation, JSON/log
+optimal cut-offs. Remaining gaps: **dickens +8.8pp**, **mixed_json +2.1pp**
+vs 7z at level 9. Tracked in [SPEC-CODECS.md](SPEC-CODECS.md) and
+[compress ROADMAP](https://github.com/nyarime/compress/blob/main/ROADMAP.md).
 
 ---
 
@@ -121,7 +127,7 @@ ongoing craft, not a one-sprint checkbox.
 
 | Item | Intent |
 | --- | --- |
-| **Dictionaries** | Embed dict in archive; auto-train from solid groups (external `-dict` MVP done) |
+| **Dictionaries** | ~~Embed dict~~ done; ~~auto-train from solid groups~~ wired (zstd levels) |
 | **Better zstd matcher** | Close ratio gap vs libzstd without new on-disk ID |
 | **Optional “best effort” optimal path** | Switchable optimal parse / deeper search — not default |
 | **`nya get` resume / partial** | Harden `.nyam.state`, Range, multi-chunk partial fetch |
@@ -193,6 +199,8 @@ also strengthens the distribute/recover story.
 | [docs/SPEC-MULTICHUNK.md](docs/SPEC-MULTICHUNK.md) | Multi-chunk design |
 | [docs/BENCHMARK-FEC.md](docs/BENCHMARK-FEC.md) | Recovery vs 7z/RAR |
 | [docs/BENCHMARK-COMPRESS.md](docs/BENCHMARK-COMPRESS.md) | Compression A/B |
+| [docs/SOLID-DICT.md](docs/SOLID-DICT.md) | Solid zstd dict (manual + auto) |
+| [docs/COMPRESS-ECOSYSTEM.md](docs/COMPRESS-ECOSYSTEM.md) | `nyarime/compress` split library |
 | [docs/BENCHMARK-CORPUS.md](docs/BENCHMARK-CORPUS.md) | Public corpus + raw data plan |
 | [SPEC-CODECS.md](SPEC-CODECS.md) | Zstd vs LZMA2 roles |
 | [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) | `.nyam` / get transport |

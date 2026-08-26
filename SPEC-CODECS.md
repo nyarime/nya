@@ -78,7 +78,7 @@ Improvements ship in **software versions**, not format bumps:
 
 1. Stronger match finder (lazy matching, wider window at high levels)
 2. **Dictionary mode** — CompressionID 5 + external `-dict` + **embedded tail 0x0006**
-   (auto-load on Open); auto-train from solid groups still TODO
+   + **auto-derive at solid close** on text-heavy packs (levels 3–4; round-trip gated)
 3. SIMD literal/copy paths (already partially present in decompress)
 4. Custom FSE tables re-enabled once cross-decoder conformance tests pass
 5. **Default level migration:** move `LevelDefault` from LZMA2 (5) to NYA-Zstd
@@ -111,20 +111,23 @@ cross-checking against `xz -9`; NYA archives store **raw LZMA2** only.
 NYA-LZMA2 is a **from-scratch** encoder that is **usable but not finished**:
 
 - Range coder + LZMA state machine
-- **BT4** match finder (hash 2/3/4 + binary tree) — landed; replaces the old
-  hash-chain walker
+- **BT4** match finder (hash 2/3/4 + binary tree) — v0.2.5 navigation fix
 - **Price-based greedy** parse with one-step literal lookahead (default)
-- **Optional DP optimal parse** (`Lzma2Options.OptimalParse`) — helps some
-  repetitive single streams; often loses on mixed solid trees (see benches)
+- **Optional DP optimal parse** (`Lzma2Options.OptimalParse`) — dual-encode
+  vs greedy at level 9 (`compress` v0.2.3+); helps repetitive streams; often
+  loses on mixed solid trees (see benches)
+- Cached **length price tables** for optimal DP (v0.2.4+)
+- **JSON/log dense cut-offs** in optimal band 17–80 B (v0.2.6)
 - Parallel **segments** with dictionary continuity across LZMA2 chunks inside
   a segment (segment boundaries still reset the dict)
 
 Decompression uses the in-tree pure Go decoder (`xz_decompress.go` / LZMA2
 layer).
 
-Honest gap vs `xz` / 7-Zip: match extension / SIMD, optimal-window policy at
-high depth, solid+dedup archive profile, and general encoder maturity — tracked
-in [ROADMAP.md](ROADMAP.md). Do not claim “LZMA2 is done” because BT4 landed.
+Honest gap vs `xz` / 7-Zip (Aug 2026, `compress` v0.2.6): mixed_json +2.1pp,
+Silesia dickens slice +8.8pp at level-9 optimal; solid mixed corpus +1.42pp
+vs 7z. Match finder quality and optimal path selection remain open — tracked in
+[ROADMAP.md](ROADMAP.md) and [compress ROADMAP](https://github.com/nyarime/compress/blob/main/ROADMAP.md).
 
 ### Roadmap (same LZMA2 bitstream)
 

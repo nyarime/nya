@@ -13,10 +13,13 @@ images**, **CDN large objects**, and **unreliable tunnels** better than
 **[ROADMAP.md](ROADMAP.md)**.
 
 This repository is the **canonical** format spec, reference implementation,
-and `nya` CLI (`get` / `send` / `gui` / `sfx`, …). Pure Go, no cgo, two
-dependencies: `github.com/nyarime/gofec` (RaptorQ / LDPC) and
-`golang.org/x/sys` (xattrs). **NYA-Zstd** is the house codec (RFC 8878);
-**NYA-LZMA2** is the `--best` lane — see [SPEC-CODECS.md](SPEC-CODECS.md).
+and `nya` CLI (`get` / `send` / `gui` / `sfx`, …). Pure Go, no cgo. Dependencies:
+
+- `github.com/nyarime/gofec` (RaptorQ / LDPC)
+- `github.com/nyarime/compress` **v0.2.6** — house NYA-Zstd + NYA-LZMA2 ([Apache-2.0](docs/COMPRESS-ECOSYSTEM.md))
+- `golang.org/x/sys` (xattrs)
+
+**NYA-Zstd** is the house codec (RFC 8878); **NYA-LZMA2** is the `--best` lane — see [SPEC-CODECS.md](SPEC-CODECS.md).
 
 ## What is in an archive
 
@@ -207,8 +210,10 @@ Levels run 0 to 9, the way 7-Zip and WinRAR present them:
 `create` also accepts `-solid` to compress every file as a single stream,
 `-codec` to override the level's choice, `-password` to encrypt the payload,
 `-workers` to cap concurrency on **create** and **extract** (parallel per-chunk
-decompress when `ChunkCount > 1`), and **`-no-embed`** to skip the default
-embedded download index (needed for single-URL `nya get`).
+decompress when `ChunkCount > 1`), **`-no-embed`** to skip the default
+embedded download index (needed for single-URL `nya get`), and **`-dict`**
+to embed a zstd dictionary for text-heavy solid packs (levels 1–4).
+Solid mode also **auto-derives** a dictionary when it helps — see [docs/SOLID-DICT.md](docs/SOLID-DICT.md).
 
 ## Library
 
@@ -296,6 +301,31 @@ regenerate locally — numbers vary by CPU). Treat columns as relative, not abso
 
 Details: [docs/BENCHMARK-COMPRESS.md](docs/BENCHMARK-COMPRESS.md).
 
+### House LZMA2 vs 7-Zip (`github.com/nyarime/compress` v0.2.6)
+
+Single-stream level-9 optimal + dual-encode guard (`compress/lzma2` harness):
+
+| corpus | nya% | 7z -mx9% | gap |
+| --- | ---: | ---: | ---: |
+| structured text (synthetic) | 1.1 | 1.6 | −0.5pp |
+| pseudo_enwik (synthetic) | 0.7 | 1.1 | −0.5pp |
+| mixed JSON / log lines | 7.1 | 5.0 | +2.1pp |
+| Silesia dickens (1 MiB slice) | 38.3 | 29.6 | +8.8pp |
+
+Regenerate: `go test -C $(go env GOPATH)/pkg/mod/github.com/nyarime/compress@v0.2.6/lzma2 -run TestBenchVs7zCorpora -timeout 15m` or clone [nyarime/compress](https://github.com/nyarime/compress).
+
+### Solid archive vs 7-Zip (mixed 36-file corpus)
+
+`TestSolidArchiveVs7z` — NYA level-9 solid vs `7z -mx9 -m0=lzma2 -ms=on`:
+
+| | NYA | 7z | gap |
+| --- | ---: | ---: | ---: |
+| compressed / raw | **9.86%** | 8.44% | **+1.42pp** |
+
+Solid writer applies **extension grouping**, **text-like-first sorting**, and
+level-9 LZMA2. Gap improved from ~+1.79pp (text sort only) with BCJ
+whole-stream gate tuning. Regenerate: `go test -run TestSolidArchiveVs7z -timeout 10m -v ./...`
+
 
 Close on **structured text** (nya greedy 3.62% vs xz 4.24% / 7z 4.18% on the
 corpus above). **Solid** closes most of the gap on many-file trees (sorted
@@ -307,7 +337,9 @@ structured text 4.61% vs greedy 3.62%; solid sorted 31.52% vs 30.39%). Greedy
 + extension/content-kind sort is the current default; see the A/B table above.
 
 Solid mode applies **extension grouping**, **content-kind sorting** (magic
-bytes within each extension group), and the **greedy LZMA2 parser**.
+bytes within each extension group, text-like members first), **optional auto
+zstd dictionary** (levels 3–4 on text-heavy packs), and the **greedy LZMA2
+parser** at level 9 (with dual-encode optimal guard from `compress` v0.2.3+).
 Regenerate numbers: `NYA_BENCH_WRITE=1 go test -run TestREADMEBenchmarkSuite -timeout 60m ./...`
 (requires `xz`, `7z`, `zstd` on PATH). Details: [docs/BENCHMARK-COMPRESS.md](docs/BENCHMARK-COMPRESS.md).
 
@@ -384,6 +416,8 @@ closed-source product without GPL obligations, contact
 - [docs/SPEC-MULTICHUNK.md](docs/SPEC-MULTICHUNK.md) — **multi-chunk entries** (v1.3)
 - [docs/BENCHMARK-MULTICHUNK.md](docs/BENCHMARK-MULTICHUNK.md) — **multi-chunk parallel** (compress workers, FEC repair)
 - [docs/BENCHMARK-COMPRESS.md](docs/BENCHMARK-COMPRESS.md) — compression A/B measurements
+- [docs/SOLID-DICT.md](docs/SOLID-DICT.md) — solid zstd dictionary (`-dict` + auto-train)
+- [docs/COMPRESS-ECOSYSTEM.md](docs/COMPRESS-ECOSYSTEM.md) — `nyarime/compress` split library
 - [docs/BENCHMARK-FEC.md](docs/BENCHMARK-FEC.md) — FEC recovery vs 7z/RAR
 - [docs/BENCHMARK-CORPUS.md](docs/BENCHMARK-CORPUS.md) — public corpus + raw data plan
 - [docs/NOTE-UPX.md](docs/NOTE-UPX.md) — UPX vs archive compression on ELF

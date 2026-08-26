@@ -19,7 +19,18 @@ NYA-Zstd and NYA-LZMA2 live in **`github.com/nyarime/compress`**:
 - **lzma2/** — in-house raw LZMA2 encoder + LZMA/XZ decode helpers
 - **NYA** imports compress via `codec_bridge.go`; on-disk CompressionID unchanged
 
-Migration **v0.1.0** landed; further encoder work happens in compress, not duplicated in nya.
+Migration **v0.1.0** landed; encoder ratio work ships as **v0.2.x** tags.
+
+### Recent LZMA2 releases (Aug 2026)
+
+| Tag | Highlights |
+| --- | --- |
+| v0.2.3 | Dual-encode optimal/greedy min-size guard at level 9 |
+| v0.2.4 | Cached length price tables for optimal DP |
+| v0.2.5 | BT4 tree navigation; optimal all-rep scan |
+| v0.2.6 | JSON/log dense match cut-offs in optimal parse |
+
+Benchmark harness: [compress/docs/BENCHMARK-7Z.md](https://github.com/nyarime/compress/blob/main/docs/BENCHMARK-7Z.md).
 
 ## License hygiene
 
@@ -31,7 +42,7 @@ Migration **v0.1.0** landed; further encoder work happens in compress, not dupli
 
 ```go
 require (
-    github.com/nyarime/compress v0.1.0
+    github.com/nyarime/compress v0.2.6
     github.com/nyarime/gofec/v2 v2.0.0
 )
 ```
