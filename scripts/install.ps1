@@ -8,7 +8,7 @@
 #   # or: install.ps1 -Uninstall
 #
 # Installs only nya.exe (use `nya get` for downloads; no separate nya-get).
-# Options: -Version 0.1.8  -Prefix DIR  -NoAssociate  -NoPath  -Uninstall
+# Options: -Version 0.1.9  -Prefix DIR  -NoAssociate  -NoPath  -Uninstall
 
 [CmdletBinding()]
 param(
