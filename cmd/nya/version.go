@@ -3,7 +3,7 @@ package main
 import "strings"
 
 // cliVersion is set at link time by scripts/release-local.sh / CI when available.
-var cliVersion = "0.1.17"
+var cliVersion = "0.1.18"
 
 const nyaUAProduct = "Nya"
 
