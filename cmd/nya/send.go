@@ -269,6 +269,9 @@ func cmdSend(args []string) error {
 
 	indexURL := publicBase + "/" + url.PathEscape(indexName)
 	nyaURL := publicBase + "/" + url.PathEscape(archiveName)
+	if patched, err := patchManifestArchiveSource(nyamJSON, nyaURL); err == nil {
+		nyamJSON = patched
+	}
 	directURL := ""
 	if mode == sendModeFile {
 		directURL = publicBase + "/" + url.PathEscape(directName)
@@ -343,6 +346,18 @@ func buildSendIndex(archive, publicNyaName string, blockSize int64) ([]byte, err
 		return nil, err
 	}
 	m.Archive.Name = publicNyaName
+	return json.MarshalIndent(m, "", "  ")
+}
+
+// patchManifestArchiveSource sets sources to the absolute archive URL served by nya send.
+// Relative names (relapse3.log.nya) work when fetching .nyam over HTTPS, but saved .nyam
+// files need a full URL for nya get / double-click association.
+func patchManifestArchiveSource(nyamJSON []byte, archiveURL string) ([]byte, error) {
+	m, err := nya.ParseManifest(nyamJSON)
+	if err != nil {
+		return nil, err
+	}
+	m.Sources = []nya.ManifestSource{{URL: archiveURL, Priority: 10}}
 	return json.MarshalIndent(m, "", "  ")
 }
 
