@@ -12,10 +12,13 @@ import (
 )
 
 const (
-	nyaProgID     = "Nyarime.NYA"
-	nyaExtKey     = `.nya`
-	nyaFileDesc   = "Nyarime Archive"
-	nyaShellOpen  = `open`
+	nyaProgID      = "Nyarime.NYA"
+	nyamProgID     = "Nyarime.NYAM"
+	nyaExtKey      = `.nya`
+	nyamExtKey     = `.nyam`
+	nyaFileDesc    = "Nyarime Archive"
+	nyamFileDesc   = "NYA Download Manifest"
+	nyaShellOpen   = `open`
 )
 
 func cmdAssociate(args []string) error {
@@ -26,8 +29,8 @@ func cmdAssociate(args []string) error {
 			uninstall = true
 		case "-h", "--help":
 			fmt.Print(`Usage:
-  nya associate              register .nya → double-click extracts to .<name>\
-  nya associate -uninstall   remove the file association (current user)
+  nya associate              register .nya → nya open; .nyam → nya get
+  nya associate -uninstall   remove file associations (current user)
 `)
 			return nil
 		}
@@ -47,8 +50,8 @@ func windowsAssociate() error {
 	if err != nil {
 		return err
 	}
-	// Quote path for registry command line.
-	cmd := fmt.Sprintf(`"%s" open "%%1"`, exe)
+	openCmd := fmt.Sprintf(`"%s" open "%%1"`, exe)
+	getCmd := fmt.Sprintf(`"%s" get "%%1"`, exe)
 
 	classes, err := registry.OpenKey(registry.CURRENT_USER, `Software\Classes`, registry.SET_VALUE|registry.CREATE_SUB_KEY)
 	if err != nil {
@@ -56,36 +59,49 @@ func windowsAssociate() error {
 	}
 	defer classes.Close()
 
-	ext, _, err := registry.CreateKey(classes, nyaExtKey, registry.SET_VALUE)
+	if err := windowsRegisterExt(classes, nyaExtKey, nyaProgID, nyaFileDesc, openCmd); err != nil {
+		return err
+	}
+	if err := windowsRegisterExt(classes, nyamExtKey, nyamProgID, nyamFileDesc, getCmd); err != nil {
+		return err
+	}
+
+	fmt.Printf("Associated %s → nya open (extract beside archive)\n", nyaExtKey)
+	fmt.Printf("Associated %s → nya get (download + restore)\n", nyamExtKey)
+	fmt.Println("(Current user only. Run: nya associate -uninstall  to remove.)")
+	return nil
+}
+
+func windowsRegisterExt(classes registry.Key, extKey, progID, desc, cmd string) error {
+	ext, _, err := registry.CreateKey(classes, extKey, registry.SET_VALUE)
 	if err != nil {
 		return err
 	}
-	if err := ext.SetStringValue("", nyaProgID); err != nil {
+	if err := ext.SetStringValue("", progID); err != nil {
 		ext.Close()
 		return err
 	}
 	ext.Close()
 
-	prog, _, err := registry.CreateKey(classes, nyaProgID, registry.SET_VALUE)
+	prog, _, err := registry.CreateKey(classes, progID, registry.SET_VALUE)
 	if err != nil {
 		return err
 	}
-	defer prog.Close()
-	if err := prog.SetStringValue("", nyaFileDesc); err != nil {
+	if err := prog.SetStringValue("", desc); err != nil {
+		prog.Close()
 		return err
 	}
+	prog.Close()
 
 	shell, _, err := registry.CreateKey(prog, `shell\`+nyaShellOpen+`\command`, registry.SET_VALUE)
 	if err != nil {
 		return err
 	}
-	defer shell.Close()
 	if err := shell.SetStringValue("", cmd); err != nil {
+		shell.Close()
 		return err
 	}
-
-	fmt.Printf("Associated %s with:\n  %s\nDouble-click a .nya file to extract into .<basename>\\\n", nyaExtKey, cmd)
-	fmt.Println("(Current user only. Run: nya associate -uninstall  to remove.)")
+	shell.Close()
 	return nil
 }
 
@@ -96,17 +112,18 @@ func windowsUnassociate() error {
 	}
 	defer classes.Close()
 
-	// Only remove if we still own the ProgID pointer.
-	ext, err := registry.OpenKey(classes, nyaExtKey, registry.QUERY_VALUE|registry.SET_VALUE)
-	if err == nil {
-		cur, _, _ := ext.GetStringValue("")
-		ext.Close()
-		if strings.EqualFold(cur, nyaProgID) {
-			_ = registry.DeleteKey(classes, nyaExtKey)
+	for extKey, progID := range map[string]string{nyaExtKey: nyaProgID, nyamExtKey: nyamProgID} {
+		ext, err := registry.OpenKey(classes, extKey, registry.QUERY_VALUE|registry.SET_VALUE)
+		if err == nil {
+			cur, _, _ := ext.GetStringValue("")
+			ext.Close()
+			if strings.EqualFold(cur, progID) {
+				_ = registry.DeleteKey(classes, extKey)
+			}
 		}
+		_ = deleteTree(classes, progID)
 	}
-	_ = deleteTree(classes, nyaProgID)
-	fmt.Println("Removed .nya file association (if it pointed at Nyarime.NYA).")
+	fmt.Println("Removed .nya / .nyam file associations (if they pointed at Nyarime.*).")
 	return nil
 }
 

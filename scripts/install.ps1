@@ -53,21 +53,34 @@ function Remove-UserPath([string]$dir) {
 }
 
 function Install-Associate([string]$nyaExe) {
-    $progId = "Nyarime.NYA"
+    $nyaProgId = "Nyarime.NYA"
+    $nyamProgId = "Nyarime.NYAM"
     New-Item -Path "HKCU:\Software\Classes\.nya" -Force | Out-Null
-    Set-ItemProperty -Path "HKCU:\Software\Classes\.nya" -Name "(default)" -Value $progId
-    New-Item -Path "HKCU:\Software\Classes\$progId" -Force | Out-Null
-    Set-ItemProperty -Path "HKCU:\Software\Classes\$progId" -Name "(default)" -Value "NYA Archive"
-    New-Item -Path "HKCU:\Software\Classes\$progId\shell\open\command" -Force | Out-Null
-    Set-ItemProperty -Path "HKCU:\Software\Classes\$progId\shell\open\command" -Name "(default)" -Value "`"$nyaExe`" open `"%1`""
+    Set-ItemProperty -Path "HKCU:\Software\Classes\.nya" -Name "(default)" -Value $nyaProgId
+    New-Item -Path "HKCU:\Software\Classes\$nyaProgId" -Force | Out-Null
+    Set-ItemProperty -Path "HKCU:\Software\Classes\$nyaProgId" -Name "(default)" -Value "NYA Archive"
+    New-Item -Path "HKCU:\Software\Classes\$nyaProgId\shell\open\command" -Force | Out-Null
+    Set-ItemProperty -Path "HKCU:\Software\Classes\$nyaProgId\shell\open\command" -Name "(default)" -Value "`"$nyaExe`" open `"%1`""
+    New-Item -Path "HKCU:\Software\Classes\.nyam" -Force | Out-Null
+    Set-ItemProperty -Path "HKCU:\Software\Classes\.nyam" -Name "(default)" -Value $nyamProgId
+    New-Item -Path "HKCU:\Software\Classes\$nyamProgId" -Force | Out-Null
+    Set-ItemProperty -Path "HKCU:\Software\Classes\$nyamProgId" -Name "(default)" -Value "NYA Download Manifest"
+    New-Item -Path "HKCU:\Software\Classes\$nyamProgId\shell\open\command" -Force | Out-Null
+    Set-ItemProperty -Path "HKCU:\Software\Classes\$nyamProgId\shell\open\command" -Name "(default)" -Value "`"$nyaExe`" get `"%1`""
     Write-Host "Associated .nya → nya open"
+    Write-Host "Associated .nyam → nya get"
 }
 
 function Uninstall-Associate {
     Remove-Item -Path "HKCU:\Software\Classes\Nyarime.NYA" -Recurse -Force -ErrorAction SilentlyContinue
-    $cur = (Get-ItemProperty -Path "HKCU:\Software\Classes\.nya" -ErrorAction SilentlyContinue)."(default)"
-    if ($cur -eq "Nyarime.NYA") {
+    Remove-Item -Path "HKCU:\Software\Classes\Nyarime.NYAM" -Recurse -Force -ErrorAction SilentlyContinue
+    $nyaCur = (Get-ItemProperty -Path "HKCU:\Software\Classes\.nya" -ErrorAction SilentlyContinue)."(default)"
+    if ($nyaCur -eq "Nyarime.NYA") {
         Remove-Item -Path "HKCU:\Software\Classes\.nya" -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    $nyamCur = (Get-ItemProperty -Path "HKCU:\Software\Classes\.nyam" -ErrorAction SilentlyContinue)."(default)"
+    if ($nyamCur -eq "Nyarime.NYAM") {
+        Remove-Item -Path "HKCU:\Software\Classes\.nyam" -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 

@@ -47,6 +47,35 @@ func TestSendPublicNames(t *testing.T) {
 }
 
 
+func TestPatchManifestArchiveSource(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "f.txt")
+	if err := os.WriteFile(src, []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	archive, cleanup, err := packSendSource(src, filepath.Join(root, "out.nya"), nya.LevelFastest, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	raw, err := buildSendIndex(archive, "f.txt.nya", 65536)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "https://ex.trycloudflare.com/f.txt.nya"
+	patched, err := patchManifestArchiveSource(raw, want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := nya.ParseManifest(patched)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Sources) != 1 || m.Sources[0].URL != want {
+		t.Fatalf("sources: %+v", m.Sources)
+	}
+}
+
 func TestPackSendSourceDir(t *testing.T) {
 	root := t.TempDir()
 	src := filepath.Join(root, "GameData")

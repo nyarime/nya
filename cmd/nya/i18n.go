@@ -73,7 +73,7 @@ Usage:
   nya get     [flags] --url <URL>            download (+ progress)
   nya send    [flags] <file|dir|archive.nya> share via tunnel / LAN
   nya gui     [archive.nya]                  open nyaFM
-  nya associate [-uninstall]                 Windows: .nya → nya open
+  nya associate [-uninstall]                 Windows: .nya → open; .nyam → get
 
 Passwords (no interactive prompt):
   Encrypted input  → pass -password (extract/list/info/open/verify)
@@ -184,7 +184,7 @@ Example:
   nya get     [flags] --url <URL>            下载（含进度）
   nya send    [flags] <文件|目录|archive.nya> 隧道 / 局域网分享
   nya gui     [archive.nya]                  打开 nyaFM
-  nya associate [-uninstall]                 Windows：.nya → nya open
+  nya associate [-uninstall]                 Windows：.nya → open；.nyam → get
 
 密码（不交互询问）：
   输入已加密  → extract/list/info/open/verify 用 -password
