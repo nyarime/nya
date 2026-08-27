@@ -16,7 +16,7 @@ import (
 
 // cfTraceWellKnownURL is the stable /cdn-cgi/trace endpoint. TryCloudflare quick-tunnel
 // hostnames do not serve this path; send uses the well-known URL for origin-side edge info.
-const cfTraceWellKnownURL = "https://www.cloudflare.net/cdn-cgi/trace"
+const cfTraceWellKnownURL = "https://www.cloudflare.com/cdn-cgi/trace"
 
 // cfTraceSendURL is the probe target for nya send auto trace (tests may override).
 var cfTraceSendURL = cfTraceWellKnownURL
