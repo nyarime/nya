@@ -306,18 +306,19 @@ func printSendLinks(mode sendMode, indexURL, nyaURL, directURL, indexLocal, nyaL
 	case sendModeFile:
 		fmt.Fprintln(os.Stderr, T("send.direct"))
 		fmt.Fprintf(os.Stderr, "  %s\n", directURL)
+		fmt.Fprintf(os.Stderr, "  %s\n", nyaURL)
 		fmt.Fprintln(os.Stderr, T("send.get"))
-		fmt.Fprintf(os.Stderr, "  nya get --url %s\n", indexURL)
+		fmt.Fprintf(os.Stderr, T("send.get_fmt")+"\n", indexURL)
 	case sendModeDir:
 		fmt.Fprintln(os.Stderr, T("send.archive"))
 		fmt.Fprintf(os.Stderr, "  %s\n", nyaURL)
 		fmt.Fprintln(os.Stderr, T("send.get"))
-		fmt.Fprintf(os.Stderr, "  nya get --url %s\n", indexURL)
+		fmt.Fprintf(os.Stderr, T("send.get_fmt")+"\n", indexURL)
 	default:
 		fmt.Fprintln(os.Stderr, T("send.archive"))
 		fmt.Fprintf(os.Stderr, "  %s\n", nyaURL)
 		fmt.Fprintln(os.Stderr, T("send.get"))
-		fmt.Fprintf(os.Stderr, "  nya get --url %s\n", indexURL)
+		fmt.Fprintf(os.Stderr, T("send.get_fmt")+"\n", indexURL)
 	}
 	fmt.Fprintln(os.Stderr, T("send.stop"))
 }
