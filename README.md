@@ -50,7 +50,7 @@ curl -fsSL https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.sh
 ```bash
 # optional
 bash install.sh --prefix /usr/local          # custom prefix
-bash install.sh --version 0.1.18              # pin a release
+bash install.sh --version 0.1.19              # pin a release
 ```
 
 ### Windows
@@ -64,7 +64,7 @@ irm https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.ps1 | iex
 ```powershell
 # optional
 install.ps1 -Prefix "D:\Tools\NYA"
-install.ps1 -Version 0.1.18
+install.ps1 -Version 0.1.19
 install.ps1 -NoAssociate   # skip .nya file association
 install.ps1 -NoPath        # skip PATH change
 ```
