@@ -1,0 +1,43 @@
+# WinGet manifest template — replace PackageVersion / InstallerSha256 on each release.
+# Docs: https://learn.microsoft.com/en-us/windows/package-manager/package/manifest
+PackageIdentifier: nyarime.nya
+PackageVersion: 0.1.19
+PackageLocale: en-US
+Publisher: nyarime
+PublisherUrl: https://github.com/nyarime
+PublisherSupportUrl: https://github.com/nyarime/nya/issues
+PackageName: NYA
+PackageUrl: https://github.com/nyarime/nya
+License: GPL-3.0-only
+LicenseUrl: https://github.com/nyarime/nya/blob/main/LICENSE
+Copyright: Copyright (c) nyarime
+ShortDescription: FEC-aware archive CLI for reliable large-file distribution
+Description: |
+  NYA packs compression with configurable forward error correction and
+  single-URL download via nya get / nya send. Built for game packs, firmware
+  images, and CDN distribution over unreliable links.
+Moniker: nya
+Tags:
+  - archive
+  - compression
+  - fec
+  - distribution
+Installers:
+  - Architecture: x64
+    InstallerType: zip
+    InstallerUrl: https://github.com/nyarime/nya/releases/download/v0.1.19/nya_0.1.19_windows_amd64.zip
+    InstallerSha256: PLACEHOLDER
+    NestedInstallerType: portable
+    NestedInstallerFiles:
+      - RelativeFilePath: nya.exe
+        PortableCommandAlias: nya
+  - Architecture: arm64
+    InstallerType: zip
+    InstallerUrl: https://github.com/nyarime/nya/releases/download/v0.1.19/nya_0.1.19_windows_arm64.zip
+    InstallerSha256: PLACEHOLDER
+    NestedInstallerType: portable
+    NestedInstallerFiles:
+      - RelativeFilePath: nya.exe
+        PortableCommandAlias: nya
+ManifestType: singleton
+ManifestVersion: 1.6.0

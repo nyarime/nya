@@ -168,7 +168,7 @@ func TestDownloadResume(t *testing.T) {
 	if err := os.WriteFile(out, payload, 0644); err != nil {
 		t.Fatal(err)
 	}
-	writeDownloadState(state, out, map[uint32]struct{}{0: {}})
+	writeDownloadState(state, out, ManifestFingerprint(m), map[uint32]struct{}{0: {}})
 
 	res, err := Download(context.Background(), DownloadOptions{
 		Manifest:    m,
@@ -182,5 +182,58 @@ func TestDownloadResume(t *testing.T) {
 	}
 	if res.BlocksSkipped != 1 || res.BlocksFetched != 1 {
 		t.Fatalf("skipped=%d fetched=%d", res.BlocksSkipped, res.BlocksFetched)
+	}
+}
+
+func TestDownloadResumeIgnoresStaleManifestFingerprint(t *testing.T) {
+	dir := t.TempDir()
+	payload := make([]byte, 128*1024)
+	for i := range payload {
+		payload[i] = byte(i)
+	}
+	archive := filepath.Join(dir, "game.nya")
+	if err := os.WriteFile(archive, payload, 0644); err != nil {
+		t.Fatal(err)
+	}
+	m, err := BuildManifest(archive, 64*1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fetchCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fetchCount++
+		var start, end int64
+		if _, err := fmt.Sscanf(r.Header.Get("Range"), "bytes=%d-%d", &start, &end); err != nil {
+			http.Error(w, "bad range", http.StatusBadRequest)
+			return
+		}
+		chunk := payload[start : end+1]
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, len(payload)))
+		w.WriteHeader(http.StatusPartialContent)
+		w.Write(chunk)
+	}))
+	defer srv.Close()
+	m.Sources = []ManifestSource{{URL: srv.URL, Priority: 1}}
+
+	out := filepath.Join(dir, "out.nya")
+	state := filepath.Join(dir, "game.nyam.state")
+	writeDownloadState(state, out, "stale-manifest-fingerprint", map[uint32]struct{}{0: {}})
+
+	res, err := Download(context.Background(), DownloadOptions{
+		Manifest:    m,
+		Output:      out,
+		StatePath:   state,
+		Resume:      true,
+		Concurrency: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.BlocksSkipped != 0 {
+		t.Fatalf("stale state should not skip blocks, skipped=%d", res.BlocksSkipped)
+	}
+	if res.BlocksFetched != len(m.Download.Blocks) {
+		t.Fatalf("fetched=%d want %d", res.BlocksFetched, len(m.Download.Blocks))
 	}
 }

@@ -97,7 +97,27 @@ func cmdCreate(args []string) error {
 	noEmbed := fs.Bool("no-embed", false, "do not embed download index (default: embed for single-URL nya-get)")
 	embedBlock := fs.String("embed-block-size", "4m", "transport block size when embedding download index")
 	dictPath := fs.String("dict", "", "external zstd dictionary file (CompressionID 5; same file required at extract)")
+	profile := fs.String("profile", "", "creation profile: distribute (zstd fast, embed index, multi-chunk)")
 	fs.Parse(args)
+
+	if *profile != "" && *profile != "distribute" {
+		return fmt.Errorf("unknown profile %q, want distribute", *profile)
+	}
+	if *profile == "distribute" {
+		dist := nya.DistributeCreateProfile()
+		if !flagWasSet(args, "level") {
+			*level = dist.Level
+		}
+		if !flagWasSet(args, "solid") {
+			*solid = dist.Solid
+		}
+		if !flagWasSet(args, "multi-chunk") {
+			*multiChunk = dist.MultiChunk
+		}
+		if !flagWasSet(args, "no-embed") {
+			*noEmbed = !dist.EmbedIndex
+		}
+	}
 
 	if *level < 0 || *level > 9 {
 		return fmt.Errorf("level %d is out of range, want 0 to 9", *level)

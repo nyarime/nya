@@ -26,6 +26,9 @@ type DownloadOptions struct {
 	OnBlock     func(block DownloadBlock, done, total int)
 	OnBlockBytes func(block DownloadBlock, fetched, blockSize int64, done, total int)
 	Resume      bool
+	// ManifestFingerprint identifies the manifest for resume state. When empty,
+	// ManifestFingerprint(Manifest) is used.
+	ManifestFingerprint string
 	// Paths selects partial fetch: only transport blocks overlapping the
 	// manifest entry chunk ranges for these paths (plus header and central dir).
 	Paths []string
@@ -68,6 +71,11 @@ func Download(ctx context.Context, opt DownloadOptions) (*DownloadResult, error)
 		opt.StatePath = StatePath(opt.Output + ".nyam")
 	}
 
+	manifestFP := opt.ManifestFingerprint
+	if manifestFP == "" {
+		manifestFP = ManifestFingerprint(opt.Manifest)
+	}
+
 	urls := sortedSourceURLs(opt.Manifest.Sources)
 	start := time.Now()
 
@@ -103,7 +111,8 @@ func Download(ctx context.Context, opt DownloadOptions) (*DownloadResult, error)
 
 	done := map[uint32]struct{}{}
 	if opt.Resume {
-		if st, err := readDownloadState(opt.StatePath); err == nil && st.Output == opt.Output {
+		if st, err := readDownloadState(opt.StatePath); err == nil &&
+			st.Output == opt.Output && st.ManifestBlake3 == manifestFP {
 			for _, id := range st.Completed {
 				done[id] = struct{}{}
 			}
@@ -196,7 +205,7 @@ func Download(ctx context.Context, opt DownloadOptions) (*DownloadResult, error)
 				opt.OnBlock(j.block, completed, total)
 			}
 			doneMu.Lock()
-			writeDownloadState(opt.StatePath, opt.Output, done)
+			writeDownloadState(opt.StatePath, opt.Output, manifestFP, done)
 			doneMu.Unlock()
 		}
 	}
@@ -369,16 +378,17 @@ func readDownloadState(path string) (*DownloadState, error) {
 	return &st, nil
 }
 
-func writeDownloadState(path, output string, done map[uint32]struct{}) {
+func writeDownloadState(path, output, manifestFP string, done map[uint32]struct{}) {
 	ids := make([]uint32, 0, len(done))
 	for id := range done {
 		ids = append(ids, id)
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 	st := DownloadState{
-		Output:    output,
-		Completed: ids,
-		UpdatedAt: time.Now().UTC(),
+		ManifestBlake3: manifestFP,
+		Output:         output,
+		Completed:      ids,
+		UpdatedAt:      time.Now().UTC(),
 	}
 	b, err := json.MarshalIndent(st, "", "  ")
 	if err != nil {

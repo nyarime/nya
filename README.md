@@ -10,7 +10,8 @@ publish a single URL (`nya send` / CDN / `.nyam`), and recover with
 `nya get` + `nya repair`. That story fits **game packs**, **firmware
 images**, **CDN large objects**, and **unreliable tunnels** better than
 “yet another archive format.” Product direction:
-**[ROADMAP.md](ROADMAP.md)**.
+**[ROADMAP.md](ROADMAP.md)**. Adoption checklist:
+**[docs/ADOPTION.md](docs/ADOPTION.md)**.
 
 This repository is the **canonical** format spec, reference implementation,
 and `nya` CLI (`get` / `send` / `gui` / `sfx`, …). Pure Go, no cgo. Dependencies:

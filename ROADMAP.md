@@ -64,7 +64,9 @@ Publish:
 
 Harness: `scripts/bench-silesia.sh` (fetch + level sweep + CSV).
 
-**Status:** script landed; full public CSV still TODO (run when network/time allow).
+**Status:** script landed; Silesia partial CSV in
+[docs/bench-data/silesia-20260825-partial.csv](docs/bench-data/silesia-20260825-partial.csv);
+full re-run via `scripts/bench-silesia.sh`; enwik9 still TODO.
 
 ### 3. Rethink the default compression strategy
 

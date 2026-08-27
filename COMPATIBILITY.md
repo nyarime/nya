@@ -65,9 +65,9 @@ semantics, profile flag bits. Defined in:
 solid grouping heuristics, dedup, embedded download index, NyaFS mount tools,
 encoder improvements within the same CompressionID bitstreams.
 
-No external users yet means the foundation can still be adjusted **only until
-the v1 freeze announcement**; after that, byte layouts in the documents above
-are LTS.
+**v1 foundation freeze:** effective 2026-08-27 — byte layouts in the documents
+above are LTS. See [docs/V1-FREEZE.md](docs/V1-FREEZE.md) and
+[docs/ADOPTION.md](docs/ADOPTION.md).
 
 ## Extension rules (Win32-style)
 
