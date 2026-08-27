@@ -10,7 +10,7 @@
 #
 # Options:
 #   --prefix DIR     install root (default: ~/.local)
-#   --version VER    e.g. 0.1.17 or v0.1.17 (default: latest release)
+#   --version VER    e.g. 0.1.18 or v0.1.18 (default: latest release)
 #   --uninstall      remove binaries installed under prefix
 #   --yes            reserved (non-interactive)
 set -euo pipefail
@@ -28,7 +28,7 @@ Installs a single `nya` binary (download: `nya get`; no separate nya-get).
 
   curl -fsSL https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.sh | bash
   bash install.sh --uninstall
-  bash install.sh --prefix /usr/local --version 0.1.17
+  bash install.sh --prefix /usr/local --version 0.1.18
 EOF
   exit 0
 }
