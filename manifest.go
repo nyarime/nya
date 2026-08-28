@@ -16,15 +16,21 @@ import (
 )
 
 const (
-	ManifestFormat        = "nyam"
-	ManifestVersion       = 1
-	DefaultDownloadBlock  = 4 * 1024 * 1024 // 4 MiB
+	ManifestFormat       = "nyam"
+	ManifestVersion      = 1
+	DefaultDownloadBlock = 4 * 1024 * 1024 // 4 MiB
+
+	// DeliveryRestore: after download, unpack to the original file or directory.
+	DeliveryRestore = "restore"
+	// DeliveryFile: the .nya itself is the payload (ordinary file); do not unpack.
+	DeliveryFile = "file"
 )
 
 // Manifest is the .nyam sidecar for resumable parallel downloads.
 type Manifest struct {
 	Format   string           `json:"format"`
 	Version  int              `json:"version"`
+	Delivery string           `json:"delivery,omitempty"` // restore | file
 	Archive  ArchiveMeta      `json:"archive"`
 	Download DownloadIndex    `json:"download"`
 	Entries  []ManifestEntry  `json:"entries,omitempty"`

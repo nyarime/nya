@@ -153,8 +153,8 @@ nya create -level 9 -solid -fec 20 GamePack.nya ./GameData/   # 默认嵌入下�
 # nya manifest export -o GamePack.nyam --url https://cdn.example.com/GamePack.nya GamePack.nya
 
 nya get --url https://cdn.example.com/GamePack.nyam         # 下载并还原 GameData/（或单文件）
-nya get --url https://cdn.example.com/GamePack.nya          # 只留 GamePack.nya
-nya get -extract --url https://cdn.example.com/GamePack.nya # 强制从 .nya URL 还原
+nya get --url https://cdn.example.com/GamePack.nya          # 普通文件：只留 GamePack.nya
+nya get -extract --url https://cdn.example.com/GamePack.nya # 强制从 .nya URL 解压
 nya get -no-extract GamePack.nyam                           # 只留 .nya
 nya get -c 16 GamePack.nyam                                 # 经典 .nyam
 nya get --paths "Game/Data/level1.bin" GamePack.nyam        # 部分拉取（不解压）

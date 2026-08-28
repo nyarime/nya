@@ -100,19 +100,23 @@ func TestTopLevelEntryNames(t *testing.T) {
 
 func TestResolveGetExtract(t *testing.T) {
 	cases := []struct {
-		nyam, extract, noExtract, want bool
+		nyam, extract, noExtract bool
+		delivery                 string
+		want                     bool
 	}{
-		{true, false, false, true},
-		{false, false, false, false},
-		{false, true, false, true},
-		{true, false, true, false},
-		{true, true, true, false}, // -no-extract wins
+		{true, false, false, "", true},
+		{true, false, false, nya.DeliveryRestore, true},
+		{true, false, false, nya.DeliveryFile, false},
+		{false, false, false, "", false},
+		{false, true, false, "", true},
+		{true, false, true, nya.DeliveryRestore, false},
+		{true, true, true, nya.DeliveryFile, false}, // -no-extract wins
 	}
 	for _, tc := range cases {
-		got := resolveGetExtract(tc.nyam, tc.extract, tc.noExtract)
+		got := resolveGetExtract(tc.nyam, tc.delivery, tc.extract, tc.noExtract)
 		if got != tc.want {
-			t.Fatalf("nyam=%v extract=%v no=%v → %v want %v",
-				tc.nyam, tc.extract, tc.noExtract, got, tc.want)
+			t.Fatalf("nyam=%v delivery=%q extract=%v no=%v → %v want %v",
+				tc.nyam, tc.delivery, tc.extract, tc.noExtract, got, tc.want)
 		}
 	}
 }
@@ -236,6 +240,58 @@ func TestGetNyamAutoExtractsDir(t *testing.T) {
 	}
 	if string(got) != "a" {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestGetNyamDeliveryFileKeepsArchive(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "novel.txt")
+	if err := os.WriteFile(src, []byte("payload"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	archive := filepath.Join(root, "pack.nya")
+	if err := writeNyaArchive(archive, src, nya.SendPackProfile{Level: nya.LevelFastest}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureSendEmbed(archive, 0); err != nil {
+		t.Fatal(err)
+	}
+	srv := serveArchive(t, archive)
+	defer srv.Close()
+
+	nyam := filepath.Join(root, "pack.nyam")
+	writeNyamFor(t, archive, nyam, srv.URL)
+	// Simulate send of an existing .nya: delivery=file
+	m, err := nya.ReadManifest(nyam)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.Delivery = nya.DeliveryFile
+	if err := nya.WriteManifest(m, nyam); err != nil {
+		t.Fatal(err)
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	work := filepath.Join(root, "work")
+	if err := os.Mkdir(work, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(work); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+
+	if err := cmdGet([]string{"-o", filepath.Join(work, "kept.nya"), nyam}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(work, "kept.nya")); err != nil {
+		t.Fatalf("delivery=file should keep .nya: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(work, "novel.txt")); !os.IsNotExist(err) {
+		t.Fatal("delivery=file must not unpack")
 	}
 }
 
