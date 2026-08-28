@@ -19,26 +19,28 @@ import (
 
 func cmdGet(args []string) error {
 	fs := flag.NewFlagSet("get", flag.ExitOnError)
-	out := fs.String("o", "", "output .nya path (default: archive name); with -extract, extract destination dir")
+	out := fs.String("o", "", "output path: .nya path when keeping archive; extract dir when restoring")
 	concurrency := fs.Int("c", 0, "parallel download connections (0 = auto: one per block, max 200)")
 	resume := fs.Bool("resume", true, "resume incomplete download")
 	urlFlag := fs.String("url", "", ".nyam / .nya / plain file URL")
 	paths := fs.String("paths", "", "comma-separated entry paths for partial fetch")
-	extract := fs.Bool("extract", false, "after download, extract archive contents (default: keep the transferred .nya)")
-	noExtract := fs.Bool("no-extract", false, "deprecated: default is already keep .nya only")
-	keepNya := fs.Bool("keep-nya", false, "with -extract: keep the downloaded .nya after restore")
+	extract := fs.Bool("extract", false, "force restore after download (default for .nyam; opt-in for .nya URL)")
+	noExtract := fs.Bool("no-extract", false, "keep the .nya only (skip restore even for .nyam)")
+	keepNya := fs.Bool("keep-nya", false, "when restoring: also keep the downloaded .nya")
 	userAgent := fs.String("user-agent", "", "HTTP User-Agent (default: Nya/VERSION)")
 	cfTrace := fs.Bool("cf-trace", false, "print Cloudflare /cdn-cgi/trace before download (HTTPS URLs)")
 	resolveIP := fs.String("resolve", "", "pin HTTPS host to Cloudflare edge IP (CFST-style, e.g. 1.2.3.4 or 1.2.3.4:443)")
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, `nya get — download (transport result = transferred file)
+		fmt.Fprint(os.Stderr, `nya get — download via .nyam / embedded index
 
 Usage:
   nya get --url <name.nyam|file.nya|https://…/file>
   nya get <manifest.nyam>
 
-Default: write the .nya archive to disk (no auto-extract).
-Use -extract to restore files/dirs after download; use nya extract / nya open otherwise.
+Delivery:
+  .nyam  → download .nya then restore (file → file, directory → directory)
+  .nya   → keep the transferred .nya (use -extract to restore)
+  -no-extract  keep .nya only;  -keep-nya  keep archive after restore
 
 `)
 		fs.PrintDefaults()
@@ -46,8 +48,6 @@ Use -extract to restore files/dirs after download; use nya extract / nya open ot
 	if err := parseFlagSet(fs, args, map[string]bool{"o": true, "c": true, "url": true, "paths": true, "user-agent": true, "resolve": true}); err != nil {
 		return err
 	}
-
-	wantExtract := *extract && !*noExtract
 
 	pinned, err := parseResolveIP(*resolveIP)
 	if err != nil {
@@ -82,14 +82,29 @@ Use -extract to restore files/dirs after download; use nya extract / nya open ot
 			}
 			return downloadPlainFile(ctx, client, *urlFlag, dest)
 		}
+		wantExtract := resolveGetExtract(kind == getURLNyam, *extract, *noExtract)
 		return getViaManifest(ctx, client, httpOpts, *cfTrace, *urlFlag, "", *out, *concurrency, *resume, *paths, wantExtract, *keepNya)
 	}
 	if fs.NArg() == 1 {
-		return getViaManifest(ctx, client, httpOpts, *cfTrace, *urlFlag, fs.Arg(0), *out, *concurrency, *resume, *paths, wantExtract, *keepNya)
+		arg := fs.Arg(0)
+		isNyam := strings.HasSuffix(strings.ToLower(arg), ".nyam")
+		wantExtract := resolveGetExtract(isNyam, *extract, *noExtract)
+		return getViaManifest(ctx, client, httpOpts, *cfTrace, *urlFlag, arg, *out, *concurrency, *resume, *paths, wantExtract, *keepNya)
 	}
 	fs.Usage()
 	os.Exit(2)
 	return nil
+}
+
+// resolveGetExtract: .nyam restores by default; .nya keeps archive unless -extract.
+func resolveGetExtract(fromNyam, forceExtract, forceNoExtract bool) bool {
+	if forceNoExtract {
+		return false
+	}
+	if forceExtract {
+		return true
+	}
+	return fromNyam
 }
 
 type getURLKind int
