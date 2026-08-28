@@ -161,10 +161,10 @@ nya create -level 9 -solid -fec 20 GamePack.nya ./GameData/   # download index e
 # optional sidecar:
 # nya manifest export -o GamePack.nyam --url https://cdn.example.com/GamePack.nya GamePack.nya
 
-nya get --url https://cdn.example.com/GamePack.nya          # download + restore GameData/
-nya get -no-extract --url https://cdn.example.com/GamePack.nya  # keep .nya only
+nya get --url https://cdn.example.com/GamePack.nya          # download GamePack.nya (no auto-extract)
+nya get -extract --url https://cdn.example.com/GamePack.nya # download then restore GameData/
 nya get -c 16 GamePack.nyam                                 # classic sidecar
-nya get --paths "Game/Data/level1.bin" GamePack.nyam        # partial fetch (no auto-extract)
+nya get --paths "Game/Data/level1.bin" GamePack.nyam        # partial fetch (no extract)
 ```
 
 See [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) for the `.nyam` manifest schema.

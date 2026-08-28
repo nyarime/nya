@@ -67,7 +67,7 @@ func windowsAssociate() error {
 	}
 
 	fmt.Printf("Associated %s → nya open (extract beside archive)\n", nyaExtKey)
-	fmt.Printf("Associated %s → nya get (download + restore)\n", nyamExtKey)
+	fmt.Printf("Associated %s → nya get (download .nya; no auto-extract)\n", nyamExtKey)
 	fmt.Println("(Current user only. Run: nya associate -uninstall  to remove.)")
 	return nil
 }

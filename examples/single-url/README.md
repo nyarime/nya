@@ -15,9 +15,10 @@ nya create -level 9 -solid -fec 15 pack.nya ./GameData/   # embeds download inde
 ## Receiver
 
 ```bash
-nya get --url https://cdn.example.com/pack.nya
+nya get --url https://cdn.example.com/pack.nya   # writes pack.nya (no auto-extract)
 nya verify pack.nya
 nya open pack.nya          # or: nya extract pack.nya ./out
+# optional one-shot: nya get -extract --url …
 ```
 
 (`nya-get` still works as a compatibility shim that runs `nya get`.)

@@ -152,10 +152,10 @@ nya create -level 9 -solid -fec 20 GamePack.nya ./GameData/   # 默认嵌入下�
 # 可选旁路清单：
 # nya manifest export -o GamePack.nyam --url https://cdn.example.com/GamePack.nya GamePack.nya
 
-nya get --url https://cdn.example.com/GamePack.nya          # 下载并还原 GameData/
-nya get -no-extract --url https://cdn.example.com/GamePack.nya  # 只留 .nya
+nya get --url https://cdn.example.com/GamePack.nya          # 下载 GamePack.nya（不自动解压）
+nya get -extract --url https://cdn.example.com/GamePack.nya # 下载后还原 GameData/
 nya get -c 16 GamePack.nyam                                 # 经典 .nyam
-nya get --paths "Game/Data/level1.bin" GamePack.nyam        # 部分拉取（不自动解压）
+nya get --paths "Game/Data/level1.bin" GamePack.nyam        # 部分拉取（不解压）
 ```
 
 `.nyam` 结构见 [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md)。
