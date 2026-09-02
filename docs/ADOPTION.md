@@ -69,7 +69,7 @@ Readers built for ≤ v1.2 **reject the whole archive**. Use
 
 - enwik9 + game/firmware corpus CSV in `docs/bench-data/`
 - `nya get` partial fetch polish for multi-chunk entry paths (mid-term)
-- nyaFM: create, FEC repair UI, encryption prompts
+- Optional native GUI (out of tree; not a release dependency)
 - NyaFS mount tools (v1.x software)
 - Hosted relay / persistent send (optional product; not required for CDN adopters)
 
