@@ -4,7 +4,7 @@
 
 **NYA 要解决的是：链路上坏了、传了一半，文件往往还能打开** — 而不是再做一个「略强一点的 7z / RAR」。
 
-一次打包同时带上压缩与可配置的前向纠错（FEC），用 `nya send` / CDN / `.nyam` 发一个 URL，再用 `nya get` + `nya repair` 拉回并修复。这条故事更贴合 **游戏分包、固件镜像、CDN 大文件、不可靠隧道**，而不是「又一个压缩格式」。产品方向见 **[ROADMAP.md](ROADMAP.md)**。
+一次打包同时带上压缩与可配置的前向纠错（FEC），用 `nya send` / CDN / `.nyam` 发一个 URL，再用 `nya get` + `nya repair` 拉回并修复。这条故事更贴合 **游戏分包、固件镜像、CDN 大文件、不可靠隧道**，而不是「又一个压缩格式」。产品方向见 **[ROADMAP.md](ROADMAP.md)**，采用门槛见 **[docs/ADOPTION.md](docs/ADOPTION.md)**。
 
 本仓库是格式规范、参考实现与 **`nya` CLI**（`get` / `send` / `gui` / `sfx` …）的权威源。纯 Go、无 cgo。依赖：
 
@@ -343,7 +343,7 @@ zstd 编码器匹配与熵编码模式少于参考实现，故比率略逊。两
 | 需要旧（≤1.2）阅读器 | 保持 ≤1.2 | `nya create -multi-chunk=false` |
 | 非 solid 多文件 | solid + 排序 | 对目录 `nya create -solid -level 9` |
 
-**默认压缩等级仍是 5（LZMA2）**。很多分发 / `get` 场景更适合 **1–4（zstd，解压快）** — 是否改默认见 [ROADMAP.md](ROADMAP.md)，请勿假定会永远停在 5。
+**默认压缩等级仍是 5（LZMA2）**。CDN / `nya get` 分发请用 **`nya create -profile distribute`**（level 3 zstd）— 依据见 [docs/bench-data/silesia-summary.json](docs/bench-data/silesia-summary.json) 与 [docs/ADOPTION.md](docs/ADOPTION.md)。
 
 ## 已知限制
 
@@ -361,6 +361,8 @@ NYA 是自由软件：可在 [GNU GPL v3.0](LICENSE) 下使用、修改与再分
 ## 格式文档
 
 - [ROADMAP.md](ROADMAP.md) — **产品优先级**（先讲清 FEC + 分发）
+- [docs/ADOPTION.md](docs/ADOPTION.md) — **采用门槛**（CI、包管理、distribute profile）
+- [docs/V1-FREEZE.md](docs/V1-FREEZE.md) — **v1 基础冻结**（LTS 布局）
 - [COMPATIBILITY.md](COMPATIBILITY.md) — **v1 LTS 策略**（采用前请读）
 - [SPEC.md](SPEC.md) — NYA 磁盘布局
 - [SPEC-EXTENSIONS.md](SPEC-EXTENSIONS.md) — **v1 基础**（tail、solid、去重、NyaFS、会话）

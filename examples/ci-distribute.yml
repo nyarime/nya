@@ -1,0 +1,56 @@
+# Example: pack a game/asset tree, publish manifest, smoke-test download.
+# Copy to .github/workflows/nya-distribute.yml and set CDN_BASE / secrets.
+name: nya-distribute
+
+on:
+  push:
+    tags: ["pack-*"]
+  workflow_dispatch:
+    inputs:
+      input_path:
+        description: Path to pack (repo-relative)
+        default: examples/sample-tree
+
+permissions:
+  contents: read
+
+jobs:
+  pack-and-upload:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install nya
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/nyarime/nya/main/scripts/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Pack for distribute profile
+        run: |
+          nya create -profile distribute -fec 10 \
+            dist/GamePack.nya "${{ github.event.inputs.input_path || 'examples/sample-tree' }}"
+
+      - name: Export sidecar manifest
+        env:
+          CDN_BASE: https://cdn.example.com/nya/${{ github.ref_name }}
+        run: |
+          nya manifest export dist/GamePack.nya \
+            -o dist/GamePack.nyam \
+            --url "${CDN_BASE}/GamePack.nya"
+
+      - name: Verify archive locally
+        run: nya verify dist/GamePack.nya
+
+      - name: Smoke-test get (local file URL)
+        run: |
+          rm -rf /tmp/nya-get-out
+          nya get -no-extract --url "file://$PWD/dist/GamePack.nyam" -o /tmp/nya-get-out/pack.nya
+          nya verify /tmp/nya-get-out/pack.nya
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nya-pack-${{ github.ref_name }}
+          path: dist/
+
+      # Optional: push dist/* to your CDN (S3, R2, etc.) in a follow-up job.

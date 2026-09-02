@@ -226,6 +226,7 @@ func getViaManifest(ctx context.Context, client *http.Client, httpOpts getHTTPOp
 	var m *nya.Manifest
 	var statePath string
 	var archiveOut string
+	var manifestFP string
 
 	switch {
 	case manifestPath == "" && urlFlag != "":
@@ -244,6 +245,10 @@ func getViaManifest(ctx context.Context, client *http.Client, httpOpts getHTTPOp
 	case manifestPath != "":
 		var err error
 		m, err = nya.ReadManifest(manifestPath)
+		if err != nil {
+			return err
+		}
+		manifestFP, err = nya.ManifestFileFingerprint(manifestPath)
 		if err != nil {
 			return err
 		}
@@ -325,10 +330,11 @@ func getViaManifest(ctx context.Context, client *http.Client, httpOpts getHTTPOp
 
 	prog := newGetDownloadProgress(m)
 	res, err := nya.Download(ctx, nya.DownloadOptions{
-		Manifest:    m,
-		Output:      archiveOut,
-		StatePath:   statePath,
-		Concurrency: workers,
+		Manifest:            m,
+		Output:              archiveOut,
+		StatePath:           statePath,
+		ManifestFingerprint: manifestFP,
+		Concurrency:         workers,
 		Resume:      resume,
 		Paths:       pathList,
 		HTTPClient:  client,

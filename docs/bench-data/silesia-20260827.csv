@@ -1,0 +1,8 @@
+corpus,tool,level,mode,raw_bytes,out_bytes,ratio,encode_s,decode_s,notes
+silesia,nya,1,zstd,211938580,89339289,0.4215,16.203,2.329,
+silesia,nya,3,zstd,211938580,86224998,0.4068,13.550,1.596,
+silesia,nya,4,zstd,211938580,86224998,0.4068,13.660,1.567,
+silesia,nya,5,lzma2,211938580,62343158,0.2942,42.839,6.076,
+silesia,zstd,1,tar,211938580,73452429,0.3466,0.491,0.176,tar+zstd
+silesia,zstd,3,tar,211938580,66556958,0.3140,0.732,0.269,tar+zstd
+silesia,zstd,19,tar,211938580,53014428,0.2501,73.056,0.253,tar+zstd

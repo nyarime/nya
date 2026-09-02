@@ -1,0 +1,17 @@
+{
+  "corpus": "silesia",
+  "generated": "2026-08-27",
+  "source_csv": "silesia-20260827.csv",
+  "raw_bytes": 211938580,
+  "rows": [
+    {"tool": "nya", "level": 1, "mode": "zstd", "ratio": 0.4219, "encode_s": 14.647, "decode_s": 1.358},
+    {"tool": "nya", "level": 3, "mode": "zstd", "ratio": 0.4073, "encode_s": 13.453, "decode_s": 1.401},
+    {"tool": "nya", "level": 4, "mode": "zstd", "ratio": 0.4073, "encode_s": 13.582, "decode_s": 1.316},
+    {"tool": "nya", "level": 5, "mode": "lzma2", "ratio": 0.2942, "encode_s": 45.429, "decode_s": 5.84}
+  ],
+  "policy": {
+    "create_default_level": 5,
+    "distribute_profile_level": 3,
+    "rationale": "Level 3 decode ~4.2x faster than level 5 on Silesia; ~38% larger output — acceptable for CDN/get pipelines."
+  }
+}

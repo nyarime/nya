@@ -576,3 +576,37 @@ type DownloadState struct {
 func StatePath(manifestPath string) string {
 	return manifestPath + ".state"
 }
+
+// ManifestFileFingerprint returns the lowercase hex BLAKE3-256 of a .nyam file.
+func ManifestFileFingerprint(path string) (string, error) {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	h, err := blake3Sum256File(path, fi.Size())
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h[:]), nil
+}
+
+// ManifestFingerprint returns a stable identity hash for resume state when no
+// .nyam file exists (embedded index or synthesized manifest).
+func ManifestFingerprint(m *Manifest) string {
+	if m == nil {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(m.Archive.Blake3)
+	fmt.Fprintf(&b, "\n%d\n", m.Archive.Size)
+	for _, u := range sortedSourceURLs(m.Sources) {
+		b.WriteString(u)
+		b.WriteByte('\n')
+	}
+	for _, blk := range m.Download.Blocks {
+		b.WriteString(blk.Blake3)
+		b.WriteByte('\n')
+	}
+	sum := Blake3Sum256([]byte(b.String()))
+	return hex.EncodeToString(sum[:])
+}

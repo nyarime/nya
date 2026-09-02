@@ -11,9 +11,13 @@ const (
 	LevelGood    = 7 // LZMA2, larger window and deeper search
 	LevelBest    = 9 // LZMA2, maximum window and search
 
-	// LevelDefault is still Normal (LZMA2). Many distribute/get scenes are a
-	// better fit for levels 1–4 (NYA-Zstd, fast decompress); flipping the
-	// default waits on public corpus decode benches — see ROADMAP.md.
+	// LevelDistribute is the recommended level for CDN / nya get pipelines:
+	// NYA-Zstd level 3 — fast decode with solid ratio on mixed corpora.
+	// See docs/bench-data/ and docs/ADOPTION.md.
+	LevelDistribute = LevelFast
+
+	// LevelDefault is still Normal (LZMA2) for general create / backup.
+	// Use -profile distribute or -level 3 for distribute-first workloads.
 	LevelDefault = LevelNormal
 )
 
