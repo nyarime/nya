@@ -18,7 +18,7 @@ same file.** See [ROADMAP.md](../ROADMAP.md).
 | **Install paths** | Done | `install.sh` / `install.ps1`, GitHub Releases |
 | **Package managers** | Templates | [packaging/homebrew](../packaging/homebrew/nya.rb), [packaging/winget](../packaging/winget/nyarime.nya.yaml) |
 | **CI pipeline template** | Done | [examples/ci-distribute.yml](../examples/ci-distribute.yml) |
-| **GUI (nyaFM)** | Early | [fm/README.md](../fm/README.md) — extract-only v0.1 |
+| **GUI** | Deferred | CLI-first; `nya open` for double-click extract (no Rust GUI in tree) |
 | **External production users** | Open | Need 1–2 public or named case studies |
 
 ## Recommended pipeline (B2B distribute)
@@ -69,7 +69,7 @@ Readers built for ≤ v1.2 **reject the whole archive**. Use
 
 - enwik9 + game/firmware corpus CSV in `docs/bench-data/`
 - `nya get` partial fetch polish for multi-chunk entry paths (mid-term)
-- nyaFM: create, FEC repair UI, encryption prompts
+- Optional native GUI (out of tree; not a release dependency)
 - NyaFS mount tools (v1.x software)
 - Hosted relay / persistent send (optional product; not required for CDN adopters)
 

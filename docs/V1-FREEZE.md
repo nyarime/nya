@@ -26,7 +26,7 @@ These ship in **releases** without a new file extension or major bump:
 - Encoder quality within the same CompressionID (NYA-Zstd / NYA-LZMA2)
 - CLI defaults and profiles (`-profile distribute`, send auto-pack heuristics)
 - `nya get` / `nya send` transport behavior (HTTP, resume, progress)
-- nyaFM GUI and Rust extract stub capabilities
+- Optional GUI / desktop shell around the Go CLI (out of tree)
 - Benchmarks and documentation
 
 ## What requires v2 (not planned without strong cause)

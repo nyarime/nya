@@ -6,7 +6,7 @@
 
 一次打包同时带上压缩与可配置的前向纠错（FEC），用 `nya send` / CDN / `.nyam` 发一个 URL，再用 `nya get` + `nya repair` 拉回并修复。这条故事更贴合 **游戏分包、固件镜像、CDN 大文件、不可靠隧道**，而不是「又一个压缩格式」。产品方向见 **[ROADMAP.md](ROADMAP.md)**，采用门槛见 **[docs/ADOPTION.md](docs/ADOPTION.md)**。
 
-本仓库是格式规范、参考实现与 **`nya` CLI**（`get` / `send` / `gui` / `sfx` …）的权威源。纯 Go、无 cgo。依赖：
+本仓库是格式规范、参考实现与 **`nya` CLI**（`get` / `send` / `open` / `sfx` …）的权威源。纯 Go、无 cgo。依赖：
 
 - `github.com/nyarime/gofec` — RaptorQ / LDPC
 - `github.com/nyarime/compress` **v0.2.7** — 家用 NYA-Zstd + NYA-LZMA2（[Apache-2.0](docs/COMPRESS-ECOSYSTEM.md)）
@@ -113,7 +113,6 @@ nya sfx pack.nya -o pack.exe                       # 打成自解压（Go stub�
 nya create -sfx game.bin -level 3 ./GameData/      # 创建并打包 SFX
 nya get --url https://cdn.example.com/pack.nya
 nya send pack.nya                                  # 本地 HTTP + TryCloudflare
-nya gui pack.nya                                   # nyaFM（若已安装 nya-fm）
 nya associate                                      # Windows：双击 .nya → nya open
 ```
 
@@ -128,22 +127,56 @@ nya associate
 
 ### 发送 / 接收（TryCloudflare）
 
+`nya send` 会在需要时打包，经本地 HTTP 提供文件，并可选通过
+[Cloudflare Quick Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/)
+（`cloudflared`）生成公网链接。安装 `cloudflared`：
+https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/
+Quick Tunnel 为**临时**链接，需遵守 Cloudflare 服务条款。
+
+| 发送内容 | 发布的 URL | 接收方 |
+| --- | --- | --- |
+| **文件** `novel.txt` | **直链：** 原文件<br>**归档：** `novel.txt.nya`<br>**Get 索引：** `novel.txt.nyam` | `nya get --url …/novel.txt.nyam` → 还原为 `novel.txt` |
+| **目录** `./GameData/` | **归档：** `GameData.nya`<br>**Get 索引：** `GameData.nyam` | `nya get --url …/GameData.nyam` → 还原为 `GameData/` |
+| **已有** `pack.nya` | **归档：** `pack.nya`（原样托管）<br>**Get 索引：** `pack.nyam`（`delivery=file`） | `nya get --url …/pack.nyam` → 保留 `pack.nya`（不解压） |
+
+索引 URL 随资源名命名（`name.nyam` / `name.nya`），不是固定的 `/index.nyam`。
+分享给已安装 `nya` 的对方时，用 **Get** 链接：并行分块下载、断点续传；`.nyam`
+按清单里的 `delivery` 字段决定是还原（`restore`）还是只留归档（`file`）。
+
 ```bash
+# 发送方 — 单文件（压缩、嵌入下载索引、启动隧道）
 nya send novel.txt
-# Direct:  https://….trycloudflare.com/novel.txt
-# Get:     nya get --url https://….trycloudflare.com/novel.txt.nyam
+# Direct:  https://xxxx.trycloudflare.com/novel.txt
+# Archive: https://xxxx.trycloudflare.com/novel.txt.nya
+# Get:     nya get --url https://xxxx.trycloudflare.com/novel.txt.nyam
 
+# 发送方 — 目录
 nya send ./GameData
-# Archive: https://….trycloudflare.com/GameData.nya
-# Get:     nya get --url https://….trycloudflare.com/GameData.nyam
+# Archive: https://xxxx.trycloudflare.com/GameData.nya
+# Get:     nya get --url https://xxxx.trycloudflare.com/GameData.nyam
 
+# 发送方 — 已是 .nya（不再重新打包）
+nya send pack.nya
+
+# 接收方
 nya get --url https://xxxx.trycloudflare.com/novel.txt.nyam
+# → 当前目录下得到 novel.txt
+
+# 仅局域网（不走隧道）
+nya send -no-tunnel ./GameData
 ```
 
-索引 URL 跟资源名走（`name.nyam` / `name.nya`），不是固定的 `/index.nyam`。  
-CLI 默认英文；`NYA_LANG=zh` 或 `LANG=zh_CN` 可切中文提示。
+**`nya get` 与 URL 类型：**
 
-选项：`-no-tunnel`。未安装 cloudflared 时见 https://developers.cloudflare.com/tunnel/downloads/ 。Quick Tunnel 为临时链接（遵循 Cloudflare ToS）。
+| URL 后缀 | 默认行为 |
+| --- | --- |
+| `.nyam` | 跟随 `delivery`：`restore` → 还原文件/目录；`file` → 只留 `.nya` |
+| `.nya` | 普通文件 — **保留**归档（`-extract` 可强制解压） |
+| 其他（如直链文件） | 普通 HTTP 下载，原样保存 |
+
+常用参数：`-no-extract`（始终只留 `.nya`）、`-extract`（强制解压）、
+`-keep-nya`（解压后仍保留归档）、`-c N`、`-resume=false`、`-cf-trace`。
+CLI 默认英文；`NYA_LANG=zh` 或 `LANG=zh_CN` 可切中文提示。
 
 ### 大包分发（`nya get`）
 
@@ -377,7 +410,6 @@ NYA 是自由软件：可在 [GNU GPL v3.0](LICENSE) 下使用、修改与再分
 - [SPEC-CODECS.md](SPEC-CODECS.md) — **NYA-Zstd & NYA-LZMA2**
 - [SPEC-SFX.md](SPEC-SFX.md) — **自解压**（`nya` 统一 stub）
 - [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) — `.nyam` 与 `nya get` 传输块
-- [fm/README.md](fm/README.md) — **nyaFM** Rust GUI
 
 ### 自解压归档（类似 7-Zip）
 
@@ -389,8 +421,3 @@ nya sfx pack.nya -o pack.exe
 
 双击 / 直接运行会解到 SFX 所在目录（类似 macOS「归档实用工具」）。`-o DIR` 可改目标。  
 **`nya`** 同时承担 CLI 与 SFX stub：`create -sfx` / `nya sfx` 用当前 `nya` 作前缀，再拼接归档与 footer。请勿对 SFX 输出做 UPX。
-
-```bash
-cargo build -p nya-fm --release
-./target/release/nya-fm pack.nya   # GUI：列表 + 解压
-```

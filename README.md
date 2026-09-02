@@ -14,7 +14,7 @@ images**, **CDN large objects**, and **unreliable tunnels** better than
 **[docs/ADOPTION.md](docs/ADOPTION.md)**.
 
 This repository is the **canonical** format spec, reference implementation,
-and `nya` CLI (`get` / `send` / `gui` / `sfx`, …). Pure Go, no cgo. Dependencies:
+and `nya` CLI (`get` / `send` / `open` / `sfx`, …). Pure Go, no cgo. Dependencies:
 
 - `github.com/nyarime/gofec` (RaptorQ / LDPC)
 - `github.com/nyarime/compress` **v0.2.7** — house NYA-Zstd + NYA-LZMA2 ([Apache-2.0](docs/COMPRESS-ECOSYSTEM.md))
@@ -123,7 +123,6 @@ nya sfx pack.nya -o pack.exe                  # wrap as self-extractor (Go stub;
 nya create -sfx game.bin -level 3 ./GameData/ # create + wrap in one step
 nya get --url https://cdn.example.com/pack.nya
 nya send pack.nya                             # local HTTP + TryCloudflare → share URL
-nya gui pack.nya                              # nyaFM GUI (launches nya-fm if installed)
 nya associate                                 # Windows: .nya double-click → nya open
 ```
 
@@ -138,22 +137,58 @@ See [examples/windows-open](examples/windows-open/README.md).
 
 ### Send + get (TryCloudflare)
 
+`nya send` packs (if needed), serves over local HTTP, and optionally exposes a
+public URL via [Cloudflare Quick Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/)
+(`cloudflared`). Install `cloudflared` from
+https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/
+Quick Tunnels are **ephemeral** and subject to Cloudflare ToS.
+
+| What you send | What gets published | Recipient runs |
+| --- | --- | --- |
+| **File** `novel.txt` | **Direct:** original file URL<br>**Archive:** `novel.txt.nya`<br>**Get index:** `novel.txt.nyam` | `nya get --url …/novel.txt.nyam` → restores `novel.txt` |
+| **Directory** `./GameData/` | **Archive:** `GameData.nya`<br>**Get index:** `GameData.nyam` | `nya get --url …/GameData.nyam` → restores `GameData/` |
+| **Existing** `pack.nya` | **Archive:** `pack.nya` (served as-is)<br>**Get index:** `pack.nyam` (`delivery=file`) | `nya get --url …/pack.nyam` → keeps `pack.nya` (no unpack) |
+
+Index URLs follow the source name (`name.nyam` / `name.nya`), not a fixed
+`/index.nyam`. The **Get** link is what you share with someone who has `nya`
+installed; they get parallel block download, resume, and (for `.nyam`) restore
+behavior driven by the manifest `delivery` field (`restore` or `file`).
+
 ```bash
+# Sender — single file (compresses, embeds download index, starts tunnel)
 nya send novel.txt
-# Direct:  https://….trycloudflare.com/novel.txt
-# Get:     nya get --url https://….trycloudflare.com/novel.txt.nyam
+# Direct:  https://xxxx.trycloudflare.com/novel.txt
+# Archive: https://xxxx.trycloudflare.com/novel.txt.nya
+# Get:     nya get --url https://xxxx.trycloudflare.com/novel.txt.nyam
 
+# Sender — folder
 nya send ./GameData
-# Archive: https://….trycloudflare.com/GameData.nya
-# Get:     nya get --url https://….trycloudflare.com/GameData.nyam
+# Archive: https://xxxx.trycloudflare.com/GameData.nya
+# Get:     nya get --url https://xxxx.trycloudflare.com/GameData.nyam
 
+# Sender — already-packed archive (no re-pack)
+nya send pack.nya
+
+# Recipient
 nya get --url https://xxxx.trycloudflare.com/novel.txt.nyam
+# → novel.txt restored in the current directory
+
+# LAN only (no tunnel)
+nya send -no-tunnel ./GameData
 ```
 
-Index URLs are named after the source (`name.nyam` / `name.nya`), not a fixed `/index.nyam`.
-CLI defaults to English (`NYA_LANG=zh` or `LANG=zh_CN` for Chinese).
+**`nya get` URL types:**
 
-Options: `-no-tunnel`. If cloudflared is missing, install from https://developers.cloudflare.com/tunnel/downloads/ . Quick Tunnels are ephemeral (Cloudflare ToS).
+| URL ends with | Default behavior |
+| --- | --- |
+| `.nyam` | Follow `delivery`: `restore` → unpack to file/dir; `file` → keep `.nya` |
+| `.nya` | Ordinary file — **keep** the archive (use `-extract` to force unpack) |
+| Other (e.g. direct file) | Plain HTTP download, saved as-is |
+
+Flags: `-no-extract` (always keep `.nya`), `-extract` (force unpack),
+`-keep-nya` (after unpack, also leave the archive), `-c N` (parallel
+connections), `-resume=false`, `-cf-trace`. CLI defaults to English;
+`NYA_LANG=zh` or `LANG=zh_CN` for Chinese.
 
 ### Large package distribution (`nya get`)
 
@@ -437,7 +472,6 @@ closed-source product without GPL obligations, contact
 - [SPEC-CODECS.md](SPEC-CODECS.md) — **NYA-Zstd & NYA-LZMA2** roles and roadmap
 - [SPEC-SFX.md](SPEC-SFX.md) — **self-extracting** archives (`nya` as unified stub)
 - [SPEC-DOWNLOAD.md](SPEC-DOWNLOAD.md) — `.nyam` manifest and `nya get` transport blocks
-- [fm/README.md](fm/README.md) — **nyaFM** Rust GUI (open / list / extract)
 
 ### Self-extracting archives (7-Zip-style)
 
@@ -451,8 +485,3 @@ Double-click / bare run unpacks into the folder that contains the SFX file
 (like macOS Archive Utility). Use `-o DIR` to override. **`nya`** is both CLI and
 SFX stub: `create -sfx` / `nya sfx` prepend the running `nya` binary, then
 append the archive and footer. Do not UPX SFX outputs.
-
-```bash
-cargo build -p nya-fm --release
-./target/release/nya-fm pack.nya   # GUI: list + extract
-```

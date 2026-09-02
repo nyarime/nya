@@ -23,7 +23,7 @@ Workflow: [`.github/workflows/release.yml`](../.github/workflows/release.yml).
 | `nya-VERSION-darwin-amd64.tar.gz` | **`nya` only** |
 | `nya-VERSION-darwin-arm64.tar.gz` | **`nya` only** |
 
-Download: `nya get --url …` (no separate `nya-get` in release tarballs/zips). `nya-fm` GUI is not part of the default install story.
+Download: `nya get --url …` (no separate `nya-get` in release tarballs/zips).
 
 ## Linking model (vs 7-Zip)
 

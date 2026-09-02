@@ -214,7 +214,7 @@ func isNyaCLICommand(arg string) bool {
 	switch arg {
 	case "create", "c", "list", "l", "extract", "x", "open", "verify", "t", "info",
 		"repair", "augment", "convert", "import", "repack", "manifest", "sfx",
-		"get", "send", "gui", "fm", "associate", "-h", "--help", "help":
+		"get", "send", "associate", "-h", "--help", "help":
 		return true
 	}
 	return false
