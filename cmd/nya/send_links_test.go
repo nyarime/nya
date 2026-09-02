@@ -24,6 +24,7 @@ func TestPrintSendLinksFileMode(t *testing.T) {
 		"https://ex.trycloudflare.com/relapse3.log",
 		"", "", "",
 		true,
+		basicAuth{},
 	)
 	_ = w.Close()
 	var buf bytes.Buffer

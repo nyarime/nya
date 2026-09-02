@@ -30,6 +30,8 @@ func cmdGet(args []string) error {
 	userAgent := fs.String("user-agent", "", "HTTP User-Agent (default: Nya/VERSION)")
 	cfTrace := fs.Bool("cf-trace", false, "print Cloudflare /cdn-cgi/trace before download (HTTPS URLs)")
 	resolveIP := fs.String("resolve", "", "pin HTTPS host to Cloudflare edge IP (CFST-style, e.g. 1.2.3.4 or 1.2.3.4:443)")
+	authUser := fs.String("user", "", "HTTP Basic username (with -password, or userinfo in --url)")
+	authPass := fs.String("password", "", "HTTP Basic password")
 	fs.Usage = func() {
 		fmt.Fprint(os.Stderr, `nya get — download via .nyam / embedded index
 
@@ -43,51 +45,59 @@ Delivery:
                 restore → unpack (send file → file, send dir → directory)
                 file    → keep the .nya (send of an existing .nya)
   -no-extract  always keep .nya;  -extract  force unpack;  -keep-nya  keep archive after unpack
+  -user/-password  HTTP Basic auth (or embed in URL; credentials are stripped from logs)
 
 `)
 		fs.PrintDefaults()
 	}
-	if err := parseFlagSet(fs, args, map[string]bool{"o": true, "c": true, "url": true, "paths": true, "user-agent": true, "resolve": true}); err != nil {
+	if err := parseFlagSet(fs, args, map[string]bool{
+		"o": true, "c": true, "url": true, "paths": true, "user-agent": true, "resolve": true,
+		"user": true, "password": true,
+	}); err != nil {
 		return err
 	}
 
+	cleanURL, getAuth, err := resolveGetAuth(*urlFlag, *authUser, *authPass)
+	if err != nil {
+		return err
+	}
 	pinned, err := parseResolveIP(*resolveIP)
 	if err != nil {
 		return err
 	}
-	pageHost := hostFromHTTPSURL(*urlFlag)
+	pageHost := hostFromHTTPSURL(cleanURL)
 	if pinned != "" && pageHost == "" && fs.NArg() == 1 {
 		pageHost = ""
 	}
-	httpOpts := getHTTPOptions{userAgent: *userAgent, resolveIP: pinned, host: pageHost}
+	httpOpts := getHTTPOptions{userAgent: *userAgent, resolveIP: pinned, host: pageHost, auth: getAuth}
 	client := httpClientForGetOpts(httpOpts)
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	if *cfTrace && *urlFlag != "" {
-		if err := printCFTrace(ctx, client, *urlFlag); err != nil {
+	if *cfTrace && cleanURL != "" {
+		if err := printCFTrace(ctx, client, cleanURL); err != nil {
 			fmt.Fprintf(os.Stderr, "nya get: cf-trace: %v\n", err)
 		}
 	}
 
-	if fs.NArg() == 0 && *urlFlag != "" {
-		kind, err := classifyGetURL(client, *urlFlag)
+	if fs.NArg() == 0 && cleanURL != "" {
+		kind, err := classifyGetURL(client, cleanURL)
 		if err != nil {
 			return err
 		}
 		if kind == getURLPlain {
 			dest := *out
 			if dest == "" {
-				dest = guessPlainName(*urlFlag)
+				dest = guessPlainName(cleanURL)
 			}
-			return downloadPlainFile(ctx, client, *urlFlag, dest)
+			return downloadPlainFile(ctx, client, cleanURL, dest)
 		}
-		return getViaManifest(ctx, client, httpOpts, *cfTrace, *urlFlag, "", *out, *concurrency, *resume, *paths, kind == getURLNyam, *extract, *noExtract, *keepNya)
+		return getViaManifest(ctx, client, httpOpts, *cfTrace, cleanURL, "", *out, *concurrency, *resume, *paths, kind == getURLNyam, *extract, *noExtract, *keepNya)
 	}
 	if fs.NArg() == 1 {
 		arg := fs.Arg(0)
 		isNyam := strings.HasSuffix(strings.ToLower(arg), ".nyam")
-		return getViaManifest(ctx, client, httpOpts, *cfTrace, *urlFlag, arg, *out, *concurrency, *resume, *paths, isNyam, *extract, *noExtract, *keepNya)
+		return getViaManifest(ctx, client, httpOpts, *cfTrace, cleanURL, arg, *out, *concurrency, *resume, *paths, isNyam, *extract, *noExtract, *keepNya)
 	}
 	fs.Usage()
 	os.Exit(2)
@@ -179,6 +189,9 @@ func downloadPlainFile(ctx context.Context, client *http.Client, raw, dest strin
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
+		if resp.StatusCode == http.StatusUnauthorized {
+			return fmt.Errorf("download: HTTP 401 (wrong or missing -user/-password?)")
+		}
 		return fmt.Errorf("download: HTTP %s", resp.Status)
 	}
 	if dir := filepath.Dir(dest); dir != "" && dir != "." {
@@ -421,6 +434,9 @@ func fetchManifestURL(client *http.Client, raw string) (*nya.Manifest, error) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusUnauthorized {
+			return nil, fmt.Errorf("fetch index: HTTP 401 (wrong or missing -user/-password?)")
+		}
 		return nil, fmt.Errorf("fetch index: HTTP %s", resp.Status)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
