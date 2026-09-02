@@ -10,9 +10,6 @@ The main `nya` binary is dual-mode: when run as an SFX (footer present), double-
 click or bare invocation extracts the embedded archive; explicit subcommands
 (`nya create`, `nya extract`, …) still work when passed on the command line.
 
-An experimental Rust stub remains under [`sfx/`](sfx/) but does **not** decode
-full NYA house-codec payloads — use `nya` for releases.
-
 ## Goals
 
 | Goal | Mechanism |
@@ -108,7 +105,6 @@ RunProgram="bin\\start.bat"
 | --- | --- | --- |
 | `nya` (Go, **reference**) | store, NYA-Zstd, NYA-LZMA2, solid, multi-chunk | Default for releases |
 | `cmd/nya-sfx-stub` | same | Thin wrapper for tests / legacy scripts |
-| `sfx/` Rust (experimental) | store; incomplete house-codec interop | ~500 KB–1.5 MB |
 
 Archives using unsupported codecs MUST fail with a clear error from the stub.
 
@@ -120,4 +116,4 @@ Archives using unsupported codecs MUST fail with a clear error from the stub.
 
 ### 1.0
 
-Initial footer layout and Rust reference stub.
+Initial footer layout and reference stub.

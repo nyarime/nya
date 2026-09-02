@@ -60,8 +60,6 @@ func main() {
 		err = cmdGet(os.Args[2:])
 	case "send":
 		err = cmdSend(os.Args[2:])
-	case "gui", "fm":
-		err = cmdGUI(os.Args[2:])
 	case "associate":
 		err = cmdAssociate(os.Args[2:])
 	case "-h", "--help", "help":
