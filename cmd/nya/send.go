@@ -138,7 +138,7 @@ func cmdSend(args []string) error {
 			return err
 		}
 	}
-	nyamJSON, err := buildSendIndex(archive, archiveName, sendBlockSize)
+	nyamJSON, err := buildSendIndex(archive, archiveName, sendBlockSize, mode)
 	if err != nil {
 		return err
 	}
@@ -333,7 +333,7 @@ func sendOriginTLS(noTunnel, noTLS, tlsFlag bool, tlsCert, tlsKey string) bool {
 	return !noTunnel && !noTLS
 }
 
-func buildSendIndex(archive, publicNyaName string, blockSize int64) ([]byte, error) {
+func buildSendIndex(archive, publicNyaName string, blockSize int64, mode sendMode) ([]byte, error) {
 	if blockSize <= 0 {
 		fi, err := os.Stat(archive)
 		if err != nil {
@@ -346,6 +346,13 @@ func buildSendIndex(archive, publicNyaName string, blockSize int64) ([]byte, err
 		return nil, err
 	}
 	m.Archive.Name = publicNyaName
+	// .nya is an ordinary file when that was the send source; otherwise restore
+	// the packed file or directory after download.
+	if mode == sendModeNya {
+		m.Delivery = nya.DeliveryFile
+	} else {
+		m.Delivery = nya.DeliveryRestore
+	}
 	return json.MarshalIndent(m, "", "  ")
 }
 

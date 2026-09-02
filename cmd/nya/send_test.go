@@ -22,12 +22,37 @@ func TestTryCloudflareURLRegex(t *testing.T) {
 	}
 }
 
-func TestIsNyaArchivePath(t *testing.T) {
-	if !isNyaArchivePath("a.nya") || !isNyaArchivePath(`C:\x\B.NYA`) {
-		t.Fatal("expected .nya")
+func TestBuildSendIndexDelivery(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "a.txt")
+	if err := os.WriteFile(src, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if isNyaArchivePath("a.zip") || isNyaArchivePath("dir") {
-		t.Fatal("unexpected .nya")
+	archive := filepath.Join(root, "a.nya")
+	if err := writeNyaArchive(archive, src, nya.SendPackProfile{Level: nya.LevelFastest}, nil); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := buildSendIndex(archive, "a.txt.nya", 64*1024, sendModeFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := nya.ParseManifest(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Delivery != nya.DeliveryRestore {
+		t.Fatalf("file pack delivery=%q", m.Delivery)
+	}
+	raw, err = buildSendIndex(archive, "a.nya", 64*1024, sendModeNya)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err = nya.ParseManifest(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Delivery != nya.DeliveryFile {
+		t.Fatalf("nya send delivery=%q want file", m.Delivery)
 	}
 }
 
@@ -58,7 +83,7 @@ func TestPatchManifestArchiveSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cleanup()
-	raw, err := buildSendIndex(archive, "f.txt.nya", 65536)
+	raw, err := buildSendIndex(archive, "f.txt.nya", 65536, sendModeFile)
 	if err != nil {
 		t.Fatal(err)
 	}

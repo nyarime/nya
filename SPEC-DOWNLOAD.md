@@ -70,6 +70,7 @@ Media type: `application/vnd.nyarime.nyam+json` (conventional).
 | `download` | object | yes | Transport block index. |
 | `entries` | array | no | Per-file on-disk chunk byte ranges (multi-chunk v1.3). |
 | `sources` | array | no | Ordered download URLs (highest `priority` first). |
+| `delivery` | string | no | `"restore"` (default for packed file/dir) or `"file"` (`.nya` is the payload — ordinary file, do not unpack). |
 
 ### `archive` object
 

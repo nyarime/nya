@@ -19,22 +19,30 @@ import (
 
 func cmdGet(args []string) error {
 	fs := flag.NewFlagSet("get", flag.ExitOnError)
-	out := fs.String("o", "", "extract/output dir or file path")
+	out := fs.String("o", "", "output path: .nya path when keeping file; extract dir when unpacking")
 	concurrency := fs.Int("c", 0, "parallel download connections (0 = auto: one per block, max 200)")
 	resume := fs.Bool("resume", true, "resume incomplete download")
 	urlFlag := fs.String("url", "", ".nyam / .nya / plain file URL")
 	paths := fs.String("paths", "", "comma-separated entry paths for partial fetch")
-	noExtract := fs.Bool("no-extract", false, "keep the .nya only; do not restore files/dirs")
-	keepNya := fs.Bool("keep-nya", false, "after extract, keep the downloaded .nya")
+	extract := fs.Bool("extract", false, "force unpack after download (overrides delivery=file)")
+	noExtract := fs.Bool("no-extract", false, "keep the .nya file only (never unpack)")
+	keepNya := fs.Bool("keep-nya", false, "when unpacking: also keep the downloaded .nya")
 	userAgent := fs.String("user-agent", "", "HTTP User-Agent (default: Nya/VERSION)")
 	cfTrace := fs.Bool("cf-trace", false, "print Cloudflare /cdn-cgi/trace before download (HTTPS URLs)")
 	resolveIP := fs.String("resolve", "", "pin HTTPS host to Cloudflare edge IP (CFST-style, e.g. 1.2.3.4 or 1.2.3.4:443)")
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, `nya get — download and restore
+		fmt.Fprint(os.Stderr, `nya get — download via .nyam / embedded index
 
 Usage:
   nya get --url <name.nyam|file.nya|https://…/file>
   nya get <manifest.nyam>
+
+Delivery:
+  .nya URL  → ordinary file: write the .nya as-is
+  .nyam     → follow delivery field:
+                restore → unpack (send file → file, send dir → directory)
+                file    → keep the .nya (send of an existing .nya)
+  -no-extract  always keep .nya;  -extract  force unpack;  -keep-nya  keep archive after unpack
 
 `)
 		fs.PrintDefaults()
@@ -49,7 +57,6 @@ Usage:
 	}
 	pageHost := hostFromHTTPSURL(*urlFlag)
 	if pinned != "" && pageHost == "" && fs.NArg() == 1 {
-		// local .nyam: resolve host comes from manifest sources inside getViaManifest
 		pageHost = ""
 	}
 	httpOpts := getHTTPOptions{userAgent: *userAgent, resolveIP: pinned, host: pageHost}
@@ -63,7 +70,6 @@ Usage:
 		}
 	}
 
-	// Plain URL / unknown: try nyam/.nya first, else plain download.
 	if fs.NArg() == 0 && *urlFlag != "" {
 		kind, err := classifyGetURL(client, *urlFlag)
 		if err != nil {
@@ -76,14 +82,35 @@ Usage:
 			}
 			return downloadPlainFile(ctx, client, *urlFlag, dest)
 		}
-		return getViaManifest(ctx, client, httpOpts, *cfTrace, *urlFlag, "", *out, *concurrency, *resume, *paths, *noExtract, *keepNya)
+		return getViaManifest(ctx, client, httpOpts, *cfTrace, *urlFlag, "", *out, *concurrency, *resume, *paths, kind == getURLNyam, *extract, *noExtract, *keepNya)
 	}
 	if fs.NArg() == 1 {
-		return getViaManifest(ctx, client, httpOpts, *cfTrace, *urlFlag, fs.Arg(0), *out, *concurrency, *resume, *paths, *noExtract, *keepNya)
+		arg := fs.Arg(0)
+		isNyam := strings.HasSuffix(strings.ToLower(arg), ".nyam")
+		return getViaManifest(ctx, client, httpOpts, *cfTrace, *urlFlag, arg, *out, *concurrency, *resume, *paths, isNyam, *extract, *noExtract, *keepNya)
 	}
 	fs.Usage()
 	os.Exit(2)
 	return nil
+}
+
+// resolveGetExtract: bare .nya is an ordinary file; .nyam follows delivery.
+func resolveGetExtract(fromNyam bool, delivery string, forceExtract, forceNoExtract bool) bool {
+	if forceNoExtract {
+		return false
+	}
+	if forceExtract {
+		return true
+	}
+	if !fromNyam {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(delivery)) {
+	case nya.DeliveryFile, "archive", "nya":
+		return false
+	default:
+		return true
+	}
 }
 
 type getURLKind int
@@ -195,7 +222,7 @@ func downloadPlainFile(ctx context.Context, client *http.Client, raw, dest strin
 	return nil
 }
 
-func getViaManifest(ctx context.Context, client *http.Client, httpOpts getHTTPOptions, cfTrace bool, urlFlag, manifestPath, out string, concurrency int, resume bool, paths string, noExtract, keepNya bool) error {
+func getViaManifest(ctx context.Context, client *http.Client, httpOpts getHTTPOptions, cfTrace bool, urlFlag, manifestPath, out string, concurrency int, resume bool, paths string, fromNyam, forceExtract, forceNoExtract, keepNya bool) error {
 	var m *nya.Manifest
 	var statePath string
 	var archiveOut string
@@ -251,6 +278,8 @@ func getViaManifest(ctx context.Context, client *http.Client, httpOpts getHTTPOp
 		return fmt.Errorf("need --url or a .nyam path")
 	}
 
+	wantExtract := resolveGetExtract(fromNyam, m.Delivery, forceExtract, forceNoExtract)
+
 	var pathList []string
 	for _, p := range strings.Split(paths, ",") {
 		p = strings.TrimSpace(p)
@@ -258,16 +287,19 @@ func getViaManifest(ctx context.Context, client *http.Client, httpOpts getHTTPOp
 			pathList = append(pathList, p)
 		}
 	}
+	// Partial fetch never auto-extracts (incomplete archive).
+	if len(pathList) > 0 {
+		wantExtract = false
+	}
 
-	wantExtract := !noExtract && len(pathList) == 0
 	extractDir := "."
 	cleanupArchive := false
 
-	if noExtract {
+	if !wantExtract {
 		if out != "" {
 			archiveOut = out
 		}
-	} else if wantExtract {
+	} else {
 		if out != "" {
 			extractDir = out
 		}
