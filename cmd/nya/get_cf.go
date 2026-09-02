@@ -21,11 +21,12 @@ const cfTraceWellKnownURL = "https://www.cloudflare.com/cdn-cgi/trace"
 // cfTraceSendURL is the probe target for nya send auto trace (tests may override).
 var cfTraceSendURL = cfTraceWellKnownURL
 
-// getHTTPOptions configures nya get HTTP client (UA, optional CF edge IP pin).
+// getHTTPOptions configures nya get HTTP client (UA, optional CF edge IP pin, Basic auth).
 type getHTTPOptions struct {
 	userAgent string
 	resolveIP string // connect to this IPv4/IPv6 instead of DNS (Host/SNI unchanged)
 	host      string // TLS ServerName + resolve scope; set from download URL
+	auth      basicAuth
 }
 
 func httpClientForGetOpts(opts getHTTPOptions) *http.Client {
@@ -53,12 +54,16 @@ func httpClientForGetOpts(opts getHTTPOptions) *http.Client {
 		clone.TLSClientConfig = tlsCfg
 		base = clone
 	}
+	var rt http.RoundTripper = &userAgentRoundTripper{
+		base: base,
+		ua:   ua,
+	}
+	if opts.auth.enabled() {
+		rt = &basicAuthRoundTripper{user: opts.auth.user, pass: opts.auth.pass, base: rt}
+	}
 	return &http.Client{
-		Timeout: 0,
-		Transport: &userAgentRoundTripper{
-			base: base,
-			ua:   ua,
-		},
+		Timeout:   0,
+		Transport: rt,
 	}
 }
 

@@ -45,6 +45,8 @@ func cmdSend(args []string) error {
 	verboseTunnel := fs.Bool("verbose-tunnel", false, "print full cloudflared logs (noisy)")
 	logNyamBrowser := fs.Bool("log-nyam-browser", false, "deprecated: use -access-log info")
 	accessLog := fs.String("access-log", "notice", "access log: notice (hide browser .nyam), info (all), warn (errors only)")
+	authUser := fs.String("user", "", "HTTP Basic username (requires -password)")
+	authPass := fs.String("password", "", "HTTP Basic password")
 	out := fs.String("o", "", "when packing: write .nya here (default: temp, deleted on exit)")
 	level := fs.Int("level", nya.LevelFast, "when packing: 0–9 (default: auto time-first Zstd; -level 9 for smallest)")
 	fs.Usage = func() {
@@ -54,12 +56,17 @@ func cmdSend(args []string) error {
 	if err := parseFlagSet(fs, args, map[string]bool{
 		"port": true, "bind": true, "cloudflared": true, "o": true, "level": true,
 		"tls-host": true, "tls-cert": true, "tls-key": true,
+		"user": true, "password": true,
 	}); err != nil {
 		return err
 	}
 	if fs.NArg() != 1 {
 		fs.Usage()
 		os.Exit(2)
+	}
+	sendAuth, err := parseSendBasicAuth(*authUser, *authPass)
+	if err != nil {
+		return err
 	}
 	src := fs.Arg(0)
 	abs, err := filepath.Abs(src)
@@ -184,7 +191,7 @@ func cmdSend(args []string) error {
 			http.NotFound(w, r)
 		}
 	})
-	srv := &http.Server{Handler: sendAccessLogger(sendLogConfig{level: logLevel}, mux)}
+	srv := &http.Server{Handler: sendAuth.wrapHandler(sendAccessLogger(sendLogConfig{level: logLevel}, mux))}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
@@ -278,7 +285,10 @@ func cmdSend(args []string) error {
 	}
 
 	fmt.Fprintf(os.Stderr, "\nnya send: %s (%s)\n", archiveName, nya.HumanSize(int(st.Size())))
-	printSendLinks(mode, indexURL, nyaURL, directURL, indexLocal, nyaLocal, directLocal, !*noTunnel)
+	if sendAuth.enabled() {
+		fmt.Fprintln(os.Stderr, T("send.auth.enabled"))
+	}
+	printSendLinks(mode, indexURL, nyaURL, directURL, indexLocal, nyaLocal, directLocal, !*noTunnel, sendAuth)
 
 	select {
 	case <-ctx.Done():
@@ -299,29 +309,30 @@ func cmdSend(args []string) error {
 	}
 }
 
-func printSendLinks(mode sendMode, indexURL, nyaURL, directURL, indexLocal, nyaLocal, directLocal string, public bool) {
+func printSendLinks(mode sendMode, indexURL, nyaURL, directURL, indexLocal, nyaLocal, directLocal string, public bool, auth basicAuth) {
 	fmt.Fprintln(os.Stderr)
 	if !public {
 		indexURL, nyaURL, directURL = indexLocal, nyaLocal, directLocal
 		fmt.Fprintln(os.Stderr, T("send.lan"))
 	}
+	getCmd := formatGetAuthHint(indexURL, auth.user)
 	switch mode {
 	case sendModeFile:
 		fmt.Fprintln(os.Stderr, T("send.direct"))
 		fmt.Fprintf(os.Stderr, "  %s\n", directURL)
 		fmt.Fprintf(os.Stderr, "  %s\n", nyaURL)
 		fmt.Fprintln(os.Stderr, T("send.get"))
-		fmt.Fprintf(os.Stderr, T("send.get_fmt")+"\n", indexURL)
+		fmt.Fprintf(os.Stderr, "  %s\n", getCmd)
 	case sendModeDir:
 		fmt.Fprintln(os.Stderr, T("send.archive"))
 		fmt.Fprintf(os.Stderr, "  %s\n", nyaURL)
 		fmt.Fprintln(os.Stderr, T("send.get"))
-		fmt.Fprintf(os.Stderr, T("send.get_fmt")+"\n", indexURL)
+		fmt.Fprintf(os.Stderr, "  %s\n", getCmd)
 	default:
 		fmt.Fprintln(os.Stderr, T("send.archive"))
 		fmt.Fprintf(os.Stderr, "  %s\n", nyaURL)
 		fmt.Fprintln(os.Stderr, T("send.get"))
-		fmt.Fprintf(os.Stderr, T("send.get_fmt")+"\n", indexURL)
+		fmt.Fprintf(os.Stderr, "  %s\n", getCmd)
 	}
 	fmt.Fprintln(os.Stderr, T("send.stop"))
 }
